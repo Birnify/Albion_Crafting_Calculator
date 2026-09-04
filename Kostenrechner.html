@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kostenrechner Lymhurst</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#ffffff; --line:#dde3ea; --text:#16202c; --dim:#63748a;
+  --accent:#1f5fa8; --accent-soft:#e8f0fa;
+  --good:#0f7a45; --good-bg:#e4f5ec; --bad:#b3261e; --bad-bg:#fdeceb;
+  --warn:#8a5a00; --warn-bg:#fdf3e0; --head:#1f3864;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#11161d; --panel:#1a212b; --line:#2c3644; --text:#e6ecf3; --dim:#94a3b5;
+    --accent:#6aa9e8; --accent-soft:#1e2c3d;
+    --good:#5fd39a; --good-bg:#14301f; --bad:#f08a82; --bad-bg:#33191a;
+    --warn:#e0b25f; --warn-bg:#312709; --head:#243352;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;padding:24px 20px 60px;background:var(--bg);color:var(--text);
+     font:14px/1.5 "Segoe UI",Arial,sans-serif}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:16px;margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+.sub{color:var(--dim);font-size:13px;margin-bottom:18px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+       padding:18px 20px;margin-bottom:22px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+      gap:14px 20px;align-items:end}
+.feld{display:flex;flex-direction:column;justify-content:flex-end;min-height:56px;position:relative}
+.feld>label{flex:none}
+.sek{margin-bottom:22px}
+.sek:last-of-type{margin-bottom:0}
+.sek-t{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;
+       letter-spacing:.07em;margin-bottom:13px;padding-bottom:7px;
+       border-bottom:1px solid var(--line)}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px;font-weight:600;
+      text-transform:uppercase;letter-spacing:.03em}
+input,select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+             background:var(--bg);color:var(--text);font:inherit}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+input::placeholder{color:var(--dim);opacity:.7}
+.hint{font-size:11px;color:var(--dim);margin-top:3px;line-height:1.35;font-weight:400}
+.tblwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:560px}
+th{background:var(--head);color:#fff;text-align:right;padding:9px 11px;font-weight:600;
+   font-size:12px;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th.l,td.l{text-align:left}
+th[title]{cursor:help;text-decoration:underline dotted rgba(255,255,255,.5);
+          text-underline-offset:3px}
+td{padding:8px 11px;text-align:right;border-bottom:1px solid var(--line)}
+td.l{white-space:normal}
+tbody tr:hover{background:var(--accent-soft)}
+tr.best{background:var(--good-bg)!important}
+tr.gesperrt-zeile{opacity:.75}
+.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;font-weight:700;
+      white-space:nowrap}
+.pill.good{background:var(--good-bg);color:var(--good)}
+.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+button{padding:9px 18px;border:0;border-radius:6px;background:var(--accent);color:#fff;
+       font:600 13px/1 inherit;cursor:pointer}
+button:hover:not(:disabled){filter:brightness(1.1)}
+button:disabled{opacity:.55;cursor:default}
+.mini{padding:5px 12px;border:1px solid var(--line);border-radius:6px;
+      background:transparent;color:var(--accent);font:600 12px/1.4 inherit;cursor:pointer}
+.mini:hover{background:var(--accent-soft);border-color:var(--accent)}
+#status{font-size:12.5px;color:var(--dim)}
+#status.err{color:var(--bad);font-weight:600}
+#status.ok{color:var(--good);font-weight:600}
+.hero{background:linear-gradient(135deg,var(--head),var(--accent));color:#fff;
+      border-radius:10px;padding:20px 24px;margin-bottom:16px}
+.hero .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:22px}
+.hero .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.75}
+.hero .v{font-size:23px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.hero .w{font-size:13px;opacity:.92;margin-top:3px}
+.hero.leer{background:var(--panel);color:var(--dim);border:1px dashed var(--line);
+           padding:22px 24px;text-align:center}
+.hero.gesperrt{background:linear-gradient(135deg,#7a2420,var(--bad))}
+details{border:1px solid var(--line);border-radius:10px;background:var(--panel);
+        margin-bottom:22px}
+details>summary{padding:16px 20px;cursor:pointer;font-weight:600;font-size:16px;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"\25B8";display:inline-block;margin-right:9px;
+                        transition:transform .15s;color:var(--dim)}
+details[open]>summary::before{transform:rotate(90deg)}
+details>.body{padding:0 20px 20px}
+.warnbox{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);
+         border-radius:8px;padding:11px 16px;margin-bottom:16px;font-size:13px}
+.warnbox b{font-weight:700}
+/* Suche */
+.suchwrap{position:relative}
+.treffer{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--panel);
+         border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);
+         max-height:340px;overflow-y:auto;z-index:20}
+.treffer .zeile{padding:8px 12px;cursor:pointer;font-size:13px;display:flex;
+                 justify-content:space-between;gap:10px}
+.treffer .zeile:hover,.treffer .zeile.markiert{background:var(--accent-soft)}
+.treffer .zeile .t{color:var(--dim);font-size:11px;flex:none}
+.treffer .leer{padding:10px 12px;color:var(--dim);font-size:12.5px;line-height:1.4}
+.treffer .mehr{padding:6px 12px;color:var(--dim);font-size:11px;text-align:center}
+.ausgewaehlt{margin-top:12px;padding:10px 14px;background:var(--accent-soft);
+             border-radius:8px;font-size:13px;display:none;align-items:center;
+             justify-content:space-between;gap:10px}
+.ausgewaehlt.aktiv{display:flex}
+.ausgewaehlt .id{color:var(--dim);font-size:11px;font-family:monospace}
+/* Bauplan-Baum */
+.baum{font-size:13px}
+.baum details{border:none;background:transparent;margin:0 0 2px;border-radius:6px}
+.baum details>summary{padding:6px 8px;font-weight:400;font-size:13px;
+                       border-radius:6px;list-style:none}
+.baum details>summary:hover{background:var(--accent-soft)}
+.baum details>summary::before{margin-right:6px;font-size:11px}
+.baum .body{padding:0 0 0 22px;border-left:1px dotted var(--line);margin-left:9px}
+.baum .zeile-kaufen{color:var(--accent)}
+.baum .zeile-craften{color:var(--good)}
+.baum .zeile-verzaubern{color:var(--warn)}
+.baum .zeile-gesperrt{color:var(--bad)}
+.baum .alt{color:var(--dim);font-size:11.5px;margin-left:4px}
+.baum .badge-unvoll{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;
+                     background:var(--warn-bg);color:var(--warn);font-size:10.5px;font-weight:700}
+.baum .alter{color:var(--dim);font-size:11px;margin-left:4px}
+.baum .alter.stale{color:var(--warn);font-weight:600}
+/* Einstellungen: Gebaeude/Kategorie-Ausnahmelisten */
+.klein-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+.klein-tbl th{background:transparent;color:var(--dim);text-transform:uppercase;
+              font-size:10.5px;text-align:left;padding:4px 8px;border-bottom:1px solid var(--line)}
+.klein-tbl td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left}
+.klein-tbl td input,.klein-tbl td select{padding:4px 6px;font-size:12.5px}
+.klein-tbl tr.gebraucht{background:var(--accent-soft)}
+.klein-tbl tr.fehlt td{color:var(--bad);font-weight:600}
+.dreifach{display:flex;gap:4px}
+.dreifach button{padding:3px 8px;font-size:11px;border:1px solid var(--line);
+                  background:var(--bg);color:var(--text);border-radius:4px}
+.dreifach button.an{background:var(--accent);color:#fff;border-color:var(--accent)}
+.opts{display:flex;flex-wrap:wrap;gap:10px 18px;min-height:34px;align-items:center}
+.opts label{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;font-weight:400;
+            text-transform:none;letter-spacing:0;color:var(--text);cursor:pointer}
+.opts input[type=radio]{width:auto;margin:0}
+.konv{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+.konv .zeile{display:flex;align-items:end;gap:8px;flex-wrap:wrap;margin-top:8px}
+.konv .zeile .feld{min-height:auto;min-width:110px;flex:1}
+.konv .erg{font-size:11.5px;color:var(--dim);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Kostenrechner Lymhurst</h1>
+<div class="sub">Guenstigster Beschaffungsweg fuer ein craftbares Item auf einer Verzauberungsstufe: kaufen, craften oder hochverzaubern, ueber den ganzen Rezeptbaum.</div>
+
+<div class="panel">
+<div class="grid">
+  <div class="feld suchwrap" style="grid-column:1/span 2">
+    <label for="suche">Item</label>
+    <input type="text" id="suche" placeholder="Name eingeben, z. B. Königliche Gugel" autocomplete="off">
+    <div id="trefferListe" class="treffer" hidden></div>
+  </div>
+  <div class="feld">
+    <label for="tierFilter">Tier</label>
+    <select id="tierFilter">
+      <option value="">Alle</option>
+      <option value="1">T1</option><option value="2">T2</option><option value="3">T3</option>
+      <option value="4">T4</option><option value="5">T5</option><option value="6">T6</option>
+      <option value="7">T7</option><option value="8">T8</option>
+    </select>
+  </div>
+  <div class="feld">
+    <label for="stufe" title="Verzauberungsstufe des gesuchten Items. Bestimmt den Zielknoten, nicht nur einen Filter.">Verzauberung</label>
+    <select id="stufe">
+      <option value="0">.0</option><option value="1">.1</option><option value="2">.2</option>
+      <option value="3">.3</option><option value="4">.4</option>
+    </select>
+  </div>
+</div>
+<div id="ausgewaehlt" class="ausgewaehlt">
+  <span id="ausgewaehltText"></span>
+  <span id="ausgewaehltId" class="id"></span>
+</div>
+</div>
+
+<div class="bar">
+  <button id="berechnenBtn" disabled>Guenstigsten Weg berechnen</button>
+  <button id="refreshBtn" class="mini" disabled title="Preise unter Umgehung des Zwischenspeichers neu abrufen">Preise neu laden</button>
+  <button id="cacheBtn" class="mini" title="Lokalen Preiszwischenspeicher leeren">Cache leeren</button>
+  <span id="status"></span>
+</div>
+
+<div id="unvollstaendigHinweis" class="warnbox" hidden></div>
+
+<div class="hero leer" id="hero">Item suchen und auswaehlen, um den guenstigsten Weg zu berechnen.</div>
+
+<details id="bauplanPanel" open>
+<summary>Bauplan</summary>
+<div class="body">
+  <div class="bar" style="margin-bottom:10px">
+    <button id="alleAufBtn" class="mini">Alles aufklappen</button>
+    <button id="alleZuBtn" class="mini">Alles zuklappen</button>
+  </div>
+  <div id="bauplan" class="baum"></div>
+</div>
+</details>
+
+<details id="alleWegePanel" open>
+<summary>Alle Wege</summary>
+<div class="body">
+  <div class="tblwrap"><table id="alleWegeTabelle">
+    <thead><tr>
+      <th class="l">Weg</th><th>Silber</th><th>Fokus</th>
+      <th title="Zielwert = Silber + Fokus x Fokuswert. Danach ist der guenstigste Weg sortiert.">Zielwert</th>
+      <th class="l">Status</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div>
+</details>
+
+<div class="panel">
+<h2>Einstellungen</h2>
+
+<div class="sek">
+<div class="sek-t">Charakter &amp; Station</div>
+
+<div class="grid">
+  <div class="feld">
+    <label for="fceEingabe" title="Focus Cost Efficiency. Fokus = Grundfokus x 0,5 ^ (FCE / 10.000), s. CLAUDE.md.">Fokus-Effizienz (FCE)</label>
+    <input type="number" id="fceEingabe" value="0" step="100" min="0">
+    <div class="hint" id="fceProzentAnzeige"></div>
+  </div>
+  <div class="feld">
+    <label for="fokuswert" title="Was dir ein Fokuspunkt in Silber wert ist. Entscheidet je Craft-Schritt, ob sich Fokuseinsatz lohnt. 0 heisst Fokus ist gratis und die Rechnung waehlt bevorzugt fokusintensive Wege.">Fokuswert (Silber/Fokus)</label>
+    <input type="number" id="fokuswert" value="0" step="1" min="0">
+    <div class="hint">0 heisst Fokus kostet nichts in der Rechnung, dann gewinnen fokusintensive Wege staerker als dir vielleicht lieb ist.</div>
+  </div>
+</div>
+
+<div class="konv">
+  <div class="sek-t" style="margin-bottom:6px">FCE ableiten (setzt das Feld oben)</div>
+  <div class="zeile">
+    <div class="feld"><label for="skMeister">Meisterschaftsstufe</label><input type="number" id="skMeister" min="0" step="1" value="0"></div>
+    <div class="feld"><label for="skSpez">Spezialisierungsstufe</label><input type="number" id="skSpez" min="0" step="1" value="0"></div>
+    <button id="skUebernehmen" class="mini" type="button">Aus Schicksalsbrett uebernehmen</button>
+  </div>
+  <div class="zeile">
+    <div class="feld"><label for="abgAbgelesen" title="Der Fokuswert, den das Craft-Fenster fuer diesen Schritt tatsaechlich anzeigt.">Abgelesener Fokus</label><input type="number" id="abgAbgelesen" min="0" step="1"></div>
+    <div class="feld"><label for="abgGrundfokus" title="Der Rohfokus laut Dump fuer denselben Schritt. Erscheint automatisch, sobald ein Bauplan mit diesem Craft-Schritt berechnet wurde (im Baum unten unter dem jeweiligen Schritt sichtbar).">Grundfokus (Dump)</label><input type="number" id="abgGrundfokus" min="0" step="1"></div>
+    <button id="abgUebernehmen" class="mini" type="button">Aus abgelesenem Fokus uebernehmen</button>
+  </div>
+  <div class="erg" id="fceHerkunft"></div>
+</div>
+
+<div style="margin-top:16px">
+  <label style="margin-bottom:6px">Fokus-Effizienz-Ausnahmen je Kategorie</label>
+  <div class="hint">Leer heisst: globaler Wert oben gilt. Zeigt zuerst die Kategorien im aktuell berechneten Bauplan.</div>
+  <table class="klein-tbl" id="fceAusnahmenTabelle"><thead><tr><th>Kategorie</th><th>FCE-Ausnahme</th></tr></thead><tbody></tbody></table>
+  <button id="fceAlleZeigenBtn" class="mini" type="button" style="margin-top:8px">Alle 43 Kategorien anzeigen</button>
+</div>
+
+<div style="margin-top:16px">
+  <label style="margin-bottom:6px" title="Rotierender Tagesbonus auf die Rueckgewinnung, +10 % am Silbertag, +20 % am Goldtag. Ueber keine Schnittstelle abfragbar, deshalb Schalter statt Kalender.">Tagesbonus je Kategorie</label>
+  <div class="hint">Nur im Spiel auf der Stadtkarte ablesbar. Zeigt zuerst die Kategorien im aktuell berechneten Bauplan.</div>
+  <table class="klein-tbl" id="tagesbonusTabelle"><thead><tr><th>Kategorie</th><th>Bonus</th></tr></thead><tbody></tbody></table>
+  <button id="tagAlleZeigenBtn" class="mini" type="button" style="margin-top:8px">Alle 43 Kategorien anzeigen</button>
+</div>
+
+<div style="margin-top:16px">
+  <label style="margin-bottom:6px" title="Der Besitzer der Station setzt den Satz, er unterscheidet sich je Gebaeude und aendert sich laufend. Leer heisst nicht gepflegt, nicht 0 Silber Gebuehr.">Stationssaetze je Gebaeude</label>
+  <div class="hint">Leer lassen, wenn der Satz nicht bekannt ist, dann rechnet die App mit 0 als Untergrenze und kennzeichnet das Ergebnis als unvollstaendig. Eine ausdrueckliche 0 bedeutet echte Gebuehrenfreiheit (eigene Insel, gebuehrenfreie Gildenstation).</div>
+  <table class="klein-tbl" id="stationTabelle"><thead><tr><th>Gebaeude</th><th>Satz</th></tr></thead><tbody></tbody></table>
+</div>
+
+</div>
+
+<div class="sek">
+<div class="sek-t">Handel</div>
+<div class="grid">
+  <div class="feld">
+    <label>Einkauf</label>
+    <div class="opts">
+      <label><input type="radio" name="kaufweg" id="kwSofort" value="sofort" checked>Sofortkauf</label>
+      <label><input type="radio" name="kaufweg" id="kwOrder" value="order">Kauforder (+2,5&nbsp;% Einstellgebuehr)</label>
+    </div>
+  </div>
+  <div class="feld">
+    <label>Verkauf</label>
+    <div class="opts">
+      <label><input type="radio" name="verkaufsweg" id="vwSofort" value="sofort">Sofortverkauf</label>
+      <label><input type="radio" name="verkaufsweg" id="vwOrder" value="order" checked>Verkaufsorder (+2,5&nbsp;% Einstellgebuehr)</label>
+    </div>
+  </div>
+  <div class="feld">
+    <label for="premium">Premium</label>
+    <select id="premium"><option value="1">Ja, 4 % Steuer</option><option value="0">Nein, 8 % Steuer</option></select>
+  </div>
+</div>
+</div>
+
+<div class="sek">
+<div class="sek-t">Beschaffung</div>
+<div class="grid">
+  <div class="feld">
+    <label for="maxPreisAlter" title="Eigene Vorgabe dieser App, kein Spielwert. Aeltere Preise gelten als kein Preis mehr. Leer lassen fuer keine Grenze.">Preise hoechstens (Minuten, Vorgabe)</label>
+    <input type="number" id="maxPreisAlter" value="4320" step="60" min="0">
+    <div class="hint">Vorgabe 4.320 Min. (3 Tage), frei gewaehlt, kein belegter Spielwert. Preisalter steht im Bauplan bei jedem Kauf-Schritt.</div>
+  </div>
+</div>
+<div style="margin-top:14px">
+  <label style="margin-bottom:6px">Eigenpreise fuer nicht handelbare oder aktuell ungebotene Zutaten</label>
+  <div class="hint" id="eigenpreiseHinweis">Erscheint, sobald eine Berechnung eine Zutat ohne gueltigen Marktpreis findet.</div>
+  <table class="klein-tbl" id="eigenpreiseTabelle" hidden><thead><tr><th>Zutat</th><th>Eigenpreis (Silber/Stueck)</th></tr></thead><tbody></tbody></table>
+</div>
+</div>
+
+</div>
+
+</div>
+
+<script src="rezepte.js"></script>
+<script src="js/preise.js"></script>
+<script src="js/regeln.js"></script>
+<script src="js/rechenkern.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

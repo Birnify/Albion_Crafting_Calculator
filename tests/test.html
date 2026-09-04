@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Kostenrechner - Testsuite</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 980px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: 1.05rem; margin-top: 2rem; }
+  .zusammenfassung { font-size: 1.1rem; margin: 1rem 0; padding: 0.6rem 1rem; border-radius: 6px; }
+  .zusammenfassung.gruen { background: #dcfce7; color: #166534; }
+  .zusammenfassung.rot { background: #fee2e2; color: #991b1b; }
+  ul { list-style: none; padding: 0; }
+  li { padding: 0.3rem 0.5rem; border-bottom: 1px solid #eee; font-family: monospace; font-size: 0.85rem; }
+  li.ok { color: #166534; }
+  li.fail { color: #991b1b; font-weight: bold; }
+  .details { color: #666; font-weight: normal; }
+  button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; margin-right: 0.5rem; }
+  #liveStatus, #royalStatus { margin-top: 0.5rem; font-family: monospace; white-space: pre-wrap; }
+  #liveErgebnis td, #liveErgebnis th { padding: 0.2rem 0.6rem; text-align: right; font-family: monospace; font-size: 0.85rem; }
+  #liveErgebnis th { text-align: left; }
+  section { margin-top: 2rem; }
+  .baum { font-family: monospace; font-size: 0.85rem; }
+  .baum ul { list-style: none; padding-left: 1.2rem; border-left: 1px dotted #999; margin: 0.2rem 0; }
+  .baum li { border: none; padding: 0.1rem 0; }
+  .gesperrt { color: #991b1b; }
+  .weg-kaufen { color: #1d4ed8; }
+  .weg-craften { color: #166534; }
+  .weg-verzaubern { color: #92400e; }
+</style>
+</head>
+<body>
+<h1>Kostenrechner - Testsuite</h1>
+<p>Per Doppelklick oder ueber den lokalen Server oeffnen. Die Selbsttests (Abschnitt 1) laufen
+offline ohne Netzzugriff. Die Live-Abschnitte (2 und 3) brauchen Netzzugriff und funktionieren
+am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per <code>file://</code>.</p>
+
+<h2>1. Selbsttests (offline)</h2>
+<div id="zusammenfassung" class="zusammenfassung">wird geladen ...</div>
+<ul id="ergebnisse"></ul>
+
+<section>
+  <h2>2. Live-Test: Koenigliche Gugel .3 laden (P2-Abnahme)</h2>
+  <p>Laedt den vollstaendigen Baum von <code>T4_HEAD_CLOTH_ROYAL@3</code>, prueft auf
+  429-Abbrueche und zeigt die Preise der verzauberten Rohstoffe zur Gegenprobe.</p>
+  <button id="liveBtn">Live-Test starten</button>
+  <button id="cacheBtn">Cache leeren</button>
+  <div id="liveStatus"></div>
+  <table id="liveErgebnis"></table>
+</section>
+
+<section>
+  <h2>3. Plausibilitaetslauf: guenstigster Weg fuer die Koenigliche Gugel .3</h2>
+  <p>Kein harter Test (die Marktpreise aendern sich staendig), sondern eine Gegenprobe des
+  ganzen Rechenkerns mit echten, live abgerufenen Preisen. Stationssaetze und Fokuswert unten
+  sind Platzhalter (P5 macht sie einstellbar); am 04.09.2026 war <code>T4_HEAD_CLOTH_ROYAL@3</code>
+  gar nicht fertig kaufbar, <code>T4_HEAD_CLOTH_ROYAL@0</code> kostete 128.986, das Koenigliche
+  Siegel 59.945, die Gelehrtengugel .0 1.831 - der Weg mit den aktuellen Preisen unten sollte
+  also plausibel im selben Groessenbereich liegen, nicht zwingend identisch.</p>
+  <button id="royalBtn">Guenstigsten Weg berechnen</button>
+  <div id="royalStatus"></div>
+  <div id="royalBaum" class="baum"></div>
+</section>
+
+<script src="../rezepte.js"></script>
+<script src="../js/preise.js"></script>
+<script src="../js/regeln.js"></script>
+<script src="../js/rechenkern.js"></script>
+<script src="../js/ui.js"></script>
+<script>
+  "use strict";
+
+  // -----------------------------------------------------------------------
+  // Testrahmen
+  // -----------------------------------------------------------------------
+  const alleTests = [];
+  function pruefe(name, ok, details) {
+    alleTests.push({ name, ok: !!ok, details: details == null ? "" : String(details) });
+  }
+  function nahe(a, b, toleranz) {
+    return typeof a === "number" && !isNaN(a) && Math.abs(a - b) <= (toleranz == null ? 0.5 : toleranz);
+  }
+
+  // ---- js/preise.js ----
+  PREISE.selbsttest().forEach((e) => pruefe("preise: " + e.name, e.ok, e.details));
+
+  // ---- js/regeln.js ----
+  REGELN.selbsttest().forEach((e) => pruefe("regeln: " + e.name, e.ok, e.details));
+
+  // ---- js/rechenkern.js: Kein Preis => Weg gesperrt, NIEMALS Kosten 0 ----
+  (function () {
+    const r = RECHENKERN.kosten("T4_HEAD_CLOTH_ROYAL", 3, 1, { preise: {} });
+    const kaufWeg = r.alleWege.find((w) => w.typ === "kaufen");
+    pruefe(
+      "rechenkern: KAUFEN ohne hinterlegten Preis ist gesperrt, nicht Kosten 0",
+      kaufWeg && kaufWeg.gesperrt === true && kaufWeg.silber === null,
+      JSON.stringify(kaufWeg && { gesperrt: kaufWeg.gesperrt, silber: kaufWeg.silber })
+    );
+    pruefe(
+      "rechenkern: ganzer Baum ohne jeden Preis ist gesperrt, nicht Kosten 0",
+      r.gesperrt === true && r.silber === null,
+      JSON.stringify({ gesperrt: r.gesperrt, silber: r.silber })
+    );
+  })();
+
+  // ---- rechenkern: Koenigliche Gugel - keine craftingcategory -> RRR 0, Fokus 0; m:0 zusaetzlich ----
+  (function () {
+    const preise = {
+      "T4_HEAD_CLOTH_SET1@3": { sell: { preis: 1000000, kein: false }, buy: { preis: 0, kein: true } },
+      QUESTITEM_TOKEN_ROYAL_T4: { sell: { preis: 59945, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const r = RECHENKERN.kosten("T4_HEAD_CLOTH_ROYAL", 3, 1, { preise, stationssaetze: { Magierturm: 380, Weber: 380 }, fokuswert: 10 });
+    const craftWeg = r.alleWege.find((w) => w.typ === "craften" && !w.gesperrt);
+    pruefe(
+      "rechenkern: Koenigliche Gugel hat keine craftingcategory -> Fokus 0 beim Craften",
+      craftWeg && craftWeg.fokus === 0,
+      craftWeg ? craftWeg.fokus : "kein gueltiger Craft-Weg gefunden"
+    );
+    pruefe(
+      "rechenkern: Koenigliche Gugel -> Stationsgebuehr 0 (kein Gebaeude ohne craftingcategory)",
+      craftWeg && craftWeg.weg.stationsgebuehrJeStueck === 0,
+      craftWeg ? craftWeg.weg.stationsgebuehrJeStueck : "-"
+    );
+    const zutatMitM0 = craftWeg && craftWeg.weg.zutaten.find((z) => z.item === "T4_HEAD_CLOTH_SET1");
+    pruefe(
+      "rechenkern: Zutat mit maxreturnamount 0 hat ruecklaufAnteil 0",
+      zutatMitM0 && zutatMitM0.ruecklaufAnteil === 0 && zutatMitM0.ruecklaufAusgeschlossen === true,
+      zutatMitM0 ? JSON.stringify({ ruecklaufAnteil: zutatMitM0.ruecklaufAnteil, ausgeschlossen: zutatMitM0.ruecklaufAusgeschlossen }) : "-"
+    );
+  })();
+
+  // ---- rechenkern: Preis 0, Eigenpreis 0 und zu alter Preis sind KEIN gueltiger
+  // Kaufpreis, sondern gesperrt (Befund 1 und 2 von rechenkern-pruefer, P3) ----
+  (function () {
+    const preisNull = {
+      T_PREIS_NULL: { sell: { preis: 0, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const rPreisNull = RECHENKERN.kosten("T_PREIS_NULL", 0, 1, { preise: preisNull });
+    pruefe(
+      "rechenkern: Preis genau 0 gilt als kein Preis, nicht als kostenloses Angebot",
+      rPreisNull.gesperrt === true && rPreisNull.silber === null,
+      JSON.stringify({ gesperrt: rPreisNull.gesperrt, silber: rPreisNull.silber })
+    );
+
+    const rEigenpreisNull = RECHENKERN.kosten("T_EIGENPREIS_NULL", 0, 1, { preise: {}, eigenpreise: { T_EIGENPREIS_NULL: 0 } });
+    pruefe(
+      "rechenkern: Eigenpreis 0 gilt als kein Preis, nicht als kostenloses Angebot",
+      rEigenpreisNull.gesperrt === true && rEigenpreisNull.silber === null,
+      JSON.stringify({ gesperrt: rEigenpreisNull.gesperrt, silber: rEigenpreisNull.silber })
+    );
+
+    pruefe(
+      "preise: eigenpreisSetzen(id, 0) speichert keinen Eintrag mehr (loescht wie null)",
+      (function () {
+        const testId = "__test_eigenpreis_null__";
+        PREISE.eigenpreisSetzen(testId, 5); // erst einen echten Wert setzen
+        PREISE.eigenpreisSetzen(testId, 0); // dann mit 0 ueberschreiben
+        const wert = PREISE.eigenpreisHolen(testId);
+        PREISE.eigenpreisEntfernen(testId); // aufraeumen
+        return wert === null;
+      })()
+    );
+
+    const vorZweiTagen = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    const preisAlt = {
+      T_PREIS_ALT: { sell: { preis: 100, kein: false, datum: vorZweiTagen }, buy: { preis: 0, kein: true } },
+    };
+    const rAlt = RECHENKERN.kosten("T_PREIS_ALT", 0, 1, { preise: preisAlt, maxPreisAlterMin: 60 });
+    pruefe(
+      "rechenkern: Preis aelter als maxPreisAlterMin gilt als kein Preis",
+      rAlt.gesperrt === true && rAlt.silber === null,
+      JSON.stringify({ gesperrt: rAlt.gesperrt, silber: rAlt.silber, grund: rAlt.grund })
+    );
+    const rAltOhneGrenze = RECHENKERN.kosten("T_PREIS_ALT", 0, 1, { preise: preisAlt });
+    pruefe(
+      "rechenkern: derselbe alte Preis ist gueltig, wenn keine Hoechstgrenze gesetzt ist",
+      rAltOhneGrenze.gesperrt === false && rAltOhneGrenze.silber === 100,
+      JSON.stringify({ gesperrt: rAltOhneGrenze.gesperrt, silber: rAltOhneGrenze.silber })
+    );
+    const rAltInnerhalbGrenze = RECHENKERN.kosten("T_PREIS_ALT", 0, 1, { preise: preisAlt, maxPreisAlterMin: 60 * 24 * 7 });
+    pruefe(
+      "rechenkern: 2 Tage alter Preis ist gueltig, wenn die Hoechstgrenze 7 Tage betraegt",
+      rAltInnerhalbGrenze.gesperrt === false && rAltInnerhalbGrenze.silber === 100,
+      JSON.stringify({ gesperrt: rAltInnerhalbGrenze.gesperrt, silber: rAltInnerhalbGrenze.silber })
+    );
+  })();
+
+  // ---- rechenkern: Veredelte Rohstoffe (el-Knoten) bekommen einen Craft-Weg,
+  // nicht nur kaufen. Regression fuer den v0.3.1-Fund von rechenkern-pruefer:
+  // eine fruehere Fassung nahm bei stufe>0 blind den Ausruestungs-Zweig
+  // (node.e[...]) und fand dort bei el-Knoten (kein e-Feld) nie ein Rezept -
+  // der Craft-Weg fuer alle 299 el-Knoten (verzauberte Stoffe, Leder,
+  // Bretter, Barren, Steinbloecke) fehlte dadurch vollstaendig. ----
+  (function () {
+    pruefe(
+      "REGELN.rezepteFuerStufe: el-Knoten T4_CLOTH_LEVEL3 (el=3) liefert bei stufe 3 sein Rezept",
+      REGELN.rezepteFuerStufe(REZEPTGRAPH.items["T4_CLOTH_LEVEL3"], 3).length > 0
+    );
+    pruefe(
+      "REGELN.rezepteFuerStufe: derselbe el-Knoten liefert bei stufe 0 KEIN Rezept (nicht sein .3-Rezept als .0 ausgeben)",
+      REGELN.rezepteFuerStufe(REZEPTGRAPH.items["T4_CLOTH_LEVEL3"], 0).length === 0
+    );
+
+    const preise = {
+      "T4_CLOTH_LEVEL3@3": { sell: { preis: 999999, kein: false }, buy: { preis: 0, kein: true } },
+      "T4_FIBER_LEVEL3@3": { sell: { preis: 100, kein: false }, buy: { preis: 0, kein: true } },
+      T3_CLOTH: { sell: { preis: 50, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const r = RECHENKERN.kosten("T4_CLOTH_LEVEL3", 3, 1, { preise, stationssaetze: { Weber: 380 }, stadt: "Lymhurst", fokuswert: 5 });
+    const craftWege = r.alleWege.filter((w) => w.typ === "craften" && !w.gesperrt);
+    pruefe(
+      "rechenkern: kosten(T4_CLOTH_LEVEL3, 3, ...) liefert mehr als nur kaufen, darunter mindestens einen Craft-Weg",
+      r.alleWege.length > 1 && craftWege.length > 0,
+      "alleWege: " + r.alleWege.map((w) => w.typ + (w.gesperrt ? "(gesperrt)" : "")).join(", ")
+    );
+    pruefe(
+      "rechenkern: Craft-Weg von T4_CLOTH_LEVEL3@3 verwendet T4_FIBER_LEVEL3 als Zutat (aus node.r, nicht leer)",
+      craftWege.length > 0 && craftWege[0].weg.zutaten.some((z) => z.item === "T4_FIBER_LEVEL3"),
+      craftWege.length > 0 ? JSON.stringify(craftWege[0].weg.zutaten.map((z) => z.item)) : "-"
+    );
+
+    const rStufe0 = RECHENKERN.kosten("T4_CLOTH_LEVEL3", 0, 1, { preise: {} });
+    const craftWegeStufe0 = rStufe0.alleWege.filter((w) => w.typ === "craften" && !w.gesperrt);
+    pruefe(
+      "rechenkern: T4_CLOTH_LEVEL3 mit stufe 0 angefragt liefert KEINEN Craft-Weg aus dem .3-Rezept (nur kaufen als moegliche Wegart)",
+      craftWegeStufe0.length === 0 && rStufe0.alleWege.every((w) => w.typ === "kaufen"),
+      "alleWege: " + rStufe0.alleWege.map((w) => w.typ).join(", ")
+    );
+  })();
+
+  // ---- rechenkern: Regressionstest mit festen Preisen, bei dem das
+  // Selbstveredeln eines el-Knotens gegenueber dem Kaufen gewinnt (damit die
+  // Rezeptsuche nicht unbemerkt wieder wegbrechen kann) ----
+  (function () {
+    const testGraph = {
+      items: {
+        F: { iv: 5, t: 1 },
+        X_LEVEL2: { t: 4, cc: "fiber", el: 2, ivd: true, r: [{ f: 50, i: [{ n: "F", c: 5 }] }] },
+      },
+    };
+    const opts = {
+      graph: testGraph,
+      preise: {
+        F: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } },
+        "X_LEVEL2@2": { sell: { preis: 100, kein: false }, buy: { preis: 0, kein: true } },
+      },
+      stationssaetze: { Weber: 100 },
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 2,
+    };
+    // Handrechnung: itemWert(X_LEVEL2) = 5*5 = 25, Stationsgebuehr = 25*0,1125 = 2,8125.
+    // RRR ohne Fokus (fiber, Lymhurst-Veredelungsbonus 0,40) = 0,58/1,58 = 36,7 %.
+    // Silber Selbstveredeln = 5*5*(1-0,367089) + 2,8125 = 18,6353, klar unter dem
+    // Kaufpreis 100 - Craften muss gewinnen.
+    const r = RECHENKERN.kosten("X_LEVEL2", 2, 1, opts);
+    pruefe("rechenkern Veredelungs-Regression: nicht gesperrt", !r.gesperrt, r.grund);
+    pruefe("rechenkern Veredelungs-Regression: Craften gewinnt gegen Kaufen (100)", r.weg.typ === "craften", r.weg.typ);
+    pruefe(
+      "rechenkern Veredelungs-Regression: Silber ~ 18,64 (deutlich unter dem Kaufpreis 100)",
+      nahe(r.silber, 18.6353, 0.01),
+      r.silber
+    );
+  })();
+
+  // ---- rechenkern: Stoffhelm bekommt in Lymhurst keinen Craft-Bonus, fiber +0,40 (schon in REGELN geprueft, hier zusaetzlich am echten Rezept) ----
+  (function () {
+    pruefe(
+      "rechenkern: T4_HEAD_CLOTH_SET1 (Stoffhelm) hat craftingcategory cloth_helmet",
+      REZEPTGRAPH.items["T4_HEAD_CLOTH_SET1"].cc === "cloth_helmet"
+    );
+    pruefe(
+      "rechenkern: cloth_helmet bekommt in Lymhurst keinen Craft-Bonus (das waere Thetford)",
+      !REGELN.hatCraftBonus("cloth_helmet", "Lymhurst")
+    );
+  })();
+
+  // ---- rechenkern: von Hand nachgerechneter Vollfall ueber zwei Ebenen ----
+  (function () {
+    const testGraph = {
+      items: {
+        R: { iv: 10, t: 1 },
+        M: { t: 4, cc: "fiber", ivd: true, r: [{ a: 2, f: 100, i: [{ n: "R", c: 4 }] }] },
+        T: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ a: 1, f: 50, i: [{ n: "M", c: 3 }] }] },
+      },
+    };
+    // Handrechnung (auch als Node-Skript im Scratchpad gegengeprueft):
+    //   itemWert(M) = 4*10/2 = 20, Stationsgebuehr(M) = 20*0,1125*100/100 = 2,25
+    //   itemWert(T) = 3*20/1 = 60, Stationsgebuehr(T) = 60*0,1125*200/100 = 13,5
+    //   RRR(M) Lymhurst+fiber ohne Fokus = 0,58/1,58 = 36,7 %  (Veredelungsbonus)
+    //   RRR(T) Lymhurst, cloth_helmet ohne Fokus = 0,18/1,18 = 15,3 % (kein Stadtbonus)
+    //   silber(M) ohne Fokus = 5*2*(1-0,367088) + 2,25 = 8,579114
+    //   silber(T) ohne Fokus = 8,579114*3*(1-0,152542) + 13,5 = 35,311307
+    //   Fokus lohnt sich auf keiner der beiden Ebenen (Zielwert waere hoeher).
+    const opts = {
+      graph: testGraph,
+      preise: { R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+      stationssaetze: { Weber: 100, Magierturm: 200 },
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 2,
+    };
+    const r = RECHENKERN.kosten("T", 0, 1, opts);
+    pruefe("rechenkern Vollfall: nicht gesperrt", !r.gesperrt, r.grund);
+    pruefe("rechenkern Vollfall: Silber ~ 35,3113", nahe(r.silber, 35.3113065865694, 0.001), r.silber);
+    pruefe("rechenkern Vollfall: Fokus = 0 (lohnt sich hier nicht)", nahe(r.fokus, 0, 1e-9), r.fokus);
+    pruefe(
+      "rechenkern Vollfall: Bauplan zeigt craften(T) -> craften(M) -> kaufen(R)",
+      r.weg.typ === "craften" &&
+        r.weg.zutaten[0].item === "M" &&
+        r.weg.zutaten[0].weg.typ === "craften" &&
+        r.weg.zutaten[0].weg.zutaten[0].item === "R" &&
+        r.weg.zutaten[0].weg.zutaten[0].weg.typ === "kaufen",
+      JSON.stringify(r.weg).slice(0, 200)
+    );
+  })();
+
+  // ---- rechenkern: Rekursion terminiert bei kuenstlich eingebautem Zyklus ----
+  (function () {
+    const zyklusGraph = {
+      items: {
+        A: { t: 4, r: [{ i: [{ n: "B", c: 1 }] }] },
+        B: { t: 4, r: [{ i: [{ n: "A", c: 1 }] }] },
+      },
+    };
+    const start = performance.now();
+    let ergebnis, warf = false, fehler = null;
+    try {
+      ergebnis = RECHENKERN.kosten("A", 0, 1, { graph: zyklusGraph, preise: {}, maxTiefe: 40 });
+    } catch (e) {
+      warf = true;
+      fehler = e;
+    }
+    const dauer = performance.now() - start;
+    pruefe("rechenkern Zyklus: kein Absturz/Exception", !warf, fehler ? String(fehler) : "");
+    pruefe("rechenkern Zyklus: terminiert schnell (< 1000ms)", dauer < 1000, dauer.toFixed(1) + "ms");
+    pruefe(
+      "rechenkern Zyklus: Ergebnis ist gesperrt (kein Kaufpreis, kein Ausweg)",
+      ergebnis && ergebnis.gesperrt === true,
+      ergebnis ? JSON.stringify({ gesperrt: ergebnis.gesperrt, silber: ergebnis.silber }) : "-"
+    );
+  })();
+
+  // ---- rechenkern (P5-Nacharbeit): fehlender Stationssatz ist eine
+  // FEHLENDE Angabe, nicht 0 Silber Gebuehr. Ausdruecklich auf 0 gesetzt
+  // bleibt gueltig (Gebuehrenfreiheit, z.B. eigene Insel). Faelle gefunden
+  // vom Nutzer selbst (nicht vom Pruefer): ein pauschales stationssaetze[g]
+  // || 0 macht leer und 0 ununterscheidbar und rechnet still zu billig,
+  // derselbe Fehlertyp wie ein Marktpreis von 0 (rechenkern-pruefer, P3). ----
+  (function () {
+    const testGraph = {
+      items: {
+        R: { iv: 10, t: 1 },
+        M: { t: 4, cc: "fiber", ivd: true, r: [{ a: 2, f: 100, i: [{ n: "R", c: 4 }] }] },
+      },
+    };
+    const basisOpts = {
+      graph: testGraph,
+      preise: { R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 0,
+    };
+
+    const rFehlt = RECHENKERN.kosten("M", 0, 1, Object.assign({}, basisOpts, { stationssaetze: {} }));
+    pruefe(
+      "rechenkern: Weber-Satz fehlt (kein Schluessel) -> unvollstaendig true, fehlendeGebaeude enthaelt Weber",
+      rFehlt.unvollstaendig === true && rFehlt.fehlendeGebaeude.indexOf("Weber") !== -1,
+      JSON.stringify({ unvollstaendig: rFehlt.unvollstaendig, fehlendeGebaeude: rFehlt.fehlendeGebaeude })
+    );
+    pruefe(
+      "rechenkern: bei fehlendem Satz wird trotzdem gerechnet (Untergrenze), nicht gesperrt",
+      rFehlt.gesperrt === false && nahe(rFehlt.weg.stationsgebuehrJeStueck, 0, 1e-9)
+    );
+
+    const rNull = RECHENKERN.kosten("M", 0, 1, Object.assign({}, basisOpts, { stationssaetze: { Weber: 0 } }));
+    pruefe(
+      "rechenkern: Weber-Satz ausdruecklich 0 -> unvollstaendig false (gueltige Gebuehrenfreiheit, kein Fehlen)",
+      rNull.unvollstaendig === false && rNull.fehlendeGebaeude.length === 0 && rNull.weg.gebaeudeGepflegt === true,
+      JSON.stringify({ unvollstaendig: rNull.unvollstaendig, gebaeudeGepflegt: rNull.weg.gebaeudeGepflegt })
+    );
+    pruefe(
+      "rechenkern: leer und ausdruecklich 0 ergeben dasselbe Silber (beide 0 Gebuehr), aber unterschiedliche unvollstaendig-Kennzeichnung",
+      nahe(rFehlt.silber, rNull.silber, 1e-9) && rFehlt.unvollstaendig !== rNull.unvollstaendig,
+      JSON.stringify({ silberFehlt: rFehlt.silber, silberNull: rNull.silber })
+    );
+
+    const rGesetzt = RECHENKERN.kosten("M", 0, 1, Object.assign({}, basisOpts, { stationssaetze: { Weber: 100 } }));
+    pruefe(
+      "rechenkern: Weber-Satz 100 gesetzt -> unvollstaendig false, Stationsgebuehr > 0",
+      rGesetzt.unvollstaendig === false && rGesetzt.weg.stationsgebuehrJeStueck > 0,
+      String(rGesetzt.weg.stationsgebuehrJeStueck)
+    );
+
+    // Regression rechenkern-pruefer (P5-Nacharbeit, Befund 1+2): ein
+    // unsinniger Satz (negativ, leerer String, NaN) darf NIE als gepflegt
+    // durchgehen, sonst kann eine negative Gebuehr die Rechnung unter die
+    // gewollte Untergrenze druecken, waehrend die Warnung verschwindet.
+    const rNegativ = RECHENKERN.kosten("M", 0, 1, Object.assign({}, basisOpts, { stationssaetze: { Weber: -380 } }));
+    pruefe(
+      "rechenkern: negativer Stationssatz gilt als NICHT gepflegt, keine negative Gebuehr, unvollstaendig bleibt true",
+      rNegativ.unvollstaendig === true && rNegativ.weg.stationsgebuehrJeStueck === 0 && nahe(rNegativ.silber, rFehlt.silber, 1e-9),
+      JSON.stringify({ unvollstaendig: rNegativ.unvollstaendig, gebuehr: rNegativ.weg.stationsgebuehrJeStueck, silber: rNegativ.silber })
+    );
+    const rLeererString = RECHENKERN.kosten("M", 0, 1, Object.assign({}, basisOpts, { stationssaetze: { Weber: "" } }));
+    pruefe(
+      "rechenkern: leerer String als Stationssatz gilt als NICHT gepflegt (nicht als 0-Zahl missverstanden)",
+      rLeererString.unvollstaendig === true,
+      JSON.stringify({ unvollstaendig: rLeererString.unvollstaendig })
+    );
+    const rNaN = RECHENKERN.kosten("M", 0, 1, Object.assign({}, basisOpts, { stationssaetze: { Weber: NaN } }));
+    pruefe(
+      "rechenkern: NaN als Stationssatz gilt als NICHT gepflegt",
+      rNaN.unvollstaendig === true,
+      JSON.stringify({ unvollstaendig: rNaN.unvollstaendig })
+    );
+    const rStringNull = RECHENKERN.kosten("M", 0, 1, Object.assign({}, basisOpts, { stationssaetze: { Weber: "0" } }));
+    pruefe(
+      "rechenkern: String '0' als Stationssatz gilt als gueltige, gepflegte 0 (numerisch normalisiert, kein String im weg-Objekt)",
+      rStringNull.unvollstaendig === false && rStringNull.weg.stationssatz === 0 && typeof rStringNull.weg.stationssatz === "number",
+      JSON.stringify({ unvollstaendig: rStringNull.unvollstaendig, stationssatz: rStringNull.weg.stationssatz, typ: typeof rStringNull.weg.stationssatz })
+    );
+
+    // Propagation ueber zwei Ebenen: nur das TIEFERE Gebaeude fehlt.
+    const testGraph2 = {
+      items: {
+        R: { iv: 10, t: 1 },
+        M: { t: 4, cc: "fiber", ivd: true, r: [{ a: 2, f: 100, i: [{ n: "R", c: 4 }] }] },
+        T: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ a: 1, f: 50, i: [{ n: "M", c: 3 }] }] },
+      },
+    };
+    const rProp = RECHENKERN.kosten("T", 0, 1, {
+      graph: testGraph2,
+      preise: { R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+      stationssaetze: { Magierturm: 200 }, // Weber fehlt bewusst
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 0,
+    });
+    pruefe(
+      "rechenkern: fehlender Stationssatz einer Zutat (Weber bei M) wird zum Elternknoten (T) hochgereicht",
+      rProp.unvollstaendig === true && rProp.fehlendeGebaeude.indexOf("Weber") !== -1 && rProp.fehlendeGebaeude.indexOf("Magierturm") === -1,
+      JSON.stringify(rProp.fehlendeGebaeude)
+    );
+    pruefe(
+      "rechenkern: grundfokus im Bauplan zeigt den Rohfokus aus dem Rezept (T: 50)",
+      rProp.weg.grundfokus === 50,
+      String(rProp.weg.grundfokus)
+    );
+
+    // knotenAlternativen: je besuchtem Knoten verfuegbar, nicht nur an der Wurzel.
+    pruefe(
+      "rechenkern: knotenAlternativen enthaelt die Wurzel T@0",
+      Array.isArray(rProp.knotenAlternativen["T@0"]) && rProp.knotenAlternativen["T@0"].length > 0
+    );
+    pruefe(
+      "rechenkern: knotenAlternativen enthaelt auch den inneren Knoten M@0, nicht nur die Wurzel",
+      Array.isArray(rProp.knotenAlternativen["M@0"]) && rProp.knotenAlternativen["M@0"].length > 0
+    );
+    pruefe(
+      "rechenkern: knotenAlternativen fuer den Blattknoten R@0 enthaelt den Kauf-Kandidaten",
+      Array.isArray(rProp.knotenAlternativen["R@0"]) && rProp.knotenAlternativen["R@0"].some((k) => k.typ === "kaufen")
+    );
+  })();
+
+  // ---- ui.js: reine Hilfsfunktionen (P5). Nur die pruefbaren Teile, die
+  // DOM-Verdrahtung in UI.boot() bricht auf dieser Seite fruehzeitig ab
+  // (kein #suche-Element), das ist gewollt und wird hier mitgeprueft. ----
+  //
+  // Nicht als Unit-Test erfasst, weil innerhalb von boot() gekapselt und nicht
+  // exportiert (kein DOM auf dieser Seite, das App-Markup fehlt absichtlich):
+  //   - alterFuerMarktId() (Befund 3, oberflaechen-pruefer P5-Nacharbeit):
+  //     verwendet jetzt dasselbe API-Marktdatum wie preisMitGrund() in
+  //     rechenkern.js statt PREISE.eintragAlterMinuten() (Cache-Abrufzeit).
+  //     Im echten Browser mit kuenstlich gealterten Marktdaten verifiziert,
+  //     s. Abschluss-Zusammenfassung des Orchestrator-Laufs.
+  //   - Tastaturbedienung der Trefferliste (Befund 1) und das Anfrage-Token
+  //     gegen die Race Condition beim schnellen Item-Wechsel (Befund 4):
+  //     beide ebenfalls im echten Browser nachgestellt und verifiziert, nicht
+  //     hier als Unit-Test, weil sie echte Tastatur-/Timing-Interaktion
+  //     brauchen statt reiner Funktionsaufrufe.
+  (function () {
+    pruefe("ui: Modul UI existiert und die DOM-Verdrahtung ist auf dieser Seite ohne App-Markup unschaedlich (kein Wurf)", typeof UI === "object");
+
+    pruefe(
+      "ui: fceAusSchicksalsbrett(34, 0) = 1.020 (Meisterschaft x 30)",
+      UI.fceAusSchicksalsbrett(34, 0) === 1020,
+      String(UI.fceAusSchicksalsbrett(34, 0))
+    );
+    pruefe(
+      "ui: fceAusSchicksalsbrett(0, 4) = 1.000 (Spezialisierung x 250)",
+      UI.fceAusSchicksalsbrett(0, 4) === 1000,
+      String(UI.fceAusSchicksalsbrett(0, 4))
+    );
+
+    pruefe("ui: prozentAusFce(0) = 100 % (voller Rohfokus)", nahe(UI.prozentAusFce(0), 100, 0.01));
+    pruefe(
+      "ui: prozentAusFce(1022) rekonstruiert die abgelesenen 2.192/2.353 aus CLAUDE.md (93,16 %)",
+      nahe(UI.prozentAusFce(1022), 93.16, 0.05),
+      String(UI.prozentAusFce(1022))
+    );
+
+    pruefe(
+      "ui: eigenpreisKoenntHelfen bei 'kein Preis fuer X ... und kein Eigenpreis hinterlegt' -> true",
+      UI.eigenpreisKoenntHelfen("kein Preis fuer X (sofort) und kein Eigenpreis hinterlegt") === true
+    );
+    pruefe(
+      "ui: eigenpreisKoenntHelfen bei 'ist 120 Minuten alt, ueber der Hoechstgrenze' -> false (Eigenpreis haette hier keine Wirkung, s. preisMitGrund)",
+      UI.eigenpreisKoenntHelfen("Preis fuer X ist 120 Minuten alt, ueber der Hoechstgrenze von 60 Minuten") === false
+    );
+
+    // sammleVerwendeteKategorien/-Gebaeude anhand des echten Vollfall-Baums oben.
+    const testGraph = {
+      items: {
+        R: { iv: 10, t: 1 },
+        M: { t: 4, cc: "fiber", ivd: true, r: [{ a: 2, f: 100, i: [{ n: "R", c: 4 }] }] },
+        T: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ a: 1, f: 50, i: [{ n: "M", c: 3 }] }] },
+      },
+    };
+    const rFuerUi = RECHENKERN.kosten("T", 0, 1, {
+      graph: testGraph,
+      preise: { R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+      stationssaetze: { Weber: 100, Magierturm: 200 },
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 2,
+    });
+    const kategorien = UI.sammleVerwendeteKategorien(rFuerUi.weg);
+    pruefe(
+      "ui: sammleVerwendeteKategorien findet fiber (M) und cloth_helmet (T) im Bauplan",
+      kategorien.indexOf("fiber") !== -1 && kategorien.indexOf("cloth_helmet") !== -1,
+      JSON.stringify(kategorien)
+    );
+    const gebaeudeListe = UI.sammleVerwendeteGebaeude(rFuerUi.weg);
+    pruefe(
+      "ui: sammleVerwendeteGebaeude findet Weber (fiber) und Magierturm (cloth_helmet)",
+      gebaeudeListe.indexOf("Weber") !== -1 && gebaeudeListe.indexOf("Magierturm") !== -1,
+      JSON.stringify(gebaeudeListe)
+    );
+
+    const altT = UI.naechstbesteAlternative(rFuerUi.knotenAlternativen, "T", 0);
+    pruefe(
+      "ui: naechstbesteAlternative fuer T@0 liefert einen zweiten Kandidaten (mind. mit/ohne Fokus desselben Rezepts)",
+      altT !== null,
+      JSON.stringify(altT && { typ: altT.typ, gesperrt: altT.gesperrt })
+    );
+
+    const fehlendePreise = UI.sammleFehlendePreise(RECHENKERN.kosten("M", 0, 1, { graph: testGraph, preise: {}, stationssaetze: { Weber: 100 } }));
+    pruefe(
+      "ui: sammleFehlendePreise findet R (kein Marktpreis hinterlegt) im Baum von M",
+      fehlendePreise.some((f) => f.marktId === "R"),
+      JSON.stringify(fehlendePreise)
+    );
+  })();
+
+  // -----------------------------------------------------------------------
+  // Anzeige der Selbsttests
+  // -----------------------------------------------------------------------
+  function renderErgebnisse(ergebnisse) {
+    const liste = document.getElementById("ergebnisse");
+    liste.innerHTML = "";
+    let ok = 0;
+    ergebnisse.forEach((e) => {
+      const li = document.createElement("li");
+      li.className = e.ok ? "ok" : "fail";
+      li.textContent = (e.ok ? "[OK] " : "[FEHLER] ") + e.name;
+      if (e.details) {
+        const span = document.createElement("span");
+        span.className = "details";
+        span.textContent = "  (" + e.details + ")";
+        li.appendChild(span);
+      }
+      liste.appendChild(li);
+      if (e.ok) ok++;
+    });
+    const zsf = document.getElementById("zusammenfassung");
+    zsf.textContent = `${ok}/${ergebnisse.length} Tests gruen`;
+    zsf.className = "zusammenfassung " + (ok === ergebnisse.length ? "gruen" : "rot");
+  }
+  renderErgebnisse(alleTests);
+
+  // -----------------------------------------------------------------------
+  // Abschnitt 2: Live-Test aus P2 (unveraendert uebernommen)
+  // -----------------------------------------------------------------------
+  document.getElementById("cacheBtn").addEventListener("click", () => {
+    PREISE.preisCacheLeeren();
+    document.getElementById("liveStatus").textContent = "Cache geleert.";
+  });
+
+  document.getElementById("liveBtn").addEventListener("click", async () => {
+    const status = document.getElementById("liveStatus");
+    const tabelle = document.getElementById("liveErgebnis");
+    tabelle.innerHTML = "";
+    status.textContent = "Sammle Markt-IDs ...";
+    const start = performance.now();
+    try {
+      const ids = PREISE.sammleMarktIds("T4_HEAD_CLOTH_ROYAL", 3);
+      status.textContent = `${ids.length} Markt-IDs eingesammelt. Rufe Preise ab ...`;
+      const ergebnis = await PREISE.preiseAbrufen(ids, {
+        aufFortschritt: (erledigt, gesamt) => {
+          status.textContent = `Preise abgerufen: ${erledigt}/${gesamt}`;
+        },
+      });
+      const dauer = ((performance.now() - start) / 1000).toFixed(1);
+
+      let fehlend = 0, keinAngebot = 0, vorhanden = 0;
+      Object.values(ergebnis).forEach((e) => {
+        if (!e) { fehlend++; return; }
+        const hatPreis = (e.sell && !e.sell.kein) || (e.buy && !e.buy.kein);
+        if (hatPreis) vorhanden++; else keinAngebot++;
+      });
+      status.textContent =
+        `Fertig in ${dauer}s. ${ids.length} IDs, ` +
+        `${vorhanden} mit Preis, ${keinAngebot} kein Angebot, ${fehlend} nie abgefragt. ` +
+        `Kein 429-Abbruch, sonst waere hier ein Fehler geworfen worden.`;
+
+      const belegIds = ids.filter((id) => id.includes("@") && !id.startsWith("T4_HEAD_CLOTH_ROYAL"));
+      const kopf = "<tr><th>Markt-ID</th><th>Sofortkauf</th><th>Kauforder</th><th>Alter (min)</th></tr>";
+      const zeilen = belegIds
+        .map((id) => {
+          const e = ergebnis[id];
+          if (!e) return `<tr><td>${id}</td><td colspan="3">nie abgefragt</td></tr>`;
+          const alter = PREISE.eintragAlterMinuten(e);
+          return `<tr><td>${id}</td><td>${e.sell.kein ? "-" : e.sell.preis}</td>` +
+                 `<td>${e.buy.kein ? "-" : e.buy.preis}</td><td>${alter !== null ? alter.toFixed(1) : "-"}</td></tr>`;
+        })
+        .join("");
+      tabelle.innerHTML = kopf + zeilen;
+    } catch (err) {
+      status.textContent = "FEHLER: " + err.message;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Abschnitt 3: Plausibilitaetslauf mit dem Rechenkern
+  // -----------------------------------------------------------------------
+  function preiseZuOptsFormat(preise) {
+    const out = {};
+    Object.keys(preise).forEach((id) => {
+      const e = preise[id];
+      out[id] = e ? { sell: e.sell, buy: e.buy } : { sell: { kein: true }, buy: { kein: true } };
+    });
+    return out;
+  }
+
+  function formatSilber(n) {
+    return n == null ? "-" : Math.round(n).toLocaleString("de-DE");
+  }
+
+  function renderBaum(weg) {
+    if (!weg) return "";
+    if (weg.typ === "gesperrt") {
+      return `<span class="gesperrt">gesperrt: ${weg.grund}</span>`;
+    }
+    if (weg.typ === "kaufen") {
+      return `<span class="weg-kaufen">kaufen ${weg.item}@${weg.stufe} (${weg.marktId}, ${weg.kaufweg}) fuer ${formatSilber(weg.preisJeStueck)} Silber/Stueck</span>`;
+    }
+    if (weg.typ === "craften") {
+      const kopf = `<span class="weg-craften">craften ${weg.item}@${weg.stufe} (Rezept #${weg.rezeptIndex}, ${weg.mitFokus ? "mit" : "ohne"} Fokus, Stationsgebuehr ${formatSilber(weg.stationsgebuehrJeStueck)}, RRR ${(weg.rrr * 100).toFixed(1)}%, Fokus/Stueck ${weg.fokusJeStueck.toFixed(1)})</span>`;
+      const zutaten = weg.zutaten
+        .map((z) => `<li>${z.menge.toFixed(2)}x ${z.item}@${z.stufe} (Ruecklauf ${z.ruecklaufAusgeschlossen ? "ausgeschlossen" : ((z.ruecklaufAnteil || 0) * 100).toFixed(1) + "%"}) -> ${renderBaum(z.weg)}</li>`)
+        .join("");
+      return `${kopf}<ul>${zutaten}</ul>`;
+    }
+    if (weg.typ === "verzaubern") {
+      const materialien = weg.materialien.map((m) => `<li>${m.menge}x ${m.item} -> ${renderBaum(m.weg)}</li>`).join("");
+      return `<span class="weg-verzaubern">verzaubern ${weg.item}@${weg.stufe} (Rezeptsilber ${formatSilber(weg.rezeptSilber)})</span>` +
+        `<ul><li>Vorstufe -> ${renderBaum(weg.vorstufe)}</li>${materialien}</ul>`;
+    }
+    return JSON.stringify(weg);
+  }
+
+  document.getElementById("royalBtn").addEventListener("click", async () => {
+    const status = document.getElementById("royalStatus");
+    const baum = document.getElementById("royalBaum");
+    baum.innerHTML = "";
+    status.textContent = "Sammle Markt-IDs und rufe Preise ab ...";
+    try {
+      const ids = PREISE.sammleMarktIds("T4_HEAD_CLOTH_ROYAL", 3);
+      const preise = await PREISE.preiseAbrufen(ids, {
+        aufFortschritt: (erledigt, gesamt) => { status.textContent = `Preise: ${erledigt}/${gesamt}`; },
+      });
+
+      const opts = {
+        preise: preiseZuOptsFormat(preise),
+        stationssaetze: { Magierturm: 380, Weber: 380, Kueche: 380 }, // Platzhalter, s. Hinweistext oben
+        stadt: "Lymhurst",
+        fce: 0, // Platzhalter: ohne eigene FCE-Eingabe voller Rohfokus
+        fokuswert: 5, // Platzhalter Silber je Fokuspunkt
+      };
+      const r = RECHENKERN.kosten("T4_HEAD_CLOTH_ROYAL", 3, 1, opts);
+
+      status.textContent =
+        (r.gesperrt ? "GESPERRT: " + r.grund : `Guenstigster Weg: ${formatSilber(r.silber)} Silber, ${r.fokus.toFixed(1)} Fokus (Zielwert ${formatSilber(r.wert)})`) +
+        `\n\nAlle ${r.alleWege.length} Wege (sortiert):\n` +
+        r.alleWege
+          .map((w) => `  ${w.typ}${w.gesperrt ? " [gesperrt: " + w.grund + "]" : ` -> ${formatSilber(w.silber)} Silber, ${w.fokus.toFixed(1)} Fokus`}`)
+          .join("\n");
+
+      baum.innerHTML = "<strong>Bauplan des guenstigsten Wegs:</strong><ul><li>" + renderBaum(r.weg) + "</li></ul>";
+    } catch (err) {
+      status.textContent = "FEHLER: " + err.message;
+    }
+  });
+</script>
+</body>
+</html>

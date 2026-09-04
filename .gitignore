@@ -1,0 +1,10 @@
+# Versions-Schnappschuesse (eigene Ordner-Historie, ersetzt durch Git-Commits)
+Versionen/
+
+# Python-Cache
+__pycache__/
+*.pyc
+
+# Windows
+Thumbs.db
+desktop.ini
