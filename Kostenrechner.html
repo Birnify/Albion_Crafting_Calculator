@@ -125,6 +125,8 @@ details>.body{padding:0 20px 20px}
 .baum .alt{color:var(--dim);font-size:11.5px;margin-left:4px}
 .baum .badge-unvoll{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;
                      background:var(--warn-bg);color:var(--warn);font-size:10.5px;font-weight:700}
+.baum .badge-eigen{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;
+                    background:var(--accent-soft);color:var(--accent);font-size:10.5px;font-weight:700}
 .baum .alter{color:var(--dim);font-size:11px;margin-left:4px}
 .baum .alter.stale{color:var(--warn);font-weight:600}
 /* Einstellungen: Gebaeude/Kategorie-Ausnahmelisten */
@@ -135,6 +137,10 @@ details>.body{padding:0 20px 20px}
 .klein-tbl td input,.klein-tbl td select{padding:4px 6px;font-size:12.5px}
 .klein-tbl tr.gebraucht{background:var(--accent-soft)}
 .klein-tbl tr.fehlt td{color:var(--bad);font-weight:600}
+.klein-tbl tr.gesetzt{background:var(--good-bg)}
+.klein-tbl td .id{display:block;color:var(--dim);font-size:10.5px;font-family:monospace;margin-top:1px}
+.pflege-zaehler{font-size:11.5px;color:var(--dim);margin:6px 0 8px}
+.pflege-tblwrap{max-height:420px;overflow-y:auto}
 .dreifach{display:flex;gap:4px}
 .dreifach button{padding:3px 8px;font-size:11px;border:1px solid var(--line);
                   background:var(--bg);color:var(--text);border-radius:4px}
@@ -216,6 +222,28 @@ details>.body{padding:0 20px 20px}
       <th title="Zielwert = Silber + Fokus x Fokuswert. Danach ist der guenstigste Weg sortiert.">Zielwert</th>
       <th class="l">Status</th>
     </tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div>
+</details>
+
+<details id="eigenpreisPflegePanel">
+<summary>Eigenpreis-Pflege (nicht handelbare Zutaten)</summary>
+<div class="body">
+  <div class="hint" style="margin-bottom:10px">
+    Alle 365 Kandidaten aus der Nichthandelbar-Heuristik: Arena-Kristalle, GvG- und
+    Fraktionsmarken und Aehnliches. Heuristik, keine belegte Liste: ein hier gelisteter
+    Gegenstand kann trotzdem tatsaechlich handelbar sein, ein Eigenpreis laesst sich
+    unabhaengig davon jederzeit setzen. Wirkt sofort auf jede Berechnung, die diese
+    Zutat braucht, ohne Neuladen.
+  </div>
+  <div class="feld">
+    <label for="eigenpreisPflegeSuche">Suche</label>
+    <input type="text" id="eigenpreisPflegeSuche" placeholder="Name oder ID eingeben" autocomplete="off">
+  </div>
+  <div class="pflege-zaehler" id="eigenpreisPflegeZaehler"></div>
+  <div class="pflege-tblwrap"><table class="klein-tbl" id="eigenpreisPflegeTabelle">
+    <thead><tr><th>Zutat</th><th>Eigenpreis (Silber/Stueck)</th></tr></thead>
     <tbody></tbody>
   </table></div>
 </div>

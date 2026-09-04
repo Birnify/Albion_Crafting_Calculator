@@ -156,6 +156,36 @@ const UI = (function () {
     return gefunden;
   }
 
+  /**
+   * P6: alle 365 Kandidaten aus REZEPTGRAPH.nichtHandelbareKandidaten,
+   * gefiltert nach Name ODER ID (Suchbegriff), alphabetisch sortiert. Reine
+   * Funktion ohne DOM, damit die Filterlogik unabhaengig von der
+   * Pflegeoberfläche testbar ist. Namensfallback wie ueberall in dieser
+   * Datei: fehlt der deutsche Name (21 von 365 Kandidaten), zeigt die Liste
+   * die uniquename statt "undefined".
+   */
+  function gefilterteEigenpreisKandidaten(query) {
+    const kandidaten = typeof REZEPTGRAPH !== "undefined" ? REZEPTGRAPH.nichtHandelbareKandidaten || [] : [];
+    const liste = kandidaten.map((id) => ({
+      id,
+      name: (REZEPTGRAPH.namen && REZEPTGRAPH.namen[id]) || id,
+    }));
+    const q = (query || "").trim().toLowerCase();
+    const gefiltert = q ? liste.filter((e) => e.name.toLowerCase().indexOf(q) !== -1 || e.id.toLowerCase().indexOf(q) !== -1) : liste;
+    gefiltert.sort((a, b) => a.name.localeCompare(b.name, "de"));
+    return gefiltert;
+  }
+
+  /** Wie viele der gegebenen IDs (typischerweise nichtHandelbareKandidaten) einen gesetzten Eigenpreis haben. */
+  function anzahlEigenpreiseGesetzt(ids) {
+    const alle = PREISE.eigenpreiseAlle();
+    let n = 0;
+    (ids || []).forEach((id) => {
+      if (alle[id] != null) n++;
+    });
+    return n;
+  }
+
   function formatSilber(n) {
     return n == null || !isFinite(n) ? "-" : Math.round(n).toLocaleString("de-DE");
   }
@@ -237,6 +267,10 @@ const UI = (function () {
 
     const eigenpreiseHinweisEl = document.getElementById("eigenpreiseHinweis");
     const eigenpreiseTabelleEl = document.getElementById("eigenpreiseTabelle");
+
+    const eigenpreisPflegeSucheEl = document.getElementById("eigenpreisPflegeSuche");
+    const eigenpreisPflegeZaehlerEl = document.getElementById("eigenpreisPflegeZaehler");
+    const eigenpreisPflegeTabelleEl = document.getElementById("eigenpreisPflegeTabelle");
 
     let einstellungen = einstellungenLesen();
     let anfrageZaehler = 0; // Token gegen veraltete Preisabrufe, s. berechnen()
@@ -664,7 +698,9 @@ const UI = (function () {
           " Silber/Stueck (" +
           (weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") +
           ")" +
-          "<span class='alter" + (alterInfo.stale ? " stale" : "") + "'> [Preis " + alterInfo.text + "]</span>" +
+          (weg.eigenpreis
+            ? "<span class='badge-eigen' title='Kein Marktpreis, sondern eine hinterlegte eigene Schaetzung.'>Eigenpreis</span>"
+            : "<span class='alter" + (alterInfo.stale ? " stale" : "") + "'> [Preis " + alterInfo.text + "]</span>") +
           altHtml;
         details.appendChild(summary);
         wrap.appendChild(details);
@@ -768,7 +804,13 @@ const UI = (function () {
     alleZuBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = false)));
 
     function wegLabelKurz(w) {
-      if (w.typ === "kaufen") return "Kaufen (" + (w.weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") + ")";
+      if (w.typ === "kaufen")
+        return (
+          "Kaufen (" +
+          (w.weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") +
+          (w.weg.eigenpreis ? ", Eigenpreis" : "") +
+          ")"
+        );
       if (w.typ === "craften")
         return "Craften #" + (w.weg.rezeptIndex != null ? w.weg.rezeptIndex + 1 : "?") + ", " + (w.weg.mitFokus ? "mit Fokus" : "ohne Fokus");
       if (w.typ === "verzaubern") return "Verzaubern";
@@ -973,6 +1015,67 @@ const UI = (function () {
       });
     }
 
+    // ---- Eigenpreis-Pflege (P6): eigene Ansicht ueber alle 365 Kandidaten
+    // aus REZEPTGRAPH.nichtHandelbareKandidaten, unabhaengig von einer
+    // konkreten Berechnung. Ergaenzt die reaktive Tabelle oben (die nur
+    // zeigt, was im ZULETZT berechneten Baum tatsaechlich fehlt): hier kann
+    // der Nutzer vorab Eigenpreise fuer Arena-Kristalle, GvG-/Fraktionsmarken
+    // usw. hinterlegen, bevor er ueberhaupt etwas berechnet. Bewusst OHNE
+    // eigenes Tastatur-/Fokus-Muster wie die Item-Suche (kein Combobox-
+    // Pattern noetig): reines Textfeld + Standard-<table>-Inputs sind von
+    // Haus aus per Tastatur bedienbar, genau der Befund, der bei der
+    // Item-Suche in P5 nachtraeglich behoben werden musste (s. KONTEXT.md).
+    // Die Heuristik hinter nichtHandelbareKandidaten ist keine belegte
+    // Wahrheit (s. kostenrechner-KONTEXT.md); diese Liste verhindert deshalb
+    // NICHTS: ein faelschlich hier gelisteter, tatsaechlich handelbarer
+    // Gegenstand laesst sich trotzdem mit einem Eigenpreis versehen, und
+    // PREISE.eigenpreisSetzen() selbst kennt ohnehin keine Beschraenkung auf
+    // diese Liste (die reaktive Tabelle oben nutzt sie voellig unabhaengig
+    // davon fuer JEDES im Baum tatsaechlich gesperrte Item).
+    function renderEigenpreisPflege() {
+      const alleKandidaten = (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.nichtHandelbareKandidaten) || [];
+      const gesetzt = anzahlEigenpreiseGesetzt(alleKandidaten);
+      const treffer = gefilterteEigenpreisKandidaten(eigenpreisPflegeSucheEl.value);
+      eigenpreisPflegeZaehlerEl.textContent =
+        gesetzt + " von " + alleKandidaten.length + " Kandidaten mit Eigenpreis versehen." + (treffer.length !== alleKandidaten.length ? " " + treffer.length + " davon sichtbar." : "");
+
+      const tbody = eigenpreisPflegeTabelleEl.querySelector("tbody");
+      tbody.innerHTML = "";
+      if (!treffer.length) {
+        tbody.innerHTML = "<tr><td colspan='2' class='hint'>Keine Treffer.</td></tr>";
+        return;
+      }
+      treffer.forEach((e) => {
+        const marktId = PREISE.marktId(e.id, 0); // keiner der 365 Kandidaten traegt eine Verzauberungsstufe (el), s. kostenrechner-KONTEXT.md; marktId() bleibt trotzdem die einheitliche Regel
+        const vorhanden = PREISE.eigenpreisHolen(marktId);
+        const tr = document.createElement("tr");
+        if (vorhanden != null) tr.className = "gesetzt";
+        const tdName = document.createElement("td");
+        tdName.innerHTML = escapeHtml(e.name) + "<br><span class='id'>" + escapeHtml(e.id) + "</span>";
+        const tdInput = document.createElement("td");
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = "1";
+        input.min = "0";
+        input.placeholder = "kein Eigenpreis";
+        input.value = vorhanden != null ? vorhanden : "";
+        input.addEventListener("change", () => {
+          const wert = input.value.trim() === "" ? null : Number(input.value);
+          PREISE.eigenpreisSetzen(marktId, wert);
+          // Sofort wirksam: eine laufende Berechnung desselben Items
+          // uebernimmt den neuen/entfernten Eigenpreis ohne Neuladen.
+          if (zustand.item && zustand.preiseRoh) berechneMitVorhandenenPreisen();
+          renderEigenpreisPflege();
+        });
+        tdInput.appendChild(input);
+        tr.appendChild(tdName);
+        tr.appendChild(tdInput);
+        tbody.appendChild(tr);
+      });
+    }
+
+    eigenpreisPflegeSucheEl.addEventListener("input", renderEigenpreisPflege);
+
     // ---- Einstellungen: Handel + Beschaffung ----
     [kwSofortEl, kwOrderEl].forEach((el) =>
       el.addEventListener("change", () => {
@@ -1038,6 +1141,7 @@ const UI = (function () {
     renderTagesbonus(null);
     renderStationTabelle(null);
     renderEigenpreiseTabelle(null);
+    renderEigenpreisPflege();
   }
 
   if (typeof document !== "undefined") {
@@ -1054,6 +1158,8 @@ const UI = (function () {
     prozentAusFce,
     eigenpreisKoenntHelfen,
     sammleFehlendePreise,
+    gefilterteEigenpreisKandidaten,
+    anzahlEigenpreiseGesetzt,
     formatSilber,
     formatFokus,
     formatProzent,

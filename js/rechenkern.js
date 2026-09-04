@@ -163,6 +163,12 @@ const RECHENKERN = (function () {
    * Zusaetzlich zaehlt ein Marktpreis als "kein Preis", wenn er aelter ist
    * als opts.maxPreisAlterMin (Datum aus preise.js). Eigenpreise haben kein
    * Alter (feste Nutzereingabe) und sind davon nicht betroffen.
+   *
+   * `eigenpreis` im Rueckgabewert zeigt an, ob ein gueltiger Preis aus einem
+   * hinterlegten Eigenpreis stammt statt aus einem echten Marktpreis (P6).
+   * kaufKandidat() reicht das in weg.eigenpreis weiter, damit die Oberflaeche
+   * im Bauplan sichtbar machen kann, wo eine Rechnung auf einer eigenen
+   * Schaetzung statt auf Marktdaten beruht - nicht nur, wo ein Preis fehlt.
    */
   function preisMitGrund(marktId, opts) {
     const eintrag = opts.preise[marktId];
@@ -170,7 +176,7 @@ const RECHENKERN = (function () {
       const seite = opts.kaufweg === "order" ? eintrag.buy : eintrag.sell;
       if (seite && !seite.kein && seite.preis != null) {
         if (seite.preis <= 0) {
-          return { preis: null, grund: "Preis fuer " + marktId + " ist 0 oder kleiner und gilt als kein Preis, nicht als kostenloses Angebot" };
+          return { preis: null, grund: "Preis fuer " + marktId + " ist 0 oder kleiner und gilt als kein Preis, nicht als kostenloses Angebot", eigenpreis: false };
         }
         if (opts.maxPreisAlterMin != null && seite.datum) {
           const alterMin = (Date.now() - Date.parse(seite.datum)) / 60000;
@@ -178,20 +184,21 @@ const RECHENKERN = (function () {
             return {
               preis: null,
               grund: "Preis fuer " + marktId + " ist " + Math.round(alterMin) + " Minuten alt, ueber der Hoechstgrenze von " + opts.maxPreisAlterMin + " Minuten",
+              eigenpreis: false,
             };
           }
         }
-        return { preis: REGELN.kaufKostenJeStueck(seite.preis, opts.kaufweg), grund: null };
+        return { preis: REGELN.kaufKostenJeStueck(seite.preis, opts.kaufweg), grund: null, eigenpreis: false };
       }
     }
     const eigen = opts.eigenpreise[marktId];
     if (eigen != null) {
       if (eigen <= 0) {
-        return { preis: null, grund: "Eigenpreis fuer " + marktId + " ist 0 oder kleiner und gilt als kein Preis" };
+        return { preis: null, grund: "Eigenpreis fuer " + marktId + " ist 0 oder kleiner und gilt als kein Preis", eigenpreis: true };
       }
-      return { preis: eigen, grund: null };
+      return { preis: eigen, grund: null, eigenpreis: true };
     }
-    return { preis: null, grund: "kein Preis fuer " + marktId + " (" + opts.kaufweg + ") und kein Eigenpreis hinterlegt" };
+    return { preis: null, grund: "kein Preis fuer " + marktId + " (" + opts.kaufweg + ") und kein Eigenpreis hinterlegt", eigenpreis: false };
   }
 
   function kaufKandidat(item, stufe, opts) {
@@ -213,7 +220,7 @@ const RECHENKERN = (function () {
       wert: info.preis,
       unvollstaendig: false,
       fehlendeGebaeude: [],
-      weg: { typ: "kaufen", item, stufe, marktId, kaufweg: opts.kaufweg, preisJeStueck: info.preis },
+      weg: { typ: "kaufen", item, stufe, marktId, kaufweg: opts.kaufweg, preisJeStueck: info.preis, eigenpreis: !!info.eigenpreis },
     };
   }
 

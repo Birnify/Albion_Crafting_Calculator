@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-04 · Version: v0.4.0 · Paket P5 (Oberfläche) erledigt, fünf Prüfer-Befunde behoben
+Stand: 2026-09-04 · Version: v0.5.0 · Paket P6 (Eigenpreis-Pflege) erledigt
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -19,88 +19,94 @@ ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (P5, 04.09.2026, v0.4.0)
+## Aktueller Stand (P6, 04.09.2026, v0.5.0)
 
-P1 bis P5 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite und jetzt
-auch die Oberfläche (`Kostenrechner.html` + `js/ui.js`). Details zu P1-P3
-(rezepte.js-Schema, Markt-ID-Regel, Cache-Schema, ItemValue-Herleitung,
-Rezeptsuche-Verwechslung) stehen unverkürzt in `kostenrechner-KONTEXT-HISTORIE.md`.
+P1 bis P6 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite, Oberfläche
+und jetzt die Eigenpreis-Pflege. Details zu P1-P5 (rezepte.js-Schema,
+Markt-ID-Regel, Cache-Schema, ItemValue-Herleitung, Rezeptsuche-Verwechslung,
+die fünf oberflaechen-pruefer-Befunde) stehen unverkürzt in
+`kostenrechner-KONTEXT-HISTORIE.md`.
 
-**P5 in Kürze:** Suchfeld über die deutschen Namen (Tier-Filter, Verzauberung),
-Ergebnis-Hero (Weg, Kosten, Fokus, Gewinn), aufklappbarer Bauplan-Baum,
-Alle-Wege-Tabelle, Einstellungen in drei Blöcken (Charakter & Station, Handel,
-Beschaffung) mit Speicherung in `localStorage`. Dafür in `js/rechenkern.js`
-ergänzt: `stationssatzFuer()`, unterscheidet einen fehlenden Stationssatz
-(Untergrenze 0, Ergebnis als „unvollständig" markiert) von einem ausdrücklich
-auf 0 gesetzten (gültige Gebührenfreiheit).
+**P6 in Kürze:** Eigene Ansicht „Eigenpreis-Pflege" in `Kostenrechner.html`
+(neues `<details>`-Panel zwischen „Alle Wege" und „Einstellungen"), listet alle
+365 Kandidaten aus `REZEPTGRAPH.nichtHandelbareKandidaten` mit deutschem Namen
+(Fallback auf die ID bei den 21 Kandidaten ohne Übersetzung) und der ID selbst,
+durchsuchbar per Textfeld (filtert Name UND ID) über die neue reine Funktion
+`UI.gefilterteEigenpreisKandidaten(query)`. Je Zeile ein normales
+Zahlen-Eingabefeld, das direkt auf `PREISE.eigenpreisSetzen()` schreibt - kein
+Combobox-/Tastatur-Sondermuster nötig wie bei der Item-Suche (P5), reine
+`<input>`-Felder sind von Haus aus tastaturbedienbar. Zähler „X von 365 ...
+versehen" über `UI.anzahlEigenpreiseGesetzt()`.
 
-**Fünf Befunde vom `oberflaechen-pruefer` (echte Bedienung im Browser, nicht
-nur Code gelesen), alle in derselben Runde behoben und selbst im Browser
-nachverifiziert:**
+**Sichtbarmachung im Bauplan (Abnahmekriterium, nicht nur Komfort):**
+`js/rechenkern.js` kennzeichnet jetzt in `preisMitGrund()`/`kaufKandidat()`,
+ob ein gültiger Kaufpreis aus einem Marktpreis oder aus einem Eigenpreis stammt
+(`weg.eigenpreis: true/false`). `js/ui.js` zeigt das im Bauplan als Badge
+„Eigenpreis" (statt der Preisalter-Anzeige, die bei einem Eigenpreis ohnehin
+bedeutungslos wäre) und in der Alle-Wege-Tabelle als Zusatz „, Eigenpreis"
+hinter dem Kaufweg. Live im Browser mit einem echten Rezept verifiziert
+(`QUESTITEM_CARAVAN_TRADEPACK_CAERLEON_HEAVY` braucht 40x „Schattenherz"
+`T1_FACTION_CAERLEON_TOKEN_1`, kein Marktangebot, per Fetch-Stub simuliert):
+Badge und Tabellenzusatz erschienen korrekt, verschwanden nach dem Löschen
+des Eigenpreises wieder.
 
-1. **Suchergebnisse nicht per Tastatur erreichbar (blockierend).** Trefferliste
-   jetzt ein ARIA-Combobox-Muster: `role="listbox"` am Container, `role="option"`
-   je Zeile, `aria-selected`/`aria-activedescendant`. Pfeil runter/hoch bewegen
-   die Markierung, Enter übernimmt, Escape schließt (unverändert). Verifiziert:
-   Suche getippt, per Pfeiltasten markiert, per Enter ausgewählt, ganz ohne Maus.
-2. **Eigener Platzhaltertext ohne Umlaut lieferte „Keine Treffer" (blockierend).**
-   `placeholder` in `Kostenrechner.html` von „Koenigliche" auf „Königliche"
-   korrigiert. Keine Umlaut-Ersetzungslogik in der Suche selbst, das wäre ein
-   größerer, nicht beauftragter Eingriff gewesen.
-3. **Angezeigtes Preisalter maß die falsche Größe (blockierend).**
-   `alterFuerMarktId()` in `js/ui.js` verwendete `PREISE.eintragAlterMinuten()`
-   (Cache-Abrufzeitpunkt „abgerufenAm"), während die Sperrlogik in
-   `preisMitGrund()` (rechenkern.js) das echte API-Marktdatum verwendet. Beide
-   Größen liegen im Beispiel des Prüfers 186 Minuten auseinander (5,6 vs. 191
-   Min.) - täuscht Frische vor, wo keine ist. Jetzt verwendet die Anzeige
-   dasselbe `sell.datum`/`buy.datum` wie die Sperrlogik, inklusive derselben
-   Sofortkauf/Kauforder-Umschaltung. Verifiziert mit künstlich gealterten
-   Marktdaten (Fetch-Mock, Datum 191 Min. alt, Cache-Zeit frisch): Anzeige
-   zeigte danach „vor 3,2 Std.", nicht „vor 0 Min.".
-4. **Schnelles Item-Wechseln während laufendem Preisabruf überschrieb still das
-   Ergebnis (wichtig).** `berechnen()` in `js/ui.js` hat jetzt ein
-   Anfrage-Token (`anfrageZaehler`); eine zurückkommende, inzwischen überholte
-   Antwort darf `zustand`/die Anzeige nicht mehr verändern. Verifiziert mit
-   Fetch-Mock (ein Item antwortet nach 4 s, ein zweites sofort): nach Wahl des
-   ersten und sofort danach des zweiten Items blieb die Anzeige auch nach
-   Ablauf der 4 s stabil beim zweiten Item, keine stille Überschreibung.
-5. **Negative/unsinnige Zahlenwerte (Schwere geklärt).** Stationssatz: der
-   echte Nutzerpfad (`craftKandidat()` → `stationssatzFuer()`) behandelte einen
-   negativen Satz bereits korrekt als „nicht gepflegt" (Untergrenze 0, nicht
-   negativ) - im Browser mit `-50` am Magierturm bestätigt, Ergebnis identisch
-   zum Fall „Satz fehlt". Trotzdem zusätzlich `Math.max(0, ...)` in
-   `REGELN.stationsgebuehr()` selbst ergänzt (Verteidigung in der Tiefe für
-   einen direkten, isolierten Aufruf ohne die Vorprüfung). Fokus-Effizienz: hier
-   fehlte tatsächlich jede Sperre (FCE -500 ergab rechnerisch einen Multiplikator
-   über 100 %). Jetzt an der Eingabe in `js/ui.js` auf mindestens 0 begrenzt
-   (globales Feld, Kategorie-Ausnahmen, Schicksalsbrett- und
-   Abgelesener-Fokus-Übernahme) und zusätzlich in `REGELN.fokusMultiplikator()`
-   gekappt. Im Browser bestätigt: `-500` eingetragen → Feld springt sofort auf
-   `0`, Anzeige „100 % der Rohfokuskosten".
+**Entscheidung zu Punkt 5 des Auftrags (freie Eingabe über die 365 Kandidaten
+hinaus):** bewusst NICHT umgesetzt. Ein zu Unrecht als „nicht handelbar"
+markiertes Item war schon vor P6 nicht blockiert - `PREISE.eigenpreisSetzen()`
+kennt keine Beschränkung auf die Kandidatenliste, und die reaktive Tabelle aus
+P5 (`sammleFehlendePreise()`) bietet für JEDES im Baum tatsächlich gesperrte
+Item einen Eigenpreis an, unabhängig von der Heuristik. Eine zweite,
+vollständige Item-Suche in der Pflegeansicht (zusätzlich zur bestehenden
+Suche oben auf der Seite) hätte nur Redundanz und zwei verschieden bediente
+Suchfelder auf derselben Seite erzeugt, ohne eine echte Lücke zu schließen.
 
-4 neue Regressionstests in `js/regeln.js` (`stationsgebuehr`- und
-`fokusMultiplikator`-Floor), Testsuite danach vollständig grün, 0 Fehler,
-keine Duplikate. Tastaturbedienung, Preisalter-Quelle und die Race Condition
-sind bewusst keine Unit-Tests (echte Tastatur-/Timing-/DOM-Interaktion nötig),
-s. Kommentar in `tests/test.html` bei den ui.js-Tests.
+**Validierung:** kein negativer oder nullwertiger Eigenpreis speicherbar -
+`PREISE.eigenpreisSetzen()` behandelt `preis <= 0` bereits seit P2/P3 als
+Löschen (nicht als 0-Silber-Preis), die neue Pflegeoberfläche nutzt diesen Weg
+unverändert (kein zweiter Validierungspfad), plus `min="0"` am Eingabefeld
+gegen versehentliche Minuswerte. Im Browser bestätigt: `-50` eingetragen →
+kein Eintrag gespeichert, `PREISE.eigenpreisHolen()` bleibt `null`.
+
+**6 neue Tests** (3 in `rechenkern.js`: `weg.eigenpreis` korrekt bei
+Marktpreis/Eigenpreis/keinem von beiden; 7 in `ui.js`: Filterlogik inkl.
+Namens- und ID-Suche, alphabetische Sortierung, Zähler, negativer Eigenpreis
+wird nicht gezählt) - macht 10 insgesamt, 96 → 106, alle grün.
+
+**Umgebungs-Fund, für künftige Browser-Prüfungen wichtig:** die Vorschau
+(`Claude_Browser`, `preview_start`/`navigate`) cachte `js/rechenkern.js` unter
+`http://localhost:8791/...` hartnäckig auf einem älteren Stand - weder ein
+neuer Tab noch ein Server-Neustart (neue `serverId`) noch `Ctrl+Shift+R` haben
+das aufgelöst, ein `fetch(..., {cache:"no-store"})` schon. Direktes `curl` vom
+Bash-Tool auf denselben Port lieferte dagegen sofort den frischen Stand - der
+Cache sitzt also in der Browser-Pane-Infrastruktur, nicht im Python-Server.
+**Zuverlässiger Ausweg:** dieselbe Seite über `http://127.0.0.1:8791/...`
+statt `http://localhost:8791/...` aufrufen, das traf offenbar einen anderen
+Cache-Schlüssel und lieferte sofort den aktuellen Stand. Bei künftigen
+Sitzungen, in denen eine Codeänderung im Browser partout nicht ankommt: zuerst
+`127.0.0.1` statt `localhost` probieren, bevor man an der eigenen Änderung
+zweifelt.
 
 ## Dateistruktur
 
-Stand nach P5 (v0.4.0):
+Stand nach P6 (v0.5.0):
 
 ```
 Kostenrechner/
   build_graph.py            fertig (P1, P2: el-Feld ergaenzt), seither unveraendert
   rezepte.js                erzeugt (P1, P2), nicht von Hand bearbeiten
-  Kostenrechner.html         fertig (P5, v0.4.0): Suche, Hero, Bauplan-Baum, Alle-Wege, Einstellungen
+  Kostenrechner.html         fertig (P6, v0.5.0): Suche, Hero, Bauplan-Baum, Alle-Wege,
+                              Eigenpreis-Pflege (P6), Einstellungen
   js/
     preise.js                fertig (P2, P3): eigenpreisSetzen lehnt Preis<=0 ab
     regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0): itemWert, RRR,
                               Stationsgebuehr (mit 0-Floor), Fokus (mit 0-Floor), Steuer,
                               Kategorie-Tabellen, rezepteFuerStufe
-    rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0): kosten(item,stufe,menge,opts),
-                              stationssatzFuer() unterscheidet fehlend von ausdruecklich 0
-    ui.js                     fertig (P5, v0.4.0): Suche mit Tastaturbedienung, Rendering, Einstellungen
+    rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0):
+                              kosten(item,stufe,menge,opts), stationssatzFuer() unterscheidet
+                              fehlend von ausdruecklich 0, weg.eigenpreis kennzeichnet
+                              Kauf-Kandidaten aus einer eigenen Schaetzung (P6)
+    ui.js                     fertig (P5, v0.4.0, P6 v0.5.0): Suche mit Tastaturbedienung,
+                              Rendering, Einstellungen, Eigenpreis-Pflegeansicht (P6)
   kostenrechner-PLAN.md
   kostenrechner-KONTEXT.md
   kostenrechner-KONTEXT-HISTORIE.md
@@ -109,7 +115,8 @@ Kostenrechner/
   Versionen/v0.3.0 - Rechenkern/
   Versionen/v0.3.1 - Veredelungs-Rezeptbug behoben/
   Versionen/v0.4.0 - Oberflaeche/
-  tests/test.html           96 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v0.5.0 - Eigenpreis-Pflege/
+  tests/test.html           106 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -157,24 +164,25 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
 Die Arbeitspakete stehen in `kostenrechner-PLAN.md`, Abschnitt 6. Hier nur, was
 darüber hinaus aufkommt.
 
-**Als Nächstes dran:** P6 (Beschaffung nicht handelbarer Zutaten). P4
-(Testsuite) und P5 (Oberfläche) sind erledigt, s. oben.
+**Als Nächstes dran:** P7 (Härtung und Abschluss). P4 (Testsuite), P5
+(Oberfläche) und P6 (Eigenpreis-Pflege) sind erledigt, s. oben.
 
-**Aus P5 mitgenommen, für P6:**
+**Aus P6 mitgenommen, für P7:**
 
-- **Backlog-Idee aus P3 (rechenkern-pruefer, Befund 1):** ein Eigenpreis von 0
-  könnte legitim sein, wenn der Nutzer eine Zutat schon auf Lager hat ("kostet
-  mich nichts mehr"). Absichtlich NICHT über `eigenpreisSetzen(id, 0)` gelöst
-  (das löscht jetzt den Eintrag, s. oben), sondern falls gewünscht eine eigene,
-  klar gekennzeichnete Funktion in P6.
-- Die Eigenpreis-Tabelle in `Kostenrechner.html`/`js/ui.js` (P5) zeigt bislang
-  nur die im zuletzt berechneten Baum tatsächlich fehlenden Preise
-  (`sammleFehlendePreise()`). Eine vollständige Pflegeoberfläche für alle 365
-  Kandidaten aus `rezepte.js.nichtHandelbareKandidaten`, unabhängig von einer
-  konkreten Berechnung, ist P6.
-- `js/ui.js` speichert Einstellungen unter dem `localStorage`-Schlüssel
-  `albion_kostenrechner_einstellungen`, Schema-Version 1. Bei einer
-  Formatänderung die Version hochzählen (gleiche Regel wie beim Preiscache).
+- **Backlog-Idee aus P3 (rechenkern-pruefer, Befund 1), weiterhin offen:** ein
+  Eigenpreis von 0 könnte legitim sein, wenn der Nutzer eine Zutat schon auf
+  Lager hat ("kostet mich nichts mehr"). In P6 bewusst NICHT gelöst (siehe dort
+  die Entscheidung zu Punkt 5) - `eigenpreisSetzen(id, 0)` löscht weiterhin den
+  Eintrag. Falls der Nutzer das noch will: eigene, klar gekennzeichnete
+  Funktion statt eines überladenen Preisfelds.
+- Die 21 von 365 Kandidaten ohne deutschen Namen (`REZEPTGRAPH.namen[id]`
+  fehlt, z. B. `QUESTITEM_TOKEN_ARENA_CRYSTAL`) zeigt die Pflegeliste unter
+  ihrer ID an (gleicher Fallback wie überall sonst in `ui.js`). Nicht
+  nachgebessert, da `build_graph.py`/die Namensquelle selbst betroffen wäre,
+  nicht P6 - falls störend, dort ansetzen.
+- Umgebungs-Fund zur Browser-Prüfung (Cache unter `localhost`, Ausweg über
+  `127.0.0.1`) steht oben unter „Aktueller Stand". Bei der nächsten Sitzung mit
+  Browser-Verifikation zuerst dort nachsehen, falls eine Änderung nicht ankommt.
 
 **Aus P1 mitgenommen, für spätere Pakete:**
 

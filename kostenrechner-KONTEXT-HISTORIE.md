@@ -7,6 +7,73 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (P5, 04.09.2026, v0.4.0)
+
+P1 bis P5 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite und jetzt
+auch die Oberfläche (`Kostenrechner.html` + `js/ui.js`). Details zu P1-P3
+(rezepte.js-Schema, Markt-ID-Regel, Cache-Schema, ItemValue-Herleitung,
+Rezeptsuche-Verwechslung) stehen unverkürzt weiter unten in dieser Datei.
+
+**P5 in Kürze:** Suchfeld über die deutschen Namen (Tier-Filter, Verzauberung),
+Ergebnis-Hero (Weg, Kosten, Fokus, Gewinn), aufklappbarer Bauplan-Baum,
+Alle-Wege-Tabelle, Einstellungen in drei Blöcken (Charakter & Station, Handel,
+Beschaffung) mit Speicherung in `localStorage`. Dafür in `js/rechenkern.js`
+ergänzt: `stationssatzFuer()`, unterscheidet einen fehlenden Stationssatz
+(Untergrenze 0, Ergebnis als „unvollständig" markiert) von einem ausdrücklich
+auf 0 gesetzten (gültige Gebührenfreiheit).
+
+**Fünf Befunde vom `oberflaechen-pruefer` (echte Bedienung im Browser, nicht
+nur Code gelesen), alle in derselben Runde behoben und selbst im Browser
+nachverifiziert:**
+
+1. **Suchergebnisse nicht per Tastatur erreichbar (blockierend).** Trefferliste
+   jetzt ein ARIA-Combobox-Muster: `role="listbox"` am Container, `role="option"`
+   je Zeile, `aria-selected`/`aria-activedescendant`. Pfeil runter/hoch bewegen
+   die Markierung, Enter übernimmt, Escape schließt (unverändert). Verifiziert:
+   Suche getippt, per Pfeiltasten markiert, per Enter ausgewählt, ganz ohne Maus.
+2. **Eigener Platzhaltertext ohne Umlaut lieferte „Keine Treffer" (blockierend).**
+   `placeholder` in `Kostenrechner.html` von „Koenigliche" auf „Königliche"
+   korrigiert. Keine Umlaut-Ersetzungslogik in der Suche selbst, das wäre ein
+   größerer, nicht beauftragter Eingriff gewesen.
+3. **Angezeigtes Preisalter maß die falsche Größe (blockierend).**
+   `alterFuerMarktId()` in `js/ui.js` verwendete `PREISE.eintragAlterMinuten()`
+   (Cache-Abrufzeitpunkt „abgerufenAm"), während die Sperrlogik in
+   `preisMitGrund()` (rechenkern.js) das echte API-Marktdatum verwendet. Beide
+   Größen liegen im Beispiel des Prüfers 186 Minuten auseinander (5,6 vs. 191
+   Min.) - täuscht Frische vor, wo keine ist. Jetzt verwendet die Anzeige
+   dasselbe `sell.datum`/`buy.datum` wie die Sperrlogik, inklusive derselben
+   Sofortkauf/Kauforder-Umschaltung. Verifiziert mit künstlich gealterten
+   Marktdaten (Fetch-Mock, Datum 191 Min. alt, Cache-Zeit frisch): Anzeige
+   zeigte danach „vor 3,2 Std.", nicht „vor 0 Min.".
+4. **Schnelles Item-Wechseln während laufendem Preisabruf überschrieb still das
+   Ergebnis (wichtig).** `berechnen()` in `js/ui.js` hat jetzt ein
+   Anfrage-Token (`anfrageZaehler`); eine zurückkommende, inzwischen überholte
+   Antwort darf `zustand`/die Anzeige nicht mehr verändern. Verifiziert mit
+   Fetch-Mock (ein Item antwortet nach 4 s, ein zweites sofort): nach Wahl des
+   ersten und sofort danach des zweiten Items blieb die Anzeige auch nach
+   Ablauf der 4 s stabil beim zweiten Item, keine stille Überschreibung.
+5. **Negative/unsinnige Zahlenwerte (Schwere geklärt).** Stationssatz: der
+   echte Nutzerpfad (`craftKandidat()` → `stationssatzFuer()`) behandelte einen
+   negativen Satz bereits korrekt als „nicht gepflegt" (Untergrenze 0, nicht
+   negativ) - im Browser mit `-50` am Magierturm bestätigt, Ergebnis identisch
+   zum Fall „Satz fehlt". Trotzdem zusätzlich `Math.max(0, ...)` in
+   `REGELN.stationsgebuehr()` selbst ergänzt (Verteidigung in der Tiefe für
+   einen direkten, isolierten Aufruf ohne die Vorprüfung). Fokus-Effizienz: hier
+   fehlte tatsächlich jede Sperre (FCE -500 ergab rechnerisch einen Multiplikator
+   über 100 %). Jetzt an der Eingabe in `js/ui.js` auf mindestens 0 begrenzt
+   (globales Feld, Kategorie-Ausnahmen, Schicksalsbrett- und
+   Abgelesener-Fokus-Übernahme) und zusätzlich in `REGELN.fokusMultiplikator()`
+   gekappt. Im Browser bestätigt: `-500` eingetragen → Feld springt sofort auf
+   `0`, Anzeige „100 % der Rohfokuskosten".
+
+4 neue Regressionstests in `js/regeln.js` (`stationsgebuehr`- und
+`fokusMultiplikator`-Floor), Testsuite danach vollständig grün, 0 Fehler,
+keine Duplikate. Tastaturbedienung, Preisalter-Quelle und die Race Condition
+sind bewusst keine Unit-Tests (echte Tastatur-/Timing-/DOM-Interaktion nötig),
+s. Kommentar in `tests/test.html` bei den ui.js-Tests.
+
+---
+
 ## Aktueller Stand (P3, 04.09.2026, v0.3.1)
 
 P1 (Rezeptgraph), P2 (Preisschicht) und P3 (Rechenkern) stehen. Die

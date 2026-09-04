@@ -185,6 +185,39 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     );
   })();
 
+  // ---- rechenkern (P6): weg.eigenpreis kennzeichnet einen Kauf-Kandidaten,
+  // dessen Preis aus einem hinterlegten Eigenpreis stammt statt aus einem
+  // echten Marktpreis. Die Oberflaeche braucht das, um im Bauplan sichtbar zu
+  // machen, wo ein Ergebnis auf einer eigenen Schaetzung beruht (Plan P6,
+  // Abnahmekriterium "Bauplan zeigt Eigenpreis-Nutzung erkennbar an"). ----
+  (function () {
+    const rMarkt = RECHENKERN.kosten("T_EIGENPREIS_FLAG", 0, 1, {
+      preise: { T_EIGENPREIS_FLAG: { sell: { preis: 42, kein: false }, buy: { preis: 0, kein: true } } },
+      eigenpreise: { T_EIGENPREIS_FLAG: 999 }, // vorhanden, darf aber NICHT gewinnen - Marktpreis hat Vorrang
+    });
+    pruefe(
+      "rechenkern: Marktpreis vorhanden -> weg.eigenpreis ist false, obwohl zusaetzlich ein Eigenpreis hinterlegt ist",
+      !rMarkt.gesperrt && rMarkt.weg.eigenpreis === false && rMarkt.silber === 42,
+      JSON.stringify({ eigenpreis: rMarkt.weg.eigenpreis, silber: rMarkt.silber })
+    );
+
+    const rEigen = RECHENKERN.kosten("T_EIGENPREIS_FLAG2", 0, 1, {
+      preise: {},
+      eigenpreise: { T_EIGENPREIS_FLAG2: 77 },
+    });
+    pruefe(
+      "rechenkern: kein Marktpreis, nur Eigenpreis -> weg.eigenpreis ist true",
+      !rEigen.gesperrt && rEigen.weg.eigenpreis === true && rEigen.silber === 77,
+      JSON.stringify({ eigenpreis: rEigen.weg.eigenpreis, silber: rEigen.silber })
+    );
+
+    const rKeins = RECHENKERN.kosten("T_EIGENPREIS_FLAG3", 0, 1, { preise: {}, eigenpreise: {} });
+    pruefe(
+      "rechenkern: weder Markt- noch Eigenpreis -> gesperrt (kein weg.eigenpreis noetig)",
+      rKeins.gesperrt === true
+    );
+  })();
+
   // ---- rechenkern: Veredelte Rohstoffe (el-Knoten) bekommen einen Craft-Weg,
   // nicht nur kaufen. Regression fuer den v0.3.1-Fund von rechenkern-pruefer:
   // eine fruehere Fassung nahm bei stufe>0 blind den Ausruestungs-Zweig
@@ -550,6 +583,62 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       "ui: sammleFehlendePreise findet R (kein Marktpreis hinterlegt) im Baum von M",
       fehlendePreise.some((f) => f.marktId === "R"),
       JSON.stringify(fehlendePreise)
+    );
+
+    // ---- P6: Eigenpreis-Pflege ----
+    pruefe(
+      "ui: gefilterteEigenpreisKandidaten(leer) liefert alle 365 Kandidaten aus rezepte.js",
+      UI.gefilterteEigenpreisKandidaten("").length === (REZEPTGRAPH.nichtHandelbareKandidaten || []).length,
+      String(UI.gefilterteEigenpreisKandidaten("").length)
+    );
+    pruefe(
+      "ui: gefilterteEigenpreisKandidaten findet QUESTITEM_TOKEN_ARENA_CRYSTAL ueber die ID, auch ohne deutschen Namen",
+      UI.gefilterteEigenpreisKandidaten("ARENA_CRYSTAL").some((e) => e.id === "QUESTITEM_TOKEN_ARENA_CRYSTAL"),
+      JSON.stringify(UI.gefilterteEigenpreisKandidaten("ARENA_CRYSTAL").map((e) => e.id))
+    );
+    pruefe(
+      "ui: gefilterteEigenpreisKandidaten findet Marken des Abenteurers ueber den deutschen Namen (QUESTITEM_TOKEN_ADC_FRAME)",
+      UI.gefilterteEigenpreisKandidaten("Marke des Abenteurers").some((e) => e.id === "QUESTITEM_TOKEN_ADC_FRAME"),
+      JSON.stringify(UI.gefilterteEigenpreisKandidaten("Marke des Abenteurers").map((e) => e.id))
+    );
+    pruefe(
+      "ui: gefilterteEigenpreisKandidaten mit unbekanntem Suchbegriff liefert eine leere Liste",
+      UI.gefilterteEigenpreisKandidaten("dieser_suchbegriff_kommt_garantiert_nicht_vor_xyz").length === 0
+    );
+    (function () {
+      const treffer = UI.gefilterteEigenpreisKandidaten("");
+      let sortiert = true;
+      for (let i = 1; i < treffer.length; i++) {
+        if (treffer[i - 1].name.localeCompare(treffer[i].name, "de") > 0) {
+          sortiert = false;
+          break;
+        }
+      }
+      pruefe("ui: gefilterteEigenpreisKandidaten ist alphabetisch nach Namen sortiert (de)", sortiert);
+    })();
+
+    pruefe(
+      "ui: anzahlEigenpreiseGesetzt(id, 5) und (id, gelöscht)",
+      (function () {
+        const testId = "__test_anzahl_eigenpreis__";
+        const vorher = UI.anzahlEigenpreiseGesetzt([testId]);
+        PREISE.eigenpreisSetzen(testId, 5);
+        const mitWert = UI.anzahlEigenpreiseGesetzt([testId]);
+        PREISE.eigenpreisEntfernen(testId);
+        const nachLoeschen = UI.anzahlEigenpreiseGesetzt([testId]);
+        return vorher === 0 && mitWert === 1 && nachLoeschen === 0;
+      })()
+    );
+    pruefe(
+      "ui: anzahlEigenpreiseGesetzt speichert keinen negativen Eigenpreis (P6: kein negativer Eigenpreis)",
+      (function () {
+        const testId = "__test_negativ_eigenpreis__";
+        PREISE.eigenpreisSetzen(testId, -50);
+        const gesetzt = UI.anzahlEigenpreiseGesetzt([testId]);
+        const wert = PREISE.eigenpreisHolen(testId);
+        PREISE.eigenpreisEntfernen(testId); // aufraeumen, falls doch etwas gespeichert wurde
+        return gesetzt === 0 && wert === null;
+      })()
     );
   })();
 
