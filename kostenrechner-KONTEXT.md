@@ -1,6 +1,7 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-04 · Version: v0.5.0 · Paket P6 (Eigenpreis-Pflege) erledigt
+Stand: 2026-09-04 · Version: v1.0.0 · Paket P7 (Haertung und Abschluss) erledigt,
+alle sechs Baupakete (P1-P6) fertig
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -19,76 +20,69 @@ ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (P6, 04.09.2026, v0.5.0)
+## Aktueller Stand (P7, 04.09.2026, v1.0.0)
 
-P1 bis P6 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite, Oberfläche
-und jetzt die Eigenpreis-Pflege. Details zu P1-P5 (rezepte.js-Schema,
-Markt-ID-Regel, Cache-Schema, ItemValue-Herleitung, Rezeptsuche-Verwechslung,
-die fünf oberflaechen-pruefer-Befunde) stehen unverkürzt in
+P1 bis P7 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite, Oberfläche,
+Eigenpreis-Pflege und jetzt Härtung/Abschluss. Details zu P1-P6 (rezepte.js-Schema,
+Markt-ID-Regel, Cache-Schema, ItemValue-Herleitung, Rezeptsuche-Verwechslung, die
+fünf oberflaechen-pruefer-Befunde, Eigenpreis-Pflegeansicht) stehen unverkürzt in
 `kostenrechner-KONTEXT-HISTORIE.md`.
 
-**P6 in Kürze:** Eigene Ansicht „Eigenpreis-Pflege" in `Kostenrechner.html`
-(neues `<details>`-Panel zwischen „Alle Wege" und „Einstellungen"), listet alle
-365 Kandidaten aus `REZEPTGRAPH.nichtHandelbareKandidaten` mit deutschem Namen
-(Fallback auf die ID bei den 21 Kandidaten ohne Übersetzung) und der ID selbst,
-durchsuchbar per Textfeld (filtert Name UND ID) über die neue reine Funktion
-`UI.gefilterteEigenpreisKandidaten(query)`. Je Zeile ein normales
-Zahlen-Eingabefeld, das direkt auf `PREISE.eigenpreisSetzen()` schreibt - kein
-Combobox-/Tastatur-Sondermuster nötig wie bei der Item-Suche (P5), reine
-`<input>`-Felder sind von Haus aus tastaturbedienbar. Zähler „X von 365 ...
-versehen" über `UI.anzahlEigenpreiseGesetzt()`.
+**P7 ist das letzte Paket des Plans, damit gilt die App als vollständig im Sinne
+von `kostenrechner-PLAN.md` Abschnitt 1** (Kaufen, Craften und Verzaubern über
+den ganzen Baum, mit Oberfläche und Eigenpreis-Pflege). SemVer-Entscheidung:
+**Major** (v0.5.0 auf v1.0.0), kein Minor: Abschluss aller sechs Baupakete, kein
+einzelnes neues Feature.
 
-**Sichtbarmachung im Bauplan (Abnahmekriterium, nicht nur Komfort):**
-`js/rechenkern.js` kennzeichnet jetzt in `preisMitGrund()`/`kaufKandidat()`,
-ob ein gültiger Kaufpreis aus einem Marktpreis oder aus einem Eigenpreis stammt
-(`weg.eigenpreis: true/false`). `js/ui.js` zeigt das im Bauplan als Badge
-„Eigenpreis" (statt der Preisalter-Anzeige, die bei einem Eigenpreis ohnehin
-bedeutungslos wäre) und in der Alle-Wege-Tabelle als Zusatz „, Eigenpreis"
-hinter dem Kaufweg. Live im Browser mit einem echten Rezept verifiziert
-(`QUESTITEM_CARAVAN_TRADEPACK_CAERLEON_HEAVY` braucht 40x „Schattenherz"
-`T1_FACTION_CAERLEON_TOKEN_1`, kein Marktangebot, per Fetch-Stub simuliert):
-Badge und Tabellenzusatz erschienen korrekt, verschwanden nach dem Löschen
-des Eigenpreises wieder.
+**Kontextdatei:** war mit 252 Zeilen bereits schlank, keine inhaltliche Kürzung
+nötig. Der P6-Detailblock ist mit dieser Aktualisierung nach
+`kostenrechner-KONTEXT-HISTORIE.md` gewandert (gleiches Muster wie zuvor bei
+P1-P5), damit diese Datei unter der 300-Zeilen-Schwelle bleibt.
 
-**Entscheidung zu Punkt 5 des Auftrags (freie Eingabe über die 365 Kandidaten
-hinaus):** bewusst NICHT umgesetzt. Ein zu Unrecht als „nicht handelbar"
-markiertes Item war schon vor P6 nicht blockiert - `PREISE.eigenpreisSetzen()`
-kennt keine Beschränkung auf die Kandidatenliste, und die reaktive Tabelle aus
-P5 (`sammleFehlendePreise()`) bietet für JEDES im Baum tatsächlich gesperrte
-Item einen Eigenpreis an, unabhängig von der Heuristik. Eine zweite,
-vollständige Item-Suche in der Pflegeansicht (zusätzlich zur bestehenden
-Suche oben auf der Seite) hätte nur Redundanz und zwei verschieden bediente
-Suchfelder auf derselben Seite erzeugt, ohne eine echte Lücke zu schließen.
+**Testsuite:** 106/106 grün, live über `http://127.0.0.1:8791/tests/test.html`
+geprüft (unverändert seit P6; P7 ändert nichts am Rechenkern, reine Härtung).
+Der in P6 vermerkte `localhost`-Cache-Fund trat in dieser Prüfung nicht erneut
+auf; `127.0.0.1` bleibt trotzdem die empfohlene Adresse für künftige
+Browser-Prüfungen.
 
-**Validierung:** kein negativer oder nullwertiger Eigenpreis speicherbar -
-`PREISE.eigenpreisSetzen()` behandelt `preis <= 0` bereits seit P2/P3 als
-Löschen (nicht als 0-Silber-Preis), die neue Pflegeoberfläche nutzt diesen Weg
-unverändert (kein zweiter Validierungspfad), plus `min="0"` am Eingabefeld
-gegen versehentliche Minuswerte. Im Browser bestätigt: `-50` eingetragen →
-kein Eintrag gespeichert, `PREISE.eigenpreisHolen()` bleibt `null`.
+**`.bat`-Dateien** (`../Kostenrechner öffnen.bat`, `../Rezeptgraph neu bauen.bat`,
+eine Ebene über diesem Ordner, außerhalb des Git-Repos) referenzieren beide nur
+relative Pfade und funktionieren nach dem Git-Umzug (P5/P6) unverändert weiter,
+per Pfadprüfung bestätigt.
 
-**6 neue Tests** (3 in `rechenkern.js`: `weg.eigenpreis` korrekt bei
-Marktpreis/Eigenpreis/keinem von beiden; 7 in `ui.js`: Filterlogik inkl.
-Namens- und ID-Suche, alphabetische Sortierung, Zähler, negativer Eigenpreis
-wird nicht gezählt) - macht 10 insgesamt, 96 → 106, alle grün.
+**Excel-Gegenprobe (Nutzer-Vorgabe):** `../Verzaubern Kalkulator.xlsx`, Blatt
+„Kalkulator", als Beleg für den Verzauberungsschritt (Runen/Seelen/Relikte je
+Waffentyp), nicht für den vollen Beschaffungsbaum; der ist bereits früher gegen
+die Königliche Gugel geprüft (s. Historie/Commits). Beim Auslesen stand in der
+Datei ein anderes Beispiel als in der Aufgabenstellung notiert: **Typus
+Werkstück war auf Zweihänder gestellt** (Bedarf 384, nicht Einhänder/288 wie
+zuvor in der Hauptsitzung vermerkt; das Dropdown wurde offenbar zwischenzeitlich
+umgestellt). Nachgerechnet mit dem tatsächlich vorgefundenen Stand, per
+`RECHENKERN.kosten()` mit einem synthetischen Testgraphen (`opts.graph`, Start
+Tx.1, Ziel T4.x, 384x Seele à 85, 384x Relikt à 410, keine Rune nötig, da schon
+auf .1):
 
-**Umgebungs-Fund, für künftige Browser-Prüfungen wichtig:** die Vorschau
-(`Claude_Browser`, `preview_start`/`navigate`) cachte `js/rechenkern.js` unter
-`http://localhost:8791/...` hartnäckig auf einem älteren Stand - weder ein
-neuer Tab noch ein Server-Neustart (neue `serverId`) noch `Ctrl+Shift+R` haben
-das aufgelöst, ein `fetch(..., {cache:"no-store"})` schon. Direktes `curl` vom
-Bash-Tool auf denselben Port lieferte dagegen sofort den frischen Stand - der
-Cache sitzt also in der Browser-Pane-Infrastruktur, nicht im Python-Server.
-**Zuverlässiger Ausweg:** dieselbe Seite über `http://127.0.0.1:8791/...`
-statt `http://localhost:8791/...` aufrufen, das traf offenbar einen anderen
-Cache-Schlüssel und lieferte sofort den aktuellen Stand. Bei künftigen
-Sitzungen, in denen eine Codeänderung im Browser partout nicht ankommt: zuerst
-`127.0.0.1` statt `localhost` probieren, bevor man an der eigenen Änderung
-zweifelt.
+| Größe | Excel | RECHENKERN.kosten() |
+|---|---|---|
+| Materialkosten (384 Seele + 384 Relikt) | 190.080 | 190.080 |
+| Fokus fürs Verzaubern | (kein Feld, konzeptionell 0) | 0 |
+| Gewinn (Verkaufsorder, Einkauf 225.000, Verkauf 700.000) | 239.420 | 239.420 |
+
+Exakte Übereinstimmung, Gewinn zusätzlich über `REGELN.STEUER_PREMIUM` und
+`REGELN.EINSTELLGEBUEHR_SATZ` nachgerechnet. Bestätigt den Verzauberungszweig
+(„Verzaubern kostet nur Materialien, keine Stationsgebühr, keinen Fokus") gegen
+eine echte, vom Nutzer selbst gepflegte Referenz. Kein Ersatz für die frühere,
+ausführlichere Prüfung des vollen Baums der Königlichen Gugel.
+
+**Live-Plausibilitätslauf (Momentaufnahme, keine Abnahme):** Königliche Gugel .3
+mit aktuellen Marktpreisen (04.09.2026, Testsuite Abschnitt 3): günstigster Weg
+146.823 Silber, 2.298 Fokus, über Craften der Gelehrtengugel .3 (Rezept #0, mit
+Fokus) plus 2x Königliches Siegel. Marktpreise ändern sich laufend, das ist
+erwartet und keine Abweichung.
 
 ## Dateistruktur
 
-Stand nach P6 (v0.5.0):
+Stand nach P7 (v1.0.0), letztes Paket des Plans:
 
 ```
 Kostenrechner/
@@ -116,9 +110,15 @@ Kostenrechner/
   Versionen/v0.3.1 - Veredelungs-Rezeptbug behoben/
   Versionen/v0.4.0 - Oberflaeche/
   Versionen/v0.5.0 - Eigenpreis-Pflege/
+  Versionen/v1.0.0 - Erste vollstaendige Version/
   tests/test.html           106 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
+
+Außerhalb des Repos, eine Ebene höher (`..\`, Albion-Wurzelverzeichnis):
+`Kostenrechner öffnen.bat` (öffnet `Kostenrechner.html` direkt, kein Neubau),
+`Rezeptgraph neu bauen.bat` (ruft `build_graph.py --refresh` auf). Beide bewusst
+außerhalb des Git-Repos, weil sie Nutzer-Komfort sind, keine App-Bestandteile.
 
 ## Entwicklungsweise / Mitarbeit
 
@@ -164,10 +164,12 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
 Die Arbeitspakete stehen in `kostenrechner-PLAN.md`, Abschnitt 6. Hier nur, was
 darüber hinaus aufkommt.
 
-**Als Nächstes dran:** P7 (Härtung und Abschluss). P4 (Testsuite), P5
-(Oberfläche) und P6 (Eigenpreis-Pflege) sind erledigt, s. oben.
+**Als Nächstes dran:** nichts mehr aus `kostenrechner-PLAN.md` Abschnitt 6 - P7
+war das letzte der sechs Baupakete. Weitere Arbeit an dieser App ist entweder
+ein v2-Punkt aus der Liste unten (neue Rücksprache mit dem Nutzer nötig, welcher
+zuerst) oder eine der beiden unten offen gebliebenen Kleinigkeiten.
 
-**Aus P6 mitgenommen, für P7:**
+**Aus P6/P7 mitgenommen, unerledigt (keins davon blockierend für v1.0.0):**
 
 - **Backlog-Idee aus P3 (rechenkern-pruefer, Befund 1), weiterhin offen:** ein
   Eigenpreis von 0 könnte legitim sein, wenn der Nutzer eine Zutat schon auf
@@ -178,11 +180,12 @@ darüber hinaus aufkommt.
 - Die 21 von 365 Kandidaten ohne deutschen Namen (`REZEPTGRAPH.namen[id]`
   fehlt, z. B. `QUESTITEM_TOKEN_ARENA_CRYSTAL`) zeigt die Pflegeliste unter
   ihrer ID an (gleicher Fallback wie überall sonst in `ui.js`). Nicht
-  nachgebessert, da `build_graph.py`/die Namensquelle selbst betroffen wäre,
-  nicht P6 - falls störend, dort ansetzen.
+  nachgebessert, da `build_graph.py`/die Namensquelle selbst betroffen wäre -
+  falls störend, dort ansetzen.
 - Umgebungs-Fund zur Browser-Prüfung (Cache unter `localhost`, Ausweg über
-  `127.0.0.1`) steht oben unter „Aktueller Stand". Bei der nächsten Sitzung mit
-  Browser-Verifikation zuerst dort nachsehen, falls eine Änderung nicht ankommt.
+  `127.0.0.1`) steht oben unter „Aktueller Stand". Bei P7 nicht erneut
+  aufgetreten; bei der nächsten Sitzung mit Browser-Verifikation trotzdem
+  zuerst dort nachsehen, falls eine Änderung nicht ankommt.
 
 **Aus P1 mitgenommen, für spätere Pakete:**
 
@@ -244,9 +247,15 @@ darüber hinaus aufkommt.
   Abschnitt 3 (`renderBaum()`), zeigt eine erste rekursive Darstellung, die P5
   als Ausgangspunkt für den aufklappbaren Bauplan übernehmen kann.
 
-**Ideen für später (v2), bewusst nicht in v1:**
+**Ideen für später (v2), bewusst nicht in v1** (aus `kostenrechner-PLAN.md`
+Abschnitt 8, hier vollständig gegen den Plan abgeglichen):
 
-- Weitere Städte samt Transportkosten
-- Qualitätsstufen und Craft-Qualitätschance
-- Markttiefe über `history` statt nur Bestpreis
+- Weitere Städte samt Transportkosten und Schwarzzonen-Risiko
+- Qualitätsstufen über Normal hinaus, und die Craft-Qualitätschance
+- Markttiefe über `history` statt nur Bestpreis (Mischkalkulation bei Massenbedarf)
 - Einkaufsliste über mehrere Items hinweg („ich brauche ein komplettes Set")
+- Wartezeit und Ausfallrisiko eigener Kauf-/Verkaufsorders
+- Craft-Fame und Spezialisierungsaufbau als Nutzen (die App rechnet Silber,
+  nicht Fortschritt)
+- Ernte, Farmen, Inseln (nur Markt und Werkbank in v1)
+- Mengenrabatt durch ganze Chargen (v1 rechnet stetig, s. Plan 4.4)

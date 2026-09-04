@@ -7,6 +7,76 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (P6, 04.09.2026, v0.5.0)
+
+P1 bis P6 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite, Oberflaeche
+und jetzt die Eigenpreis-Pflege. Details zu P1-P5 (rezepte.js-Schema,
+Markt-ID-Regel, Cache-Schema, ItemValue-Herleitung, Rezeptsuche-Verwechslung,
+die fuenf oberflaechen-pruefer-Befunde) stehen unverkuerzt weiter unten in
+dieser Datei.
+
+**P6 in Kuerze:** Eigene Ansicht „Eigenpreis-Pflege" in `Kostenrechner.html`
+(neues `<details>`-Panel zwischen „Alle Wege" und „Einstellungen"), listet alle
+365 Kandidaten aus `REZEPTGRAPH.nichtHandelbareKandidaten` mit deutschem Namen
+(Fallback auf die ID bei den 21 Kandidaten ohne Uebersetzung) und der ID selbst,
+durchsuchbar per Textfeld (filtert Name UND ID) ueber die neue reine Funktion
+`UI.gefilterteEigenpreisKandidaten(query)`. Je Zeile ein normales
+Zahlen-Eingabefeld, das direkt auf `PREISE.eigenpreisSetzen()` schreibt - kein
+Combobox-/Tastatur-Sondermuster noetig wie bei der Item-Suche (P5), reine
+`<input>`-Felder sind von Haus aus tastaturbedienbar. Zaehler „X von 365 ...
+versehen" ueber `UI.anzahlEigenpreiseGesetzt()`.
+
+**Sichtbarmachung im Bauplan (Abnahmekriterium, nicht nur Komfort):**
+`js/rechenkern.js` kennzeichnet jetzt in `preisMitGrund()`/`kaufKandidat()`,
+ob ein gueltiger Kaufpreis aus einem Marktpreis oder aus einem Eigenpreis stammt
+(`weg.eigenpreis: true/false`). `js/ui.js` zeigt das im Bauplan als Badge
+„Eigenpreis" (statt der Preisalter-Anzeige, die bei einem Eigenpreis ohnehin
+bedeutungslos waere) und in der Alle-Wege-Tabelle als Zusatz „, Eigenpreis"
+hinter dem Kaufweg. Live im Browser mit einem echten Rezept verifiziert
+(`QUESTITEM_CARAVAN_TRADEPACK_CAERLEON_HEAVY` braucht 40x „Schattenherz"
+`T1_FACTION_CAERLEON_TOKEN_1`, kein Marktangebot, per Fetch-Stub simuliert):
+Badge und Tabellenzusatz erschienen korrekt, verschwanden nach dem Loeschen
+des Eigenpreises wieder.
+
+**Entscheidung zu Punkt 5 des Auftrags (freie Eingabe ueber die 365 Kandidaten
+hinaus):** bewusst NICHT umgesetzt. Ein zu Unrecht als „nicht handelbar"
+markiertes Item war schon vor P6 nicht blockiert - `PREISE.eigenpreisSetzen()`
+kennt keine Beschraenkung auf die Kandidatenliste, und die reaktive Tabelle aus
+P5 (`sammleFehlendePreise()`) bietet fuer JEDES im Baum tatsaechlich gesperrte
+Item einen Eigenpreis an, unabhaengig von der Heuristik. Eine zweite,
+vollstaendige Item-Suche in der Pflegeansicht (zusaetzlich zur bestehenden
+Suche oben auf der Seite) haette nur Redundanz und zwei verschieden bediente
+Suchfelder auf derselben Seite erzeugt, ohne eine echte Luecke zu schliessen.
+
+**Validierung:** kein negativer oder nullwertiger Eigenpreis speicherbar -
+`PREISE.eigenpreisSetzen()` behandelt `preis <= 0` bereits seit P2/P3 als
+Loeschen (nicht als 0-Silber-Preis), die neue Pflegeoberflaeche nutzt diesen Weg
+unveraendert (kein zweiter Validierungspfad), plus `min="0"` am Eingabefeld
+gegen versehentliche Minuswerte. Im Browser bestaetigt: `-50` eingetragen ->
+kein Eintrag gespeichert, `PREISE.eigenpreisHolen()` bleibt `null`.
+
+**6 neue Tests** (3 in `rechenkern.js`: `weg.eigenpreis` korrekt bei
+Marktpreis/Eigenpreis/keinem von beiden; 7 in `ui.js`: Filterlogik inkl.
+Namens- und ID-Suche, alphabetische Sortierung, Zaehler, negativer Eigenpreis
+wird nicht gezaehlt) - macht 10 insgesamt, 96 -> 106, alle gruen.
+
+**Umgebungs-Fund, fuer kuenftige Browser-Pruefungen wichtig:** die Vorschau
+(`Claude_Browser`, `preview_start`/`navigate`) cachte `js/rechenkern.js` unter
+`http://localhost:8791/...` hartnaeckig auf einem aelteren Stand - weder ein
+neuer Tab noch ein Server-Neustart (neue `serverId`) noch `Ctrl+Shift+R` haben
+das aufgeloest, ein `fetch(..., {cache:"no-store"})` schon. Direktes `curl` vom
+Bash-Tool auf denselben Port lieferte dagegen sofort den frischen Stand - der
+Cache sitzt also in der Browser-Pane-Infrastruktur, nicht im Python-Server.
+**Zuverlaessiger Ausweg:** dieselbe Seite ueber `http://127.0.0.1:8791/...`
+statt `http://localhost:8791/...` aufrufen, das traf offenbar einen anderen
+Cache-Schluessel und lieferte sofort den aktuellen Stand. Bei kuenftigen
+Sitzungen, in denen eine Codeaenderung im Browser partout nicht ankommt: zuerst
+`127.0.0.1` statt `localhost` probieren, bevor man an der eigenen Aenderung
+zweifelt. **Update P7:** in der P7-Pruefung ist der `localhost`-Cache-Fund
+nicht erneut aufgetreten, `127.0.0.1` bleibt trotzdem die empfohlene Adresse.
+
+---
+
 ## Aktueller Stand (P5, 04.09.2026, v0.4.0)
 
 P1 bis P5 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite und jetzt
