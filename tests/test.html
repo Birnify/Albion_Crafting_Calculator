@@ -333,6 +333,72 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     );
   })();
 
+  // ---- Feature "Craft-Stadt waehlbar" (05.09.2026): RECHENKERN.kosten() mit
+  // zwei verschiedenen opts.stadt muss fuer ein Item mit Stadtbonus-Unterschied
+  // tatsaechlich unterschiedliche Ergebnisse liefern, nicht nur den Wert
+  // annehmen und ihn ignorieren. Faser->Stoff (craftingcategory "fiber") hat
+  // in Lymhurst den Veredelungsbonus (+0,40 RRR), in Fort Sterling nicht (dort
+  // ist Holz die Bonusgruppe) - s. CLAUDE.md "Stadtboni je Warengruppe". ----
+  (function () {
+    pruefe(
+      "Voraussetzung: fiber hat in Lymhurst den Veredelungsbonus",
+      REGELN.hatVeredelBonus("fiber", "Lymhurst")
+    );
+    pruefe(
+      "Voraussetzung: fiber hat in Fort Sterling KEINEN Veredelungsbonus (dort ist wood die Bonusgruppe)",
+      !REGELN.hatVeredelBonus("fiber", "Fort Sterling")
+    );
+
+    // Eigene, sonst nirgends in dieser Testsuite verwendete Item-Namen: REGELN.itemWert()
+    // memoisiert modulweit ueber "item@stufe", unabhaengig vom uebergebenen Testgraphen.
+    // Ein Namenszusammenstoss mit einem anderen Testblock (z.B. "R" oder "X_LEVEL2" aus
+    // den Blocks oben) wuerde dessen zwischengespeicherten Wert unbemerkt uebernehmen.
+    const testGraph = {
+      items: {
+        STADTTEST_R: { iv: 5, t: 1 },
+        STADTTEST_X_LEVEL2: { t: 4, cc: "fiber", el: 2, ivd: true, r: [{ f: 50, i: [{ n: "STADTTEST_R", c: 5 }] }] },
+      },
+    };
+    function opts(stadt) {
+      return {
+        graph: testGraph,
+        preise: { STADTTEST_R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+        stationssaetze: { Weber: 100 },
+        stadt: stadt,
+        fce: 0,
+        fokuswert: 2,
+      };
+    }
+    const rLymhurst = RECHENKERN.kosten("STADTTEST_X_LEVEL2", 2, 1, opts("Lymhurst"));
+    const rFortSterling = RECHENKERN.kosten("STADTTEST_X_LEVEL2", 2, 1, opts("Fort Sterling"));
+    pruefe("Stadtwechsel-Test: beide Rechnungen nicht gesperrt", !rLymhurst.gesperrt && !rFortSterling.gesperrt);
+    pruefe(
+      "Stadtwechsel-Test: Craften gewinnt in beiden Staedten (Rueckgewinnung greift, unterschiedlich stark)",
+      rLymhurst.weg.typ === "craften" && rFortSterling.weg.typ === "craften",
+      rLymhurst.weg.typ + " / " + rFortSterling.weg.typ
+    );
+    pruefe(
+      "Stadtwechsel-Test: RRR unterscheidet sich zwischen Lymhurst (mit Veredelungsbonus) und Fort Sterling (ohne)",
+      rLymhurst.weg.rrr !== rFortSterling.weg.rrr,
+      "Lymhurst=" + rLymhurst.weg.rrr + " FortSterling=" + rFortSterling.weg.rrr
+    );
+    pruefe(
+      "Stadtwechsel-Test: RRR Lymhurst ~ 36,7 % (0,58/1,58, Veredelungsbonus)",
+      nahe(rLymhurst.weg.rrr * 100, 36.7, 0.1),
+      String(rLymhurst.weg.rrr * 100)
+    );
+    pruefe(
+      "Stadtwechsel-Test: RRR Fort Sterling ~ 15,3 % (0,18/1,18, kein Stadtbonus auf fiber)",
+      nahe(rFortSterling.weg.rrr * 100, 15.3, 0.1),
+      String(rFortSterling.weg.rrr * 100)
+    );
+    pruefe(
+      "Stadtwechsel-Test: Silberkosten unterscheiden sich zwischen den Staedten (nicht zufaellig gleich)",
+      Math.abs(rLymhurst.silber - rFortSterling.silber) > 0.01,
+      "Lymhurst=" + rLymhurst.silber + " FortSterling=" + rFortSterling.silber
+    );
+  })();
+
   // ---- rechenkern: von Hand nachgerechneter Vollfall ueber zwei Ebenen ----
   (function () {
     const testGraph = {

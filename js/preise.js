@@ -32,13 +32,24 @@ const PREISE = (function () {
   const REALM = "europe"; // NICHT "www" - das ist der Amerika-Server, s. Kommentar oben
   const API_BASE = `https://${REALM}.albion-online-data.com/api/v2/stats`;
 
-  const STADT = "Lymhurst"; // v1: nur Lymhurst, s. Plan Abschnitt 2 ("Stadt")
+  // Craft-Stadt ist seit dem Staedte-Feature (05.09.2026) eine Einstellung
+  // (ui.js), nicht mehr fest verdrahtet. STADT_DEFAULT gilt nur als Fallback,
+  // wenn preiseAbrufen() ohne opts.stadt aufgerufen wird (z.B. die beiden
+  // Live-Tests in tests/test.html, unveraendert seit P2).
+  const STADT_DEFAULT = "Lymhurst";
   const QUALITAET = 1; // v1: nur Qualitaet 1 (Normal), s. Plan Abschnitt 2 ("Qualitaet")
 
-  // Bei jeder Aenderung am Cache-Format hochzaehlen. Ein Cache mit anderer
-  // Schema-Version wird verworfen statt falsch interpretiert - im
+  // Bei jeder Aenderung am jeweiligen Datenformat hochzaehlen. Ein Cache mit
+  // anderer Schema-Version wird verworfen statt falsch interpretiert - im
   // Eintopf-Projekt hat ein alter Cache einmal frische Daten ueberschrieben.
-  const SCHEMA_VERSION = 1;
+  // BEWUSST ZWEI GETRENNTE VERSIONEN: der Preiscache und die Eigenpreise
+  // aendern sich unabhaengig voneinander. Eine gemeinsame Version wuerde beim
+  // naechsten Cache-Formatwechsel faelschlich auch die vom Nutzer gepflegten
+  // Eigenpreise (P6, 365 Kandidaten) loeschen, obwohl deren Format unveraendert
+  // ist - genau der Fehlertyp, den eine Schema-Version eigentlich verhindern
+  // soll.
+  const PREIS_CACHE_SCHEMA_VERSION = 2; // 2: Cache-Schluessel jetzt stadtabhaengig (Staedte-Feature), s. cacheSchluessel()
+  const EIGENPREIS_SCHEMA_VERSION = 1; // unveraendert, vom Staedte-Feature nicht betroffen
 
   const PREIS_CACHE_KEY = "albion_kostenrechner_preiscache";
   const EIGENPREIS_KEY = "albion_kostenrechner_eigenpreise";
@@ -156,7 +167,7 @@ const PREISE = (function () {
   // ---------------------------------------------------------------------
 
   function leererPreisCache() {
-    return { schema: SCHEMA_VERSION, eintraege: {} };
+    return { schema: PREIS_CACHE_SCHEMA_VERSION, eintraege: {} };
   }
 
   function preisCacheLesen() {
@@ -164,12 +175,25 @@ const PREISE = (function () {
       const roh = localStorage.getItem(PREIS_CACHE_KEY);
       if (!roh) return leererPreisCache();
       const daten = JSON.parse(roh);
-      if (!daten || daten.schema !== SCHEMA_VERSION) return leererPreisCache();
+      if (!daten || daten.schema !== PREIS_CACHE_SCHEMA_VERSION) return leererPreisCache();
       if (!daten.eintraege) daten.eintraege = {};
       return daten;
     } catch (e) {
       return leererPreisCache();
     }
+  }
+
+  /**
+   * Cache-Schluessel fuer einen Preiseintrag: IMMER stadtabhaengig, s.
+   * PREIS_CACHE_SCHEMA_VERSION-Kommentar oben. Ohne die Stadt im Schluessel
+   * koennte ein frischer Cache-Eintrag fuer "T4_CLOTH" aus Lymhurst faelschlich
+   * als gueltig fuer Bridgewatch durchgehen, nur weil derselbe uniquename
+   * gemeint ist - Preise sind aber je Stadt komplett unabhaengig. "::" als
+   * Trenner, weil weder Staedtenamen noch Markt-IDs (die selbst schon ein "@"
+   * enthalten koennen, s. Modulkommentar oben) das Zeichen verwenden.
+   */
+  function cacheSchluessel(stadt, id) {
+    return stadt + "::" + id;
   }
 
   function preisCacheSchreiben(cache) {
@@ -233,8 +257,8 @@ const PREISE = (function () {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function holeBlock(ids) {
-    const url = `${API_BASE}/prices/${ids.join(",")}.json?locations=${STADT}&qualities=${QUALITAET}`;
+  async function holeBlock(ids, stadt) {
+    const url = `${API_BASE}/prices/${ids.join(",")}.json?locations=${stadt}&qualities=${QUALITAET}`;
     let letzterFehler = null;
     for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
       try {
@@ -261,16 +285,23 @@ const PREISE = (function () {
    *
    * @param {string[]} ids                          Markt-IDs, z.B. von sammleMarktIds()
    * @param {object} [opts]
+   * @param {string} [opts.stadt=STADT_DEFAULT]      Craft-Stadt, s. ui.js Einstellung "Stadt". Bestimmt sowohl den
+   *                                                  API-Abfrageort als auch den Cache-Schluessel (s. cacheSchluessel()) -
+   *                                                  ein Wechsel der Stadt darf niemals mit dem Cache-Eintrag einer
+   *                                                  anderen Stadt beantwortet werden.
    * @param {number} [opts.cacheMaxAlterMin=30]      ab wann ein Cache-Eintrag erneut abgerufen wird
    * @param {boolean} [opts.erzwingen=false]         Cache ignorieren, alles neu abrufen
    * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
    *
    * @returns {Promise<Object<string, {sell:{preis:?number,datum:string,kein:boolean}, buy:{preis:?number,datum:string,kein:boolean}, abgerufenAm:number}|null>>}
-   *   Eintrag je Markt-ID. null = nie abgefragt (auch nicht im Cache).
-   *   sell.preis/buy.preis === null bedeutet "kein Angebot", NIEMALS 0.
+   *   Eintrag je Markt-ID (unpraefigiert, ohne Stadt - die Antwort gilt ohnehin
+   *   ausschliesslich fuer die angefragte Stadt). null = nie abgefragt (auch
+   *   nicht im Cache). sell.preis/buy.preis === null bedeutet "kein Angebot",
+   *   NIEMALS 0.
    */
   async function preiseAbrufen(ids, opts) {
     opts = opts || {};
+    const stadt = opts.stadt || STADT_DEFAULT;
     const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : CACHE_GUELTIG_MIN_DEFAULT;
     const erzwingen = !!opts.erzwingen;
     const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
@@ -280,11 +311,11 @@ const PREISE = (function () {
 
     const zuHolen = erzwingen
       ? eindeutigeIds
-      : eindeutigeIds.filter((id) => !istFrisch(cache.eintraege[id], maxAlterMin));
+      : eindeutigeIds.filter((id) => !istFrisch(cache.eintraege[cacheSchluessel(stadt, id)], maxAlterMin));
 
     const ergebnis = {};
     eindeutigeIds.forEach((id) => {
-      ergebnis[id] = cache.eintraege[id] || null;
+      ergebnis[id] = cache.eintraege[cacheSchluessel(stadt, id)] || null;
     });
 
     const gesamt = eindeutigeIds.length;
@@ -294,11 +325,11 @@ const PREISE = (function () {
     if (!zuHolen.length) return ergebnis;
 
     for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
-      const zeilen = await holeBlock(block);
+      const zeilen = await holeBlock(block, stadt);
       const gesehen = new Set();
       (zeilen || []).forEach((zeile) => {
         const eintrag = normalisierePreisZeile(zeile);
-        cache.eintraege[eintrag.id] = eintrag;
+        cache.eintraege[cacheSchluessel(stadt, eintrag.id)] = eintrag;
         ergebnis[eintrag.id] = eintrag;
         gesehen.add(eintrag.id);
       });
@@ -322,7 +353,7 @@ const PREISE = (function () {
   // ---------------------------------------------------------------------
 
   function leererEigenpreisSpeicher() {
-    return { schema: SCHEMA_VERSION, preise: {} };
+    return { schema: EIGENPREIS_SCHEMA_VERSION, preise: {} };
   }
 
   function eigenpreisSpeicherLesen() {
@@ -330,7 +361,7 @@ const PREISE = (function () {
       const roh = localStorage.getItem(EIGENPREIS_KEY);
       if (!roh) return leererEigenpreisSpeicher();
       const daten = JSON.parse(roh);
-      if (!daten || daten.schema !== SCHEMA_VERSION) return leererEigenpreisSpeicher();
+      if (!daten || daten.schema !== EIGENPREIS_SCHEMA_VERSION) return leererEigenpreisSpeicher();
       if (!daten.preise) daten.preise = {};
       return daten;
     } catch (e) {
@@ -480,21 +511,36 @@ const PREISE = (function () {
       const daten = JSON.parse(roh);
       pruefe(
         "Cache mit falscher Schema-Version wird als veraltet erkannt (Simulation)",
-        daten.schema !== SCHEMA_VERSION
+        daten.schema !== PREIS_CACHE_SCHEMA_VERSION
       );
       localStorage.removeItem(testSchluessel);
     } catch (e) {
       pruefe("Cache-Schema-Test uebersprungen (kein localStorage verfuegbar)", true, String(e));
     }
 
+    // Staedte-Feature (05.09.2026): der Cache-Schluessel muss die Stadt
+    // einschliessen, sonst koennte ein Lymhurst-Eintrag faelschlich fuer eine
+    // andere Stadt als frisch gelten (derselbe Fehlertyp wie der Zeitzonen-Bug,
+    // nur bei der Stadt statt bei der Uhrzeit).
+    pruefe(
+      "cacheSchluessel: dieselbe Markt-ID in zwei Staedten ergibt zwei verschiedene Schluessel",
+      cacheSchluessel("Lymhurst", "T4_CLOTH") !== cacheSchluessel("Bridgewatch", "T4_CLOTH"),
+      cacheSchluessel("Lymhurst", "T4_CLOTH") + " vs " + cacheSchluessel("Bridgewatch", "T4_CLOTH")
+    );
+    pruefe(
+      "PREIS_CACHE_SCHEMA_VERSION und EIGENPREIS_SCHEMA_VERSION sind unabhaengige Zaehler (Eigenpreise vom Staedte-Feature nicht betroffen)",
+      typeof PREIS_CACHE_SCHEMA_VERSION === "number" && typeof EIGENPREIS_SCHEMA_VERSION === "number"
+    );
+
     return ergebnisse;
   }
 
   return {
     REALM,
-    STADT,
+    STADT_DEFAULT,
     QUALITAET,
-    SCHEMA_VERSION,
+    PREIS_CACHE_SCHEMA_VERSION,
+    EIGENPREIS_SCHEMA_VERSION,
     marktId,
     sammleMarktIds,
     preiseAbrufen,

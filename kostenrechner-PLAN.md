@@ -50,7 +50,7 @@ Vom Nutzer am 04.09.2026 bestätigt. Nicht ohne Rücksprache ändern.
 | **Preise** | Live aus dem Browser gegen `europe.albion-online-data.com`, mit `localStorage`-Zwischenspeicher. |
 | **Qualität** | Nur Qualität 1 (Normal), für Ein- und Verkauf. Craft-Qualitätschance wird nicht modelliert. |
 | **Fokus** | Ein globaler Wert „Fokus-Effizienz %", dazu eine Ausnahmeliste je Craft-Kategorie. |
-| **Stadt** | Alles Lymhurst. Andere Städte sind ausdrücklich v2. |
+| **Stadt** | Alles Lymhurst. Andere Städte sind ausdrücklich v2. **Aufgeweicht per Nutzer-Entscheidung 05.09.2026:** eine Stadt fuer Kaufen, Craften und Verkaufen zugleich ist jetzt per Dropdown waehlbar, s. `kostenrechner-KONTEXT.md`. Kein Abweichen vom Plan ohne Ruecksprache, sondern die Ruecksprache selbst. |
 
 ---
 
@@ -439,7 +439,12 @@ Fehler, die dort Zeit gekostet haben und hier nicht noch einmal passieren dürfe
 Damit sie nicht durch die Hintertür wieder auftauchen.
 
 - **Andere Städte als Lymhurst.** Weder Einkauf noch Verkauf noch Craft. Transport
-  und Schwarzzonen-Risiko wären ohnehin unmodelliert.
+  und Schwarzzonen-Risiko wären ohnehin unmodelliert. **Teilweise aufgeweicht
+  05.09.2026:** eine einzelne, frei waehlbare Stadt fuer die ganze Rechnung
+  (Kaufen, Craften, Verkaufen zugleich) ist jetzt umgesetzt, s.
+  `kostenrechner-KONTEXT.md`. Weiterhin nicht in v1: getrennte Rollen je
+  Einkaufen/Craften/Verkaufen, Vergleich mehrerer Staedte gleichzeitig,
+  Transportkosten und Schwarzzonen-Risiko.
 - **Qualitätsstufen** über Normal hinaus, und die Qualitätschance beim Craften.
 - **Wartezeit und Ausfallrisiko eigener Orders.**
 - **Craft-Fame und Spezialisierungsaufbau** als Nutzen. Die App rechnet Silber,

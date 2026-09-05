@@ -19,6 +19,7 @@ const UI = (function () {
   function defaultEinstellungen() {
     return {
       schema: EINSTELLUNGEN_SCHEMA,
+      stadt: "Lymhurst", // Craft-Stadt der gesamten Rechnung (Kaufen, Craften, Verkaufen), s. CLAUDE.md "Craft-Kategorie zu Gebaeude"
       fce: 0, // 0 = volle Rohfokuskosten, die konservative Richtung (zu teuer statt zu billig)
       fceAusnahmen: {}, // craftingcategory -> FCE
       fokuswert: 0, // Silber je Fokuspunkt; 0 ist gueltig, verschiebt aber zu fokusintensiven Wegen
@@ -38,6 +39,7 @@ const UI = (function () {
       const daten = JSON.parse(roh);
       if (!daten || daten.schema !== EINSTELLUNGEN_SCHEMA) return defaultEinstellungen();
       const basis = defaultEinstellungen();
+      basis.stadt = daten.stadt || basis.stadt;
       basis.fce = daten.fce != null ? daten.fce : basis.fce;
       basis.fceAusnahmen = daten.fceAusnahmen || {};
       basis.fokuswert = daten.fokuswert != null ? daten.fokuswert : basis.fokuswert;
@@ -223,6 +225,7 @@ const UI = (function () {
     const trefferListeEl = document.getElementById("trefferListe");
     const tierFilterEl = document.getElementById("tierFilter");
     const stufeEl = document.getElementById("stufe");
+    const stadtEl = document.getElementById("stadt");
     const ausgewaehltEl = document.getElementById("ausgewaehlt");
     const ausgewaehltTextEl = document.getElementById("ausgewaehltText");
     const ausgewaehltIdEl = document.getElementById("ausgewaehltId");
@@ -310,6 +313,7 @@ const UI = (function () {
 
     // ---- Formular <- Einstellungen ----
     function ladeEinstellungenInFormular() {
+      stadtEl.value = einstellungen.stadt;
       fceEingabeEl.value = einstellungen.fce;
       fokuswertEl.value = einstellungen.fokuswert;
       maxPreisAlterEl.value = einstellungen.maxPreisAlterMin == null ? "" : einstellungen.maxPreisAlterMin;
@@ -473,6 +477,22 @@ const UI = (function () {
       if (zustand.item) berechnen(false);
     });
 
+    // Stadtwechsel: Kaufen, Craften und Verkaufen laufen alle in der neuen
+    // Stadt, s. kostenrechner-KONTEXT.md/Feature "Craft-Stadt waehlbar". Die
+    // bisher geladenen Preise (zustand.preiseRoh) gelten fuer die ALTE Stadt
+    // und duerfen nicht weiterverwendet werden - berechnen() unten ruft
+    // PREISE.preiseAbrufen() erneut mit der neuen Stadt auf und ersetzt
+    // zustand.preiseRoh vollstaendig. Der Preiscache selbst ist seit diesem
+    // Feature stadtabhaengig (s. preise.js, cacheSchluessel()), ein
+    // Stadtwechsel muss den Cache deshalb NICHT erzwungen umgehen: fuer die
+    // neue Stadt gibt es dort ohnehin noch keinen (oder einen eigenen,
+    // ebenfalls gueltigen) Eintrag.
+    stadtEl.addEventListener("change", () => {
+      einstellungen.stadt = stadtEl.value;
+      einstellungenSchreiben(einstellungen);
+      if (zustand.item) berechnen(false);
+    });
+
     // ---- Preise laden + berechnen ----
     berechnenBtn.addEventListener("click", () => berechnen(false));
     refreshBtn.addEventListener("click", () => berechnen(true));
@@ -498,21 +518,23 @@ const UI = (function () {
       const meinToken = ++anfrageZaehler;
       berechnenBtn.disabled = true;
       refreshBtn.disabled = true;
-      setStatus("Sammle Markt-IDs ...");
+      const stadt = einstellungen.stadt;
+      setStatus("Sammle Markt-IDs (" + stadt + ") ...");
       try {
         const ids = PREISE.sammleMarktIds(zustand.item, zustand.stufe);
         if (meinToken !== anfrageZaehler) return; // inzwischen ueberholt
-        setStatus("0 / " + ids.length + " Preise abgerufen ...");
+        setStatus("0 / " + ids.length + " Preise abgerufen (" + stadt + ") ...");
         const preiseRoh = await PREISE.preiseAbrufen(ids, {
           erzwingen: !!erzwingen,
+          stadt: stadt,
           aufFortschritt: (erledigt, gesamt) => {
-            if (meinToken === anfrageZaehler) setStatus(erledigt + " / " + gesamt + " Preise abgerufen ...");
+            if (meinToken === anfrageZaehler) setStatus(erledigt + " / " + gesamt + " Preise abgerufen (" + stadt + ") ...");
           },
         });
-        if (meinToken !== anfrageZaehler) return; // waehrend des Abrufs wurde ein neueres Item gewaehlt, diese Antwort ist veraltet
+        if (meinToken !== anfrageZaehler) return; // waehrend des Abrufs wurde ein neueres Item oder eine andere Stadt gewaehlt, diese Antwort ist veraltet
         zustand.preiseRoh = preiseRoh;
         berechneMitVorhandenenPreisen();
-        setStatus(ids.length + " Markt-IDs, " + Object.keys(preiseRoh).length + " Preise geladen.", "ok");
+        setStatus(ids.length + " Markt-IDs, " + Object.keys(preiseRoh).length + " Preise fuer " + stadt + " geladen.", "ok");
       } catch (err) {
         if (meinToken === anfrageZaehler) setStatus("Fehler beim Preisabruf: " + err.message, "err");
       } finally {
@@ -546,7 +568,7 @@ const UI = (function () {
         preise: preiseZuOptsFormat(zustand.preiseRoh || {}),
         eigenpreise: eigenpreiseFuerOpts(),
         kaufweg: einstellungen.kaufweg,
-        stadt: "Lymhurst",
+        stadt: einstellungen.stadt,
         stationssaetze: einstellungen.stationssaetze,
         fce: einstellungen.fce,
         fceUeberschreibungen: einstellungen.fceAusnahmen,

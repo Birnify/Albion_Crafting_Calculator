@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kostenrechner Lymhurst</title>
+<title>Kostenrechner</title>
 <style>
 :root{
   --bg:#f4f6f9; --panel:#ffffff; --line:#dde3ea; --text:#16202c; --dim:#63748a;
@@ -158,7 +158,7 @@ details>.body{padding:0 20px 20px}
 <body>
 <div class="wrap">
 
-<h1>Kostenrechner Lymhurst</h1>
+<h1>Kostenrechner</h1>
 <div class="sub">Guenstigster Beschaffungsweg fuer ein craftbares Item auf einer Verzauberungsstufe: kaufen, craften oder hochverzaubern, ueber den ganzen Rezeptbaum.</div>
 
 <div class="panel">
@@ -182,6 +182,18 @@ details>.body{padding:0 20px 20px}
     <select id="stufe">
       <option value="0">.0</option><option value="1">.1</option><option value="2">.2</option>
       <option value="3">.3</option><option value="4">.4</option>
+    </select>
+  </div>
+  <div class="feld">
+    <label for="stadt" title="Stadt fuer die gesamte Rechnung: Kaufen, Craften und Verkaufen. Bestimmt Marktpreise, Stadtbonus auf Rueckgewinnung und die abgerufenen Marktdaten.">Stadt</label>
+    <select id="stadt">
+      <option value="Lymhurst">Lymhurst</option>
+      <option value="Fort Sterling">Fort Sterling</option>
+      <option value="Bridgewatch">Bridgewatch</option>
+      <option value="Martlock">Martlock</option>
+      <option value="Thetford">Thetford</option>
+      <option value="Caerleon">Caerleon</option>
+      <option value="Brecilien">Brecilien</option>
     </select>
   </div>
 </div>

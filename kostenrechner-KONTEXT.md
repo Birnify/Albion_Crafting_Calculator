@@ -1,7 +1,7 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.0.1 · Fehlerkorrektur nach v1.0.0 (Zeitzonen-Bug
-bei der Preisalter-Berechnung), kein neues Paket
+Stand: 2026-09-05 · Version: v1.1.0 · Feature: Craft-Stadt waehlbar (kein
+Paket aus dem Plan, Nutzer-Feature ausserhalb der P0-P7-Reihenfolge)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -20,55 +20,113 @@ ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Fehlerkorrektur nach P7, 05.09.2026, v1.0.1)
+## Aktueller Stand (Feature "Craft-Stadt waehlbar", 05.09.2026, v1.1.0)
 
-Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, s.
-`kostenrechner-KONTEXT-HISTORIE.md` für die Details dazu. Dieser Fund kam erst
-danach, beim gemeinsamen Nachprüfen einzelner Preise mit dem Nutzer.
+Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, v1.0.1 war eine
+Fehlerkorrektur danach (Zeitzonen-Bug), s. `kostenrechner-KONTEXT-HISTORIE.md`
+für die Details zu beidem. Dieses Paket ist keins der sechs Plan-Pakete,
+sondern ein vom Nutzer beauftragtes Feature.
 
-**Zeitzonen-Bug bei der Preisalter-Berechnung, gefunden und behoben.** Die
-Albion-Online-Data-API liefert Zeitstempel ohne Zeitzonen-Kennung
-(`"2026-09-04T20:05:00"`, kein `Z`). Ein rohes `Date.parse()`/`new Date()`
-darauf interpretiert das laut ECMAScript-Spezifikation als **lokale Zeit**,
-nicht als UTC. In Mitteleuropa (Sommerzeit, UTC+2) ergab das einen Fehler von
-exakt 2 Stunden bei jeder Altersberechnung: ein Preis von 20:05 Uhr UTC wurde
-als „vor 3,2 Std." angezeigt statt korrekt „vor 1,2 Std.".
+**Wichtig, gegen `kostenrechner-PLAN.md` abgeglichen:** Abschnitt 2
+("Getroffene Entscheidungen") nannte "Alles Lymhurst" ausdruecklich als
+v1-Vorgabe, Abschnitt 8 ("Ausdruecklich nicht in v1") listete andere Staedte
+als bewusst ausgeschlossen. Der Nutzer hat diese Vorgabe am 05.09.2026 aktiv
+aufgeweicht (Feature-Definition per `define-feature` bestaetigt), kein
+eigenmaechtiges Abweichen vom Plan. Beide Stellen in `kostenrechner-PLAN.md`
+tragen jetzt einen Verweis hierher. Weiterhin NICHT umgesetzt (Abgrenzung der
+Feature-Definition, bewusst v2): getrennte Rollen je Einkaufen/Craften/
+Verkaufen wie beim Eintopf-Rechner, Vergleich mehrerer Staedte gleichzeitig,
+Transportkosten und Schwarzzonen-Risiko.
 
-Betraf zwei Stellen mit dem exakt gleichen Fehler: `js/ui.js`
-(`alterFuerMarktId()`, nur Anzeige) und `js/rechenkern.js`
-(`preisMitGrund()`, echte Sperrlogik gegen `opts.maxPreisAlterMin`). Die
-Überschätzung wirkt konservativ (macht Preise fälschlich älter, sperrt also
-eher zu viel statt zu wenig durchzulassen), ist aber trotzdem ein echter
-Fehler: ein Preis, der eigentlich noch innerhalb der eingestellten
-Höchstgrenze liegt, konnte fälschlich als zu alt gesperrt werden.
+**Was gebaut wurde:** ein Dropdown "Stadt" (alle sieben Staedte) neben
+Tier/Verzauberung in `Kostenrechner.html`, eine Stadt fuer die gesamte
+Rechnung (Kaufen, Craften, Verkaufen zugleich). `js/rechenkern.js` nahm
+`opts.stadt` bereits entgegen (unveraendert), `js/regeln.js`s `STADTBONUS`
+kannte bereits alle sieben Staedte (unveraendert) - beide waren beim Bau von
+P3 schon vorbereitet. Zwei Stellen waren tatsaechlich fest auf Lymhurst
+verdrahtet und wurden durch die Einstellung ersetzt:
+`js/preise.js` (Konstante `STADT` fuer die API-Abfrage, jetzt `opts.stadt` an
+`preiseAbrufen()`, Default `STADT_DEFAULT = "Lymhurst"` nur fuer Aufrufer ohne
+eigene Angabe, z.B. die beiden unveraenderten Live-Tests) und `js/ui.js`
+(`stadt: "Lymhurst"` beim Zusammenbauen der Opts, jetzt `einstellungen.stadt`).
+Ein Stadtwechsel loest ueber den bestehenden `stufeEl`-Mechanismus (neuer,
+gleichartiger `stadtEl`-Listener) einen Neuabruf der Preise fuer die neue
+Stadt aus und rechnet mit den dortigen `STADTBONUS`-Werten neu.
 
-Behoben durch eine gemeinsame Funktion `REGELN.parseApiDatumUtc()` in
-`js/regeln.js`, die ein fehlendes Zeitzonen-Suffix erkennt und `Z` ergänzt,
-bevor geparst wird. Beide Stellen nutzen jetzt diese Funktion statt eines
-rohen `Date.parse()`. 5 neue Tests (3 für `parseApiDatumUtc()` selbst, 2 für
-das Verhalten in `RECHENKERN.kosten()` mit einem API-Datum ohne `Z`), Testsuite
-106 → 111, live im Browser bestätigt. Zusätzlich live nachgestellt: derselbe
-Fall (75 Minuten echtes Alter, API-Format ohne `Z`) ergab vorher 195 Minuten
-(195 − 75 = 120 = genau der Zeitzonen-Versatz), nachher korrekt 75.
+**Echter Fund dabei, kein Nebeneffekt:** der `localStorage`-Preiscache in
+`js/preise.js` war NICHT stadtabhaengig (Schluessel = reine Markt-ID). Ohne
+Korrektur haette ein frischer Cache-Eintrag aus Lymhurst faelschlich als
+gueltig fuer z.B. Bridgewatch gegolten, obwohl Preise je Stadt vollstaendig
+unabhaengig sind - derselbe Fehlertyp wie der v1.0.1-Zeitzonen-Bug, nur bei
+der Stadt statt bei der Uhrzeit. Behoben durch `cacheSchluessel(stadt, id)`
+(Format `"<Stadt>::<MarktId>"`) an allen Lese-/Schreibstellen des Preiscaches.
+Schema-Version dafuer hochgezaehlt, aber BEWUSST GETRENNT von der
+Eigenpreis-Schema-Version: `PREIS_CACHE_SCHEMA_VERSION` (1 -> 2) betrifft nur
+den Preiscache, `EIGENPREIS_SCHEMA_VERSION` (unveraendert bei 1) den separat
+gefuehrten Eigenpreis-Speicher (P6, vom Nutzer gepflegte 365 Kandidaten). Eine
+gemeinsame Version haette beim Hochzaehlen faelschlich auch die Eigenpreise
+geloescht, obwohl deren Format unveraendert ist - der Fehlertyp, den eine
+Schema-Version eigentlich verhindern soll. Konsequenz fuer bestehende Nutzer:
+der Preiscache wird beim ersten Laden nach diesem Update einmalig verworfen
+(Preise werden neu abgerufen), die gepflegten Eigenpreise bleiben erhalten.
 
-Gefunden durch den Nutzer beim Vergleich eines von der App angezeigten Alters
-mit der tatsächlichen Uhrzeit der API-Antwort, nicht durch einen Prüfer-Agenten.
+**Zwei-Staedte-Probe (Abnahmekriterium), live im Browser nachvollzogen:**
+Faser-zu-Stoff-Veredelung ("Guter Stoff", `craftingcategory` "fiber") mit
+Fokus zeigt im Bauplan der Koeniglichen Gugel des Adepten in Lymhurst
+**Rueckgewinnung 53,9 %** (Grund 0,18 + Veredelungsbonus 0,40 + Fokus 0,59 =
+1,17, RRR = 1,17/2,17), nach Umschalten auf Fort Sterling (dort ist Holz die
+Bonusgruppe, nicht Faser) **43,5 %** (0,18 + 0,59 = 0,77, RRR = 0,77/1,77),
+bei ansonsten unveraenderten Einstellungen. Preise wurden beim Umschalten
+nachweislich neu abgerufen (Statuszeile nennt die Stadt, `localStorage`-Cache
+zeigt getrennte Eintraege `Lymhurst::T4_HEAD_CLOTH_ROYAL` und
+`Fort Sterling::T4_HEAD_CLOTH_ROYAL`).
 
-**Version:** Patch (v1.0.0 auf v1.0.1), reine Fehlerkorrektur, kein neues
-Feature und keine Verhaltensänderung außerhalb dieses Bugs.
+**Tests:** 3 neue in `js/preise.js` selbsttest (Cache-Schluessel
+stadtabhaengig, zwei unabhaengige Schema-Versionen), 8 neue in
+`tests/test.html` (Voraussetzungen `hatVeredelBonus`, sowie
+`RECHENKERN.kosten()` mit `opts.stadt` "Lymhurst" vs. "Fort Sterling" am
+selben Testgraphen: RRR und Silberkosten unterscheiden sich nachweislich).
+Testsuite 111 -> 119 gruen. Eigene, in der Suite sonst nicht verwendete
+Item-Namen gewaehlt (`STADTTEST_R`, `STADTTEST_X_LEVEL2`): `REGELN.itemWert()`
+memoisiert modulweit ueber `item@stufe` unabhaengig vom uebergebenen
+Testgraphen, ein Namenszusammenstoss mit einem der Testbloecke weiter oben
+(die ebenfalls generische Namen wie "R" oder "X_LEVEL2" verwenden) haette
+sonst stillschweigend falsche Werte aus dem jeweils anderen Testgraphen
+uebernommen - live so aufgetreten und korrigiert, nicht nur theoretisch
+vermieden.
+
+**Browser-Pruefung, Umgebungs-Fund:** Kostenrechner.html wurde ueber mehrere
+Editier-Zyklen hinweg im selben Browser-Tab (127.0.0.1:8791) mehrfach neu
+geladen; der HTTP-Disk-Cache des Browsers behielt dabei eine veraltete Kopie
+von `js/ui.js`/`js/preise.js` weit laenger als erwartet (auch nach
+Query-String-Cache-Busting auf der HTML-Seite selbst und einem
+Hard-Reload-Tastaturkuerzel) - erkennbar erst durch direkten Abgleich von
+`PREISE.STADT_DEFAULT` (neu) gegen `PREISE.STADT` (alt) im laufenden
+Dokument. Umgangen durch eine temporaere Kopie mit cache-gebusteten
+`<script src=...?v=timestamp>`-Pfaden, danach geloescht. Betrifft nur diese
+Pruefsitzung (Original-`Kostenrechner.html` unveraendert), nicht Endnutzer
+mit einem regulaeren ersten Seitenaufruf; trotzdem hier vermerkt, falls eine
+kuenftige Sitzung an derselben Stelle haengen bleibt.
+
+**Vorheriger Stand (v1.0.1, Zeitzonen-Bug bei der Preisalter-Berechnung)**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel,
+s. "Entwicklungsweise / Mitarbeit" unten), diese Datei war ueber 300 Zeilen
+gewachsen.
 
 ## Dateistruktur
 
-Stand nach P7 (v1.0.0), letztes Paket des Plans:
+Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0):
 
 ```
 Kostenrechner/
   build_graph.py            fertig (P1, P2: el-Feld ergaenzt), seither unveraendert
   rezepte.js                erzeugt (P1, P2), nicht von Hand bearbeiten
-  Kostenrechner.html         fertig (P6, v0.5.0): Suche, Hero, Bauplan-Baum, Alle-Wege,
-                              Eigenpreis-Pflege (P6), Einstellungen
+  Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0): Suche, Hero,
+                              Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
-    preise.js                fertig (P2, P3): eigenpreisSetzen lehnt Preis<=0 ab
+    preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0): eigenpreisSetzen
+                              lehnt Preis<=0 ab, PREIS_CACHE_SCHEMA_VERSION/EIGENPREIS_SCHEMA_VERSION
+                              getrennt seit v1.1.0
     regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0): itemWert, RRR,
                               Stationsgebuehr (mit 0-Floor), Fokus (mit 0-Floor), Steuer,
                               Kategorie-Tabellen, rezepteFuerStufe
@@ -76,8 +134,9 @@ Kostenrechner/
                               kosten(item,stufe,menge,opts), stationssatzFuer() unterscheidet
                               fehlend von ausdruecklich 0, weg.eigenpreis kennzeichnet
                               Kauf-Kandidaten aus einer eigenen Schaetzung (P6)
-    ui.js                     fertig (P5, v0.4.0, P6 v0.5.0): Suche mit Tastaturbedienung,
-                              Rendering, Einstellungen, Eigenpreis-Pflegeansicht (P6)
+    ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0): Suche
+                              mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
+                              Pflegeansicht (P6)
   kostenrechner-PLAN.md
   kostenrechner-KONTEXT.md
   kostenrechner-KONTEXT-HISTORIE.md
@@ -227,7 +286,10 @@ zuerst) oder eine der beiden unten offen gebliebenen Kleinigkeiten.
 **Ideen für später (v2), bewusst nicht in v1** (aus `kostenrechner-PLAN.md`
 Abschnitt 8, hier vollständig gegen den Plan abgeglichen):
 
-- Weitere Städte samt Transportkosten und Schwarzzonen-Risiko
+- Mehrere Staedte gleichzeitig vergleichen, getrennte Rollen je
+  Einkaufen/Craften/Verkaufen (wie beim Eintopf-Rechner), Transportkosten und
+  Schwarzzonen-Risiko. Eine einzelne, frei waehlbare Stadt fuer die ganze
+  Rechnung ist seit v1.1.0 umgesetzt (05.09.2026), s. "Aktueller Stand" oben.
 - Qualitätsstufen über Normal hinaus, und die Craft-Qualitätschance
 - Markttiefe über `history` statt nur Bestpreis (Mischkalkulation bei Massenbedarf)
 - Einkaufsliste über mehrere Items hinweg („ich brauche ein komplettes Set")

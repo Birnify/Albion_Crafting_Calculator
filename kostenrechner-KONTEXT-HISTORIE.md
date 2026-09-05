@@ -7,6 +7,45 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Fehlerkorrektur nach P7, 05.09.2026, v1.0.1)
+
+Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, s. Eintrag darunter
+für die Details dazu. Dieser Fund kam erst danach, beim gemeinsamen
+Nachprüfen einzelner Preise mit dem Nutzer.
+
+**Zeitzonen-Bug bei der Preisalter-Berechnung, gefunden und behoben.** Die
+Albion-Online-Data-API liefert Zeitstempel ohne Zeitzonen-Kennung
+(`"2026-09-04T20:05:00"`, kein `Z`). Ein rohes `Date.parse()`/`new Date()`
+darauf interpretiert das laut ECMAScript-Spezifikation als **lokale Zeit**,
+nicht als UTC. In Mitteleuropa (Sommerzeit, UTC+2) ergab das einen Fehler von
+exakt 2 Stunden bei jeder Altersberechnung: ein Preis von 20:05 Uhr UTC wurde
+als „vor 3,2 Std." angezeigt statt korrekt „vor 1,2 Std.".
+
+Betraf zwei Stellen mit dem exakt gleichen Fehler: `js/ui.js`
+(`alterFuerMarktId()`, nur Anzeige) und `js/rechenkern.js`
+(`preisMitGrund()`, echte Sperrlogik gegen `opts.maxPreisAlterMin`). Die
+Überschätzung wirkt konservativ (macht Preise fälschlich älter, sperrt also
+eher zu viel statt zu wenig durchzulassen), ist aber trotzdem ein echter
+Fehler: ein Preis, der eigentlich noch innerhalb der eingestellten
+Höchstgrenze liegt, konnte fälschlich als zu alt gesperrt werden.
+
+Behoben durch eine gemeinsame Funktion `REGELN.parseApiDatumUtc()` in
+`js/regeln.js`, die ein fehlendes Zeitzonen-Suffix erkennt und `Z` ergänzt,
+bevor geparst wird. Beide Stellen nutzen jetzt diese Funktion statt eines
+rohen `Date.parse()`. 5 neue Tests (3 für `parseApiDatumUtc()` selbst, 2 für
+das Verhalten in `RECHENKERN.kosten()` mit einem API-Datum ohne `Z`), Testsuite
+106 → 111, live im Browser bestätigt. Zusätzlich live nachgestellt: derselbe
+Fall (75 Minuten echtes Alter, API-Format ohne `Z`) ergab vorher 195 Minuten
+(195 − 75 = 120 = genau der Zeitzonen-Versatz), nachher korrekt 75.
+
+Gefunden durch den Nutzer beim Vergleich eines von der App angezeigten Alters
+mit der tatsächlichen Uhrzeit der API-Antwort, nicht durch einen Prüfer-Agenten.
+
+**Version:** Patch (v1.0.0 auf v1.0.1), reine Fehlerkorrektur, kein neues
+Feature und keine Verhaltensänderung außerhalb dieses Bugs.
+
+---
+
 ## Aktueller Stand (P7, 04.09.2026, v1.0.0)
 
 P1 bis P7 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite, Oberfläche,
