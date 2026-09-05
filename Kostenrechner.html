@@ -129,6 +129,10 @@ details>.body{padding:0 20px 20px}
                     background:var(--accent-soft);color:var(--accent);font-size:10.5px;font-weight:700}
 .baum .alter{color:var(--dim);font-size:11px;margin-left:4px}
 .baum .alter.stale{color:var(--warn);font-weight:600}
+.baum .fokus-schalter{border:1px solid var(--line);border-radius:4px;background:var(--bg);
+                       color:inherit;font:inherit;font-size:12.5px;padding:0 5px;cursor:pointer}
+.baum .fokus-schalter:hover{background:var(--accent-soft);border-color:var(--accent)}
+.baum .fokus-schalter.uebersteuert{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
 /* Einstellungen: Gebaeude/Kategorie-Ausnahmelisten */
 .klein-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 .klein-tbl th{background:transparent;color:var(--dim);text-transform:uppercase;
@@ -300,6 +304,13 @@ details>.body{padding:0 20px 20px}
   <div class="hint">Leer heisst: globaler Wert oben gilt. Zeigt zuerst die Kategorien im aktuell berechneten Bauplan.</div>
   <table class="klein-tbl" id="fceAusnahmenTabelle"><thead><tr><th>Kategorie</th><th>FCE-Ausnahme</th></tr></thead><tbody></tbody></table>
   <button id="fceAlleZeigenBtn" class="mini" type="button" style="margin-top:8px">Alle 43 Kategorien anzeigen</button>
+</div>
+
+<div style="margin-top:16px">
+  <label style="margin-bottom:6px" title="Legt je Kategorie fest, ob beim Craften Fokus eingesetzt wird. Automatisch: die Zielfunktion (Silber + Fokus x Fokuswert) entscheidet je Schritt selbst, wie bisher. Eine Uebersteuerung an einem einzelnen Knoten im Bauplan unten (auf den Fokus-Text im Bauplan klicken) hat Vorrang vor dieser Regel.">Fokus-Regel je Kategorie</label>
+  <div class="hint">Automatisch = wie bisher, die Zielfunktion entscheidet je Schritt. Zeigt zuerst die Kategorien im aktuell berechneten Bauplan.</div>
+  <table class="klein-tbl" id="fokusRegelTabelle"><thead><tr><th>Kategorie</th><th>Regel</th></tr></thead><tbody></tbody></table>
+  <button id="fokusRegelAlleZeigenBtn" class="mini" type="button" style="margin-top:8px">Alle 43 Kategorien anzeigen</button>
 </div>
 
 <div style="margin-top:16px">

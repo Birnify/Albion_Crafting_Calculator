@@ -733,6 +733,142 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     );
   })();
 
+  // ---- Feature "Fokuseinsatz steuerbar machen" (05.09.2026): Kategorie-Regel
+  // und Knoten-Uebersteuerung fuer den Fokuseinsatz beim Craften, s.
+  // kostenrechner-KONTEXT.md. Testgraph Faser (FOKREGEL_R) -> Guter Stoff
+  // (FOKREGEL_M, craftingcategory "fiber", hat in Lymhurst den Veredelungs-
+  // bonus +0,40, s. CLAUDE.md "Stadtboni je Warengruppe"), fokuswert 0 macht
+  // "mit Fokus" ohne Regel automatisch zur guenstigeren, gewaehlten Variante
+  // (Fokus ist in der Zielfunktion gratis) - genau die vom Nutzer beschriebene
+  // Ausgangslage, die diese Regeln steuerbar machen sollen. Eigene Item-Namen
+  // (FOKREGEL_*), s. Kommentar beim Stadtwechsel-Test oben zur Memo-Kollision. ----
+  (function () {
+    const testGraph = {
+      items: {
+        FOKREGEL_R: { iv: 5, t: 4 },
+        FOKREGEL_M: { t: 4, cc: "fiber", ivd: true, r: [{ a: 2, f: 100, i: [{ n: "FOKREGEL_R", c: 4 }] }] },
+      },
+    };
+    function opts(extra) {
+      return Object.assign(
+        {
+          graph: testGraph,
+          preise: { FOKREGEL_R: { sell: { preis: 10, kein: false }, buy: { preis: 0, kein: true } } },
+          stationssaetze: { Weber: 100 },
+          stadt: "Lymhurst",
+          fce: 0,
+          fokuswert: 0,
+        },
+        extra || {}
+      );
+    }
+
+    // Regressionstest: ohne jede Regel muss das Verhalten unveraendert bleiben
+    // (Automatik waehlt weiterhin frei, beide Kandidaten bleiben in alleWege).
+    const rAutomatik = RECHENKERN.kosten("FOKREGEL_M", 0, 1, opts());
+    pruefe("Fokusregel-Test: ohne Regel nicht gesperrt", !rAutomatik.gesperrt, rAutomatik.grund);
+    pruefe(
+      "Fokusregel-Test: ohne Regel waehlt die Automatik weiterhin frei (hier: mit Fokus, da fokuswert 0)",
+      rAutomatik.weg.mitFokus === true,
+      String(rAutomatik.weg.mitFokus)
+    );
+    pruefe(
+      "Fokusregel-Test: ohne Regel enthaelt alleWege weiterhin BEIDE Craft-Varianten, keine davon gesperrt (Regressionstest)",
+      rAutomatik.alleWege.filter((w) => w.typ === "craften" && !w.gesperrt).length === 2,
+      JSON.stringify(rAutomatik.alleWege.filter((w) => w.typ === "craften").map((w) => ({ mitFokus: w.mitFokus, gesperrt: w.gesperrt })))
+    );
+
+    // Kategorie-Regel "nie" fuer fiber: erzwingt ohne Fokus, obwohl mit Fokus
+    // guenstiger waere. Konkretes Zahlenbeispiel (auch unabhaengig per
+    // Node-Skript im Scratchpad gegengerechnet, s. Abschluss-Zusammenfassung):
+    //   RRR mit Fokus  = 1,17/2,17 = 53,92 % -> Silber ~ 10,3416
+    //   RRR ohne Fokus = 0,58/1,58 = 36,71 % -> Silber ~ 13,7832 (teurer, aber erzwungen)
+    const rKategorieNie = RECHENKERN.kosten("FOKREGEL_M", 0, 1, opts({ fokusRegelJeKategorie: { fiber: "nie" } }));
+    pruefe("Fokusregel-Test: Kategorie-Regel 'nie' nicht gesperrt", !rKategorieNie.gesperrt, rKategorieNie.grund);
+    pruefe(
+      "Fokusregel-Test: Kategorie-Regel 'nie' fuer fiber erzwingt CRAFTEN OHNE Fokus",
+      rKategorieNie.weg.mitFokus === false,
+      String(rKategorieNie.weg.mitFokus)
+    );
+    pruefe("Fokusregel-Test: Kategorie-Regel 'nie' setzt Fokus auf 0", rKategorieNie.fokus === 0, String(rKategorieNie.fokus));
+    pruefe(
+      "Fokusregel-Test: Kategorie-Regel 'nie' ist teurer als die automatische Wahl mit Fokus (Beleg der erzwungenen Abweichung)",
+      rKategorieNie.silber > rAutomatik.silber,
+      "automatik=" + rAutomatik.silber + " kategorieNie=" + rKategorieNie.silber
+    );
+    pruefe(
+      "Fokusregel-Test: Kategorie-Regel 'nie' ~ 13,7832 Silber (Handrechnung RRR 36,71 %)",
+      nahe(rKategorieNie.silber, 13.783227848101266, 0.0001),
+      String(rKategorieNie.silber)
+    );
+    const ausgeschlosseneVarianteNie = rKategorieNie.alleWege.find((w) => w.typ === "craften" && w.weg && w.weg.mitFokus === true);
+    pruefe(
+      "Fokusregel-Test: die per Kategorie-Regel ausgeschlossene mit-Fokus-Variante bleibt in alleWege sichtbar, gesperrt mit verstaendlichem Grund (nicht kommentarlos verschwunden)",
+      ausgeschlosseneVarianteNie &&
+        ausgeschlosseneVarianteNie.gesperrt === true &&
+        /Kategorie-Regel fiber \(nie\)/.test(ausgeschlosseneVarianteNie.grund || ""),
+      JSON.stringify(ausgeschlosseneVarianteNie && { gesperrt: ausgeschlosseneVarianteNie.gesperrt, grund: ausgeschlosseneVarianteNie.grund })
+    );
+
+    // Vorrang: Knoten-Uebersteuerung "immer" auf genau diesem Knoten (FOKREGEL_M@0)
+    // schlaegt die Kategorie-Regel "nie".
+    const rKnotenSchlaegtKategorie = RECHENKERN.kosten(
+      "FOKREGEL_M",
+      0,
+      1,
+      opts({
+        fokusRegelJeKategorie: { fiber: "nie" },
+        fokusUebersteuerungJeKnoten: { "FOKREGEL_M@0": "immer" },
+      })
+    );
+    pruefe("Fokusregel-Test: Knoten-Uebersteuerung 'immer' nicht gesperrt", !rKnotenSchlaegtKategorie.gesperrt, rKnotenSchlaegtKategorie.grund);
+    pruefe(
+      "Fokusregel-Test: Knoten-Uebersteuerung 'immer' schlaegt die Kategorie-Regel 'nie' (Vorrangreihenfolge)",
+      rKnotenSchlaegtKategorie.weg.mitFokus === true,
+      String(rKnotenSchlaegtKategorie.weg.mitFokus)
+    );
+    pruefe(
+      "Fokusregel-Test: Knoten-Uebersteuerung 'immer' liefert wieder die mit-Fokus-Silberzahl (~10,3416)",
+      nahe(rKnotenSchlaegtKategorie.silber, 10.341589861751153, 0.0001),
+      String(rKnotenSchlaegtKategorie.silber)
+    );
+    const ausgeschlosseneVarianteImmer = rKnotenSchlaegtKategorie.alleWege.find((w) => w.typ === "craften" && w.weg && w.weg.mitFokus === false);
+    pruefe(
+      "Fokusregel-Test: bei Vorrang der Knoten-Uebersteuerung nennt der Sperrgrund der ausgeschlossenen Variante die Knoten-Uebersteuerung, nicht die Kategorie-Regel",
+      ausgeschlosseneVarianteImmer && /Knoten-Uebersteuerung fuer FOKREGEL_M@0 \(immer\)/.test(ausgeschlosseneVarianteImmer.grund || ""),
+      JSON.stringify(ausgeschlosseneVarianteImmer && ausgeschlosseneVarianteImmer.grund)
+    );
+
+    // "immer" an einem Rezept OHNE eigenen Fokuswert (wie koenigliche Items,
+    // craftingfocus 0, keine craftingcategory) darf nicht crashen und wirkt
+    // folgenlos, s. Kommentar in rechenkern.js/kostenGesamt().
+    const testGraphOhneFokus = {
+      items: {
+        FOKREGEL_ROYAL_ZUTAT: { iv: 8, t: 4 },
+        FOKREGEL_ROYAL: { t: 4, ivd: true, r: [{ a: 1, f: 0, i: [{ n: "FOKREGEL_ROYAL_ZUTAT", c: 2 }] }] },
+      },
+    };
+    const rOhneEigenenFokus = RECHENKERN.kosten("FOKREGEL_ROYAL", 0, 1, {
+      graph: testGraphOhneFokus,
+      preise: { FOKREGEL_ROYAL_ZUTAT: { sell: { preis: 10, kein: false }, buy: { preis: 0, kein: true } } },
+      stationssaetze: {},
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 0,
+      fokusUebersteuerungJeKnoten: { "FOKREGEL_ROYAL@0": "immer" },
+    });
+    pruefe(
+      "Fokusregel-Test: 'immer' an einem Rezept ohne eigenen Fokuswert stuerzt nicht ab und bleibt loesbar",
+      !rOhneEigenenFokus.gesperrt,
+      rOhneEigenenFokus.grund
+    );
+    pruefe(
+      "Fokusregel-Test: 'immer' an einem Rezept ohne eigenen Fokuswert wirkt folgenlos (Fokus bleibt 0)",
+      rOhneEigenenFokus.fokus === 0,
+      String(rOhneEigenenFokus.fokus)
+    );
+  })();
+
   // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------

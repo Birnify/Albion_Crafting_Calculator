@@ -1,7 +1,7 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.1.0 · Feature: Craft-Stadt waehlbar (kein
-Paket aus dem Plan, Nutzer-Feature ausserhalb der P0-P7-Reihenfolge)
+Stand: 2026-09-05 · Version: v1.2.0 · Feature: Fokuseinsatz steuerbar machen
+(kein Paket aus dem Plan, Nutzer-Feature ausserhalb der P0-P7-Reihenfolge)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -20,108 +20,115 @@ ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Feature "Craft-Stadt waehlbar", 05.09.2026, v1.1.0)
+## Aktueller Stand (Feature "Fokuseinsatz steuerbar machen", 05.09.2026, v1.2.0)
 
-Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, v1.0.1 war eine
-Fehlerkorrektur danach (Zeitzonen-Bug), s. `kostenrechner-KONTEXT-HISTORIE.md`
-für die Details zu beidem. Dieses Paket ist keins der sechs Plan-Pakete,
-sondern ein vom Nutzer beauftragtes Feature.
+**Vorheriger Stand (v1.1.0, Feature "Craft-Stadt waehlbar") und alles davor**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
-**Wichtig, gegen `kostenrechner-PLAN.md` abgeglichen:** Abschnitt 2
-("Getroffene Entscheidungen") nannte "Alles Lymhurst" ausdruecklich als
-v1-Vorgabe, Abschnitt 8 ("Ausdruecklich nicht in v1") listete andere Staedte
-als bewusst ausgeschlossen. Der Nutzer hat diese Vorgabe am 05.09.2026 aktiv
-aufgeweicht (Feature-Definition per `define-feature` bestaetigt), kein
-eigenmaechtiges Abweichen vom Plan. Beide Stellen in `kostenrechner-PLAN.md`
-tragen jetzt einen Verweis hierher. Weiterhin NICHT umgesetzt (Abgrenzung der
-Feature-Definition, bewusst v2): getrennte Rollen je Einkaufen/Craften/
-Verkaufen wie beim Eintopf-Rechner, Vergleich mehrerer Staedte gleichzeitig,
-Transportkosten und Schwarzzonen-Risiko.
+**Auftrag:** die App entschied bislang je Craft-Schritt automatisch ueber
+"mit Fokus"/"ohne Fokus" nach der Zielfunktion (Silber + Fokus x Fokuswert).
+Bei `fokuswert: 0` (Standard) ist Fokus darin faktisch gratis, die Automatik
+waehlt deshalb fast immer die Fokus-Variante - genau das wollte der Nutzer
+selbst steuern koennen, statt sich auf den Fokuswert zu verlassen.
 
-**Was gebaut wurde:** ein Dropdown "Stadt" (alle sieben Staedte) neben
-Tier/Verzauberung in `Kostenrechner.html`, eine Stadt fuer die gesamte
-Rechnung (Kaufen, Craften, Verkaufen zugleich). `js/rechenkern.js` nahm
-`opts.stadt` bereits entgegen (unveraendert), `js/regeln.js`s `STADTBONUS`
-kannte bereits alle sieben Staedte (unveraendert) - beide waren beim Bau von
-P3 schon vorbereitet. Zwei Stellen waren tatsaechlich fest auf Lymhurst
-verdrahtet und wurden durch die Einstellung ersetzt:
-`js/preise.js` (Konstante `STADT` fuer die API-Abfrage, jetzt `opts.stadt` an
-`preiseAbrufen()`, Default `STADT_DEFAULT = "Lymhurst"` nur fuer Aufrufer ohne
-eigene Angabe, z.B. die beiden unveraenderten Live-Tests) und `js/ui.js`
-(`stadt: "Lymhurst"` beim Zusammenbauen der Opts, jetzt `einstellungen.stadt`).
-Ein Stadtwechsel loest ueber den bestehenden `stufeEl`-Mechanismus (neuer,
-gleichartiger `stadtEl`-Listener) einen Neuabruf der Preise fuer die neue
-Stadt aus und rechnet mit den dortigen `STADTBONUS`-Werten neu.
+**Was gebaut wurde**, nach dem Vorbild von `opts.fceUeberschreibungen`
+(FCE-Ausnahmen je Kategorie, P5): zwei neue `opts`-Felder in
+`js/rechenkern.js`, beide Werte `"immer"`/`"nie"`, fehlend = Automatik wie
+bisher.
 
-**Echter Fund dabei, kein Nebeneffekt:** der `localStorage`-Preiscache in
-`js/preise.js` war NICHT stadtabhaengig (Schluessel = reine Markt-ID). Ohne
-Korrektur haette ein frischer Cache-Eintrag aus Lymhurst faelschlich als
-gueltig fuer z.B. Bridgewatch gegolten, obwohl Preise je Stadt vollstaendig
-unabhaengig sind - derselbe Fehlertyp wie der v1.0.1-Zeitzonen-Bug, nur bei
-der Stadt statt bei der Uhrzeit. Behoben durch `cacheSchluessel(stadt, id)`
-(Format `"<Stadt>::<MarktId>"`) an allen Lese-/Schreibstellen des Preiscaches.
-Schema-Version dafuer hochgezaehlt, aber BEWUSST GETRENNT von der
-Eigenpreis-Schema-Version: `PREIS_CACHE_SCHEMA_VERSION` (1 -> 2) betrifft nur
-den Preiscache, `EIGENPREIS_SCHEMA_VERSION` (unveraendert bei 1) den separat
-gefuehrten Eigenpreis-Speicher (P6, vom Nutzer gepflegte 365 Kandidaten). Eine
-gemeinsame Version haette beim Hochzaehlen faelschlich auch die Eigenpreise
-geloescht, obwohl deren Format unveraendert ist - der Fehlertyp, den eine
-Schema-Version eigentlich verhindern soll. Konsequenz fuer bestehende Nutzer:
-der Preiscache wird beim ersten Laden nach diesem Update einmalig verworfen
-(Preise werden neu abgerufen), die gepflegten Eigenpreise bleiben erhalten.
+- `opts.fokusRegelJeKategorie` (`craftingcategory -> "immer"|"nie"`): gilt fuer
+  **jedes** Vorkommen dieser Kategorie im ganzen Baum.
+- `opts.fokusUebersteuerungJeKnoten` (`"item@stufe" -> "immer"|"nie"`): gilt fuer
+  genau diesen Knoten und schlaegt die Kategorie-Regel. Vorrang: Knoten vor
+  Kategorie vor Automatik.
 
-**Zwei-Staedte-Probe (Abnahmekriterium), live im Browser nachvollzogen:**
-Faser-zu-Stoff-Veredelung ("Guter Stoff", `craftingcategory` "fiber") mit
-Fokus zeigt im Bauplan der Koeniglichen Gugel des Adepten in Lymhurst
-**Rueckgewinnung 53,9 %** (Grund 0,18 + Veredelungsbonus 0,40 + Fokus 0,59 =
-1,17, RRR = 1,17/2,17), nach Umschalten auf Fort Sterling (dort ist Holz die
-Bonusgruppe, nicht Faser) **43,5 %** (0,18 + 0,59 = 0,77, RRR = 0,77/1,77),
-bei ansonsten unveraenderten Einstellungen. Preise wurden beim Umschalten
-nachweislich neu abgerufen (Statuszeile nennt die Stadt, `localStorage`-Cache
-zeigt getrennte Eintraege `Lymhurst::T4_HEAD_CLOTH_ROYAL` und
-`Fort Sterling::T4_HEAD_CLOTH_ROYAL`).
+In `kostenGesamt()` entscheidet `fokusRegelFuer(item, stufe, cc, opts)` vor der
+`rezepte.forEach`-Schleife, welche der beiden Fokus-Varianten je Alternativrezept
+ueberhaupt erzeugt wird. Die durch eine Regel ausgeschlossene Variante wird
+NICHT einfach weggelassen, sondern als gesperrter Kandidat MIT lesbarem Grund
+eingetragen (z.B. "mit Fokus craften ausgeschlossen: Kategorie-Regel fiber
+(nie)") - bleibt so in `alleWege` sichtbar (Transparenz-Vorgabe aus dem Plan)
+und macht auch einen etwaigen Totalausfall ("kein Weg verfuegbar")
+nachvollziehbar. "immer" an einem Rezept ohne eigenen Fokuswert (koenigliche
+Items, `craftingfocus: 0`, keine `craftingcategory`) wirkt einfach folgenlos,
+kein Sonderfall noetig.
 
-**Tests:** 3 neue in `js/preise.js` selbsttest (Cache-Schluessel
-stadtabhaengig, zwei unabhaengige Schema-Versionen), 8 neue in
-`tests/test.html` (Voraussetzungen `hatVeredelBonus`, sowie
-`RECHENKERN.kosten()` mit `opts.stadt` "Lymhurst" vs. "Fort Sterling" am
-selben Testgraphen: RRR und Silberkosten unterscheiden sich nachweislich).
-Testsuite 111 -> 119 gruen. Eigene, in der Suite sonst nicht verwendete
-Item-Namen gewaehlt (`STADTTEST_R`, `STADTTEST_X_LEVEL2`): `REGELN.itemWert()`
-memoisiert modulweit ueber `item@stufe` unabhaengig vom uebergebenen
-Testgraphen, ein Namenszusammenstoss mit einem der Testbloecke weiter oben
-(die ebenfalls generische Namen wie "R" oder "X_LEVEL2" verwenden) haette
-sonst stillschweigend falsche Werte aus dem jeweils anderen Testgraphen
-uebernommen - live so aufgetreten und korrigiert, nicht nur theoretisch
-vermieden.
+**Oberflaeche, zwei Ebenen:**
 
-**Browser-Pruefung, Umgebungs-Fund:** Kostenrechner.html wurde ueber mehrere
-Editier-Zyklen hinweg im selben Browser-Tab (127.0.0.1:8791) mehrfach neu
-geladen; der HTTP-Disk-Cache des Browsers behielt dabei eine veraltete Kopie
-von `js/ui.js`/`js/preise.js` weit laenger als erwartet (auch nach
-Query-String-Cache-Busting auf der HTML-Seite selbst und einem
-Hard-Reload-Tastaturkuerzel) - erkennbar erst durch direkten Abgleich von
-`PREISE.STADT_DEFAULT` (neu) gegen `PREISE.STADT` (alt) im laufenden
-Dokument. Umgangen durch eine temporaere Kopie mit cache-gebusteten
-`<script src=...?v=timestamp>`-Pfaden, danach geloescht. Betrifft nur diese
-Pruefsitzung (Original-`Kostenrechner.html` unveraendert), nicht Endnutzer
-mit einem regulaeren ersten Seitenaufruf; trotzdem hier vermerkt, falls eine
-kuenftige Sitzung an derselben Stelle haengen bleibt.
+- Kategorie-Regel: neue Tabelle "Fokus-Regel je Kategorie" in den
+  Einstellungen (Charakter & Station), exakt nach dem Muster der bestehenden
+  FCE-Ausnahmen-Tabelle (zeigt zuerst nur die im aktuellen Bauplan verwendeten
+  Kategorien, Knopf fuer alle 43). Dreifach-Schalter Automatisch/Immer/Nie wie
+  beim bereits vorhandenen Tagesbonus-Schalter, kein neuer UI-Baustein noetig.
+- Knoten-Uebersteuerung: **bewusst keine zusaetzliche Liste**, um den
+  Ergonomie-Wunsch des Nutzers zu treffen ("wenige, klar auffindbare Regeln").
+  Stattdessen wurde der bereits vorhandene Text "(Rezept #n, mit/ohne Fokus)"
+  im Bauplan-Baum selbst interaktiv gemacht: ein Klick auf den Fokus-Teil
+  zyklisch automatisch -> immer -> nie -> automatisch (Button mit
+  `preventDefault`/`stopPropagation`, damit der Klick nicht zugleich den
+  umgebenden `<details>`-Knoten auf-/zuklappt). Genau dort schaut der Nutzer
+  ohnehin schon hin, wenn er einen Schritt uebersteuern will.
 
-**Vorheriger Stand (v1.0.1, Zeitzonen-Bug bei der Preisalter-Berechnung)**
-unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel,
-s. "Entwicklungsweise / Mitarbeit" unten), diese Datei war ueber 300 Zeilen
-gewachsen.
+**Persistenz, bewusste Entscheidung:** beide Regelebenen liegen dauerhaft in
+`localStorage` (`einstellungen.fokusRegelJeKategorie`/`.fokusUebersteuerungJeKnoten`),
+nicht nur fuer die aktuelle Berechnung. Begruendung: ein Knoten wie
+`T4_CLOTH_LEVEL3@3` taucht in vielen verschiedenen Bauplaenen wieder auf (jedes
+Item, das verzauberten T4-Stoff braucht) und `kostenGesamt()` memoisiert ohnehin
+global ueber `item@stufe`, nicht pfadabhaengig - eine einmal getroffene
+Entscheidung soll deshalb nicht bei jedem neuen Suchbegriff verloren gehen.
+Identisch zur bestehenden Persistenz der FCE-Ausnahmen.
+
+**Konkretes Zahlenbeispiel (Abnahmekriterium), live im Browser mit echten
+Marktpreisen nachvollzogen** (Königliche Gugel des Adepten .3, Lymhurst,
+FCE 0, Fokuswert 0):
+
+- Ohne Regel (Automatik): `T4_CLOTH_LEVEL3.3` wird mit Fokus gecraftet
+  (Rueckgewinnung 53,9 %), Wurzel kostet **150.808 Silber, 3.677 Fokus**.
+- Mit Kategorie-Regel `fiber -> nie`: dieselbe Craft-mit-Fokus-Variante wird
+  ausgeschlossen; da craften-ohne-Fokus (Rueckgewinnung nur noch 36,7 %, ca.
+  7.605 Silber/Stueck) teurer ist als der Marktpreis, kauft die App
+  `T4_CLOTH_LEVEL3.3` jetzt direkt (5.835 Silber/Stueck). Wurzel kostet
+  **152.245 Silber (+1.437), 2.298 Fokus (-1.379)** - nachweislich teurer, wie
+  vom Nutzer gewuenscht erzwungen, nicht zufaellig gleich geblieben.
+- Knoten-Uebersteuerung `"T4_CLOTH_LEVEL3@3": "nie"` (ohne Kategorie-Regel)
+  liefert dieselben 152.245/2.298 wie oben; `"immer"` liefert wieder die
+  Automatik-Zahlen 150.808/3.677 (hier ohnehin schon die automatische Wahl).
+  Vorrang Knoten vor Kategorie eigens mit einer Kombination beider Regeln
+  gegeneinander getestet (s. Tests).
+
+**Tests:** 17 neue in `tests/test.html` (Regressionstest ohne jede Regel,
+Kategorie-Regel "nie" inkl. Handrechnung, Vorrang Knoten vor Kategorie, "immer"
+an einem Rezept ohne Fokuswert). Testsuite 119 -> 136 gruen. Zusaetzlich, weil
+dieses Feature den Rechenkern selbst aendert: unabhaengige Nachrechnung per
+Node-Skript im Scratchpad (eigener Testgraph, vier Faelle inkl. Handrechnung
+der erwarteten RRR/Silberwerte), alle bestanden, bevor die Browser-Pruefung
+folgte.
+
+**Browser-Cache-Falle erneut aufgetreten, jetzt als wiederkehrendes Muster
+bestaetigt** (s. Backlog/Umgebungs-Fund bei v1.1.0 in der Historie): eine
+Aenderung an `js/rechenkern.js` blieb sowohl im wiederverwendeten Tab als auch
+in einem frisch geoeffneten neuen Tab unwirksam (`fetch(...,{cache:'no-store'})`
+zeigte den frischen Dateiinhalt, das ausgefuehrte Skript verhielt sich aber
+nach dem alten). Ausweg wie beim letzten Mal: eine temporaere Kopie mit
+cache-gebusteten `?v=timestamp`-Pfaden fuer `tests/test.html` UND
+`Kostenrechner.html`, damit 136/136 gruen sowie das obige Zahlenbeispiel im
+echten Browser bestaetigt, beide Kopien danach geloescht (Original-Dateien
+unveraendert). Fuer kuenftige Sitzungen: bei einer Aenderung an `js/*.js`, die
+im Browser nicht ankommt, direkt zu dieser Umgehung greifen, nicht erst lange
+mit Hard-Reload experimentieren.
 
 ## Dateistruktur
 
-Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0):
+Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0) plus
+Feature "Fokuseinsatz steuerbar machen" (v1.2.0):
 
 ```
 Kostenrechner/
   build_graph.py            fertig (P1, P2: el-Feld ergaenzt), seither unveraendert
   rezepte.js                erzeugt (P1, P2), nicht von Hand bearbeiten
-  Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0): Suche, Hero,
+  Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0; Fokus-Regel-
+                              Tabelle + Fokus-Schalter im Bauplan v1.2.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
     preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0): eigenpreisSetzen
@@ -130,11 +137,14 @@ Kostenrechner/
     regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0): itemWert, RRR,
                               Stationsgebuehr (mit 0-Floor), Fokus (mit 0-Floor), Steuer,
                               Kategorie-Tabellen, rezepteFuerStufe
-    rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0):
-                              kosten(item,stufe,menge,opts), stationssatzFuer() unterscheidet
-                              fehlend von ausdruecklich 0, weg.eigenpreis kennzeichnet
-                              Kauf-Kandidaten aus einer eigenen Schaetzung (P6)
-    ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0): Suche
+    rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
+                              Fokusregel-Ebenen v1.2.0): kosten(item,stufe,menge,opts),
+                              stationssatzFuer() unterscheidet fehlend von ausdruecklich 0,
+                              weg.eigenpreis kennzeichnet Kauf-Kandidaten aus einer eigenen
+                              Schaetzung (P6), fokusRegelFuer() steuert mit/ohne Fokus je
+                              Knoten/Kategorie (v1.2.0)
+    ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
+                              Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0): Suche
                               mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6)
   kostenrechner-PLAN.md
@@ -147,7 +157,10 @@ Kostenrechner/
   Versionen/v0.4.0 - Oberflaeche/
   Versionen/v0.5.0 - Eigenpreis-Pflege/
   Versionen/v1.0.0 - Erste vollstaendige Version/
-  tests/test.html           106 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.0.1 - Zeitzonen-Bug Preisalter behoben/
+  Versionen/v1.1.0 - Craft-Stadt waehlbar/
+  Versionen/v1.2.0 - Fokuseinsatz steuerbar machen/
+  tests/test.html           136 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 

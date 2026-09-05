@@ -22,6 +22,20 @@ const UI = (function () {
       stadt: "Lymhurst", // Craft-Stadt der gesamten Rechnung (Kaufen, Craften, Verkaufen), s. CLAUDE.md "Craft-Kategorie zu Gebaeude"
       fce: 0, // 0 = volle Rohfokuskosten, die konservative Richtung (zu teuer statt zu billig)
       fceAusnahmen: {}, // craftingcategory -> FCE
+      // Fokuseinsatz steuerbar machen (Feature 05.09.2026): fokusRegelJeKategorie
+      // (craftingcategory -> "immer"|"nie") gilt fuer JEDES Vorkommen dieser
+      // Kategorie im ganzen Baum, genau wie fceAusnahmen oben.
+      // fokusUebersteuerungJeKnoten ("item@stufe" -> "immer"|"nie") schlaegt das
+      // fuer einen einzelnen Knoten, ueber den Fokus-Schalter im Bauplan gesetzt.
+      // Fehlt ein Eintrag, bleibt es bei der bisherigen Automatik (Zielfunktion
+      // entscheidet je Schritt). Beide bewusst dauerhaft in localStorage, nicht
+      // nur fuer die aktuelle Berechnung: ein Knoten wie "T4_CLOTH_LEVEL3@3"
+      // taucht potenziell in vielen verschiedenen Bauplaenen wieder auf (jedes
+      // Item, das verzauberten T4-Stoff braucht), und der Nutzer soll seine
+      // einmal getroffene Entscheidung nicht bei jedem neuen Suchbegriff
+      // verlieren - identisch zur bestehenden Persistenz von fceAusnahmen.
+      fokusRegelJeKategorie: {},
+      fokusUebersteuerungJeKnoten: {},
       fokuswert: 0, // Silber je Fokuspunkt; 0 ist gueltig, verschiebt aber zu fokusintensiven Wegen
       stationssaetze: {}, // Gebaeude -> Satz. NUR gepflegte Eintraege drin, s. rechenkern.js stationssatzFuer()
       tagesbonus: {}, // craftingcategory -> "silber"|"gold", fehlt = aus
@@ -42,6 +56,8 @@ const UI = (function () {
       basis.stadt = daten.stadt || basis.stadt;
       basis.fce = daten.fce != null ? daten.fce : basis.fce;
       basis.fceAusnahmen = daten.fceAusnahmen || {};
+      basis.fokusRegelJeKategorie = daten.fokusRegelJeKategorie || {};
+      basis.fokusUebersteuerungJeKnoten = daten.fokusUebersteuerungJeKnoten || {};
       basis.fokuswert = daten.fokuswert != null ? daten.fokuswert : basis.fokuswert;
       basis.stationssaetze = daten.stationssaetze || {};
       basis.tagesbonus = daten.tagesbonus || {};
@@ -257,6 +273,8 @@ const UI = (function () {
 
     const fceAusnahmenTabelleEl = document.getElementById("fceAusnahmenTabelle");
     const fceAlleZeigenBtn = document.getElementById("fceAlleZeigenBtn");
+    const fokusRegelTabelleEl = document.getElementById("fokusRegelTabelle");
+    const fokusRegelAlleZeigenBtn = document.getElementById("fokusRegelAlleZeigenBtn");
     const tagesbonusTabelleEl = document.getElementById("tagesbonusTabelle");
     const tagAlleZeigenBtn = document.getElementById("tagAlleZeigenBtn");
     const stationTabelleEl = document.getElementById("stationTabelle");
@@ -299,6 +317,7 @@ const UI = (function () {
       preiseRoh: null,
       ergebnis: null,
       fceAlleZeigen: false,
+      fokusRegelAlleZeigen: false,
       tagAlleZeigen: false,
     };
 
@@ -572,6 +591,8 @@ const UI = (function () {
         stationssaetze: einstellungen.stationssaetze,
         fce: einstellungen.fce,
         fceUeberschreibungen: einstellungen.fceAusnahmen,
+        fokusRegelJeKategorie: einstellungen.fokusRegelJeKategorie,
+        fokusUebersteuerungJeKnoten: einstellungen.fokusUebersteuerungJeKnoten,
         fokuswert: einstellungen.fokuswert,
         tagesbonus: einstellungen.tagesbonus,
         maxPreisAlterMin:
@@ -595,6 +616,7 @@ const UI = (function () {
       renderBauplan(r);
       renderAlleWege(r);
       renderFceAusnahmen(r);
+      renderFokusRegel(r);
       renderTagesbonus(r);
       renderStationTabelle(r);
       renderEigenpreiseTabelle(r);
@@ -690,6 +712,46 @@ const UI = (function () {
       return "<span class='alt'>naechstbeste Alternative: " + typLabel + " fuer " + formatSilber(alt.silber) + " Silber</span>";
     }
 
+    // ---- Knoten-Uebersteuerung des Fokuseinsatzes (Feature "Fokuseinsatz
+    // steuerbar machen"): der bestehende "(Rezept #n, mit/ohne Fokus)"-Text im
+    // Bauplan wird interaktiv statt eine zusaetzliche Liste/Haken-Sammlung zu
+    // bauen (Ergonomie-Vorgabe: wenige, auffindbare Regeln statt vieler Haken -
+    // dieser Schalter sitzt bereits genau dort, wo der Nutzer sowieso
+    // hinschaut). Klick zyklisch automatisch -> immer -> nie -> automatisch.
+    // Persistiert dauerhaft je "item@stufe" in einstellungen.fokusUebersteuerungJeKnoten,
+    // s. Kommentar bei defaultEinstellungen().
+    const FOKUS_REGEL_REIHENFOLGE = ["automatisch", "immer", "nie"];
+    function fokusUebersteuerungLabel(regel, mitFokus) {
+      if (regel === "immer") return "immer mit Fokus";
+      if (regel === "nie") return "nie mit Fokus";
+      return mitFokus ? "mit Fokus" : "ohne Fokus"; // automatisch: zeigt die tatsaechlich gewaehlte Variante
+    }
+    function baueFokusSchalter(weg) {
+      const knotenSchluessel = weg.item + "@" + weg.stufe;
+      const aktuell = einstellungen.fokusUebersteuerungJeKnoten[knotenSchluessel] || "automatisch";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "fokus-schalter" + (aktuell !== "automatisch" ? " uebersteuert" : "");
+      btn.textContent = fokusUebersteuerungLabel(aktuell, weg.mitFokus);
+      btn.title =
+        "Fokuseinsatz fuer diesen Knoten (" +
+        knotenSchluessel +
+        "). Klicken zum Umschalten: automatisch -> immer -> nie -> automatisch. Automatisch heisst, die Zielfunktion (Silber + Fokus x Fokuswert) entscheidet wie bisher. Schlaegt die Fokus-Regel je Kategorie in den Einstellungen.";
+      btn.addEventListener("click", (ev) => {
+        // preventDefault + stopPropagation: der Klick sitzt in einem <summary>,
+        // ohne beides wuerde er zusaetzlich den umgebenden <details>-Knoten
+        // auf-/zuklappen statt nur den Schalter zu bedienen.
+        ev.preventDefault();
+        ev.stopPropagation();
+        const i = FOKUS_REGEL_REIHENFOLGE.indexOf(aktuell);
+        const neu = FOKUS_REGEL_REIHENFOLGE[(i + 1) % FOKUS_REGEL_REIHENFOLGE.length];
+        if (neu === "automatisch") delete einstellungen.fokusUebersteuerungJeKnoten[knotenSchluessel];
+        else einstellungen.fokusUebersteuerungJeKnoten[knotenSchluessel] = neu;
+        persistiereUndRechne();
+      });
+      return btn;
+    }
+
     function baueKnoten(weg, r, tiefe) {
       const wrap = document.createElement("div");
       if (!weg) return wrap;
@@ -734,14 +796,14 @@ const UI = (function () {
         details.open = tiefe < 2;
         const summary = document.createElement("summary");
         summary.className = "zeile-craften";
+
+        const praefix = document.createElement("span");
+        praefix.innerHTML = "Craften: " + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + " (Rezept #" + (weg.rezeptIndex + 1) + ", ";
+        summary.appendChild(praefix);
+        summary.appendChild(baueFokusSchalter(weg));
+
+        const suffix = document.createElement("span");
         let text =
-          "Craften: " +
-          escapeHtml(nameVon(weg.item)) +
-          (weg.stufe ? "." + weg.stufe : "") +
-          " (Rezept #" +
-          (weg.rezeptIndex + 1) +
-          ", " +
-          (weg.mitFokus ? "mit Fokus" : "ohne Fokus") +
           "), Stationsgebuehr " +
           formatSilber(weg.stationsgebuehrJeStueck) +
           (weg.gebaeude ? " (" + escapeHtml(weg.gebaeude) + ")" : "") +
@@ -749,7 +811,8 @@ const UI = (function () {
           formatProzent(weg.rrr * 100);
         if (weg.unvollstaendig) text += "<span class='badge-unvoll'>unvollstaendig</span>";
         text += altHtml;
-        summary.innerHTML = text;
+        suffix.innerHTML = text;
+        summary.appendChild(suffix);
         details.appendChild(summary);
         const body = document.createElement("div");
         body.className = "body";
@@ -911,6 +974,58 @@ const UI = (function () {
       zustand.fceAlleZeigen = !zustand.fceAlleZeigen;
       fceAlleZeigenBtn.textContent = zustand.fceAlleZeigen ? "Nur verwendete Kategorien anzeigen" : "Alle 43 Kategorien anzeigen";
       renderFceAusnahmen(zustand.ergebnis);
+    });
+
+    // ---- Fokus-Regel je Kategorie (Feature "Fokuseinsatz steuerbar machen") ----
+    // Gleicher Aufbau wie renderFceAusnahmen oben, aber ein Dreifach-Schalter
+    // (wie beim Tagesbonus) statt eines Zahlenfelds: Automatisch/Immer/Nie.
+    function renderFokusRegel(r) {
+      const verwendete = r && !r.gesperrt ? sammleVerwendeteKategorien(r.weg) : [];
+      const liste = (zustand.fokusRegelAlleZeigen ? ALLE_KATEGORIEN.slice() : verwendete).slice().sort();
+      const tbody = fokusRegelTabelleEl.querySelector("tbody");
+      tbody.innerHTML = "";
+      if (!liste.length) {
+        tbody.innerHTML = "<tr><td colspan='2' class='hint'>Noch keine Kategorien im Bauplan.</td></tr>";
+        return;
+      }
+      liste.forEach((cc) => {
+        const tr = document.createElement("tr");
+        if (verwendete.indexOf(cc) !== -1) tr.className = "gebraucht";
+        const tdName = document.createElement("td");
+        tdName.textContent = cc;
+        const tdSchalter = document.createElement("td");
+        const gruppe = document.createElement("div");
+        gruppe.className = "dreifach";
+        const aktuellerWert = einstellungen.fokusRegelJeKategorie[cc] || "automatisch";
+        [
+          ["automatisch", "Automatisch"],
+          ["immer", "Immer"],
+          ["nie", "Nie"],
+        ].forEach((paar) => {
+          const wert = paar[0];
+          const label = paar[1];
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = label;
+          if (wert === aktuellerWert) btn.className = "an";
+          btn.addEventListener("click", () => {
+            if (wert === "automatisch") delete einstellungen.fokusRegelJeKategorie[cc];
+            else einstellungen.fokusRegelJeKategorie[cc] = wert;
+            persistiereUndRechne();
+          });
+          gruppe.appendChild(btn);
+        });
+        tdSchalter.appendChild(gruppe);
+        tr.appendChild(tdName);
+        tr.appendChild(tdSchalter);
+        tbody.appendChild(tr);
+      });
+    }
+
+    fokusRegelAlleZeigenBtn.addEventListener("click", () => {
+      zustand.fokusRegelAlleZeigen = !zustand.fokusRegelAlleZeigen;
+      fokusRegelAlleZeigenBtn.textContent = zustand.fokusRegelAlleZeigen ? "Nur verwendete Kategorien anzeigen" : "Alle 43 Kategorien anzeigen";
+      renderFokusRegel(zustand.ergebnis);
     });
 
     function renderTagesbonus(r) {
@@ -1160,6 +1275,7 @@ const UI = (function () {
     // ---- Start ----
     ladeEinstellungenInFormular();
     renderFceAusnahmen(null);
+    renderFokusRegel(null);
     renderTagesbonus(null);
     renderStationTabelle(null);
     renderEigenpreiseTabelle(null);

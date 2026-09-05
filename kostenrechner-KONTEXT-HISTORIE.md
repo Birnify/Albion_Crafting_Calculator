@@ -7,6 +7,99 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Feature "Craft-Stadt waehlbar", 05.09.2026, v1.1.0)
+
+Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, v1.0.1 war eine
+Fehlerkorrektur danach (Zeitzonen-Bug), s. Eintrag darunter für die Details zu
+beidem. Dieses Paket ist keins der sechs Plan-Pakete, sondern ein vom Nutzer
+beauftragtes Feature.
+
+**Wichtig, gegen `kostenrechner-PLAN.md` abgeglichen:** Abschnitt 2
+("Getroffene Entscheidungen") nannte "Alles Lymhurst" ausdruecklich als
+v1-Vorgabe, Abschnitt 8 ("Ausdruecklich nicht in v1") listete andere Staedte
+als bewusst ausgeschlossen. Der Nutzer hat diese Vorgabe am 05.09.2026 aktiv
+aufgeweicht (Feature-Definition per `define-feature` bestaetigt), kein
+eigenmaechtiges Abweichen vom Plan. Beide Stellen in `kostenrechner-PLAN.md`
+tragen jetzt einen Verweis hierher. Weiterhin NICHT umgesetzt (Abgrenzung der
+Feature-Definition, bewusst v2): getrennte Rollen je Einkaufen/Craften/
+Verkaufen wie beim Eintopf-Rechner, Vergleich mehrerer Staedte gleichzeitig,
+Transportkosten und Schwarzzonen-Risiko.
+
+**Was gebaut wurde:** ein Dropdown "Stadt" (alle sieben Staedte) neben
+Tier/Verzauberung in `Kostenrechner.html`, eine Stadt fuer die gesamte
+Rechnung (Kaufen, Craften, Verkaufen zugleich). `js/rechenkern.js` nahm
+`opts.stadt` bereits entgegen (unveraendert), `js/regeln.js`s `STADTBONUS`
+kannte bereits alle sieben Staedte (unveraendert) - beide waren beim Bau von
+P3 schon vorbereitet. Zwei Stellen waren tatsaechlich fest auf Lymhurst
+verdrahtet und wurden durch die Einstellung ersetzt:
+`js/preise.js` (Konstante `STADT` fuer die API-Abfrage, jetzt `opts.stadt` an
+`preiseAbrufen()`, Default `STADT_DEFAULT = "Lymhurst"` nur fuer Aufrufer ohne
+eigene Angabe, z.B. die beiden unveraenderten Live-Tests) und `js/ui.js`
+(`stadt: "Lymhurst"` beim Zusammenbauen der Opts, jetzt `einstellungen.stadt`).
+Ein Stadtwechsel loest ueber den bestehenden `stufeEl`-Mechanismus (neuer,
+gleichartiger `stadtEl`-Listener) einen Neuabruf der Preise fuer die neue
+Stadt aus und rechnet mit den dortigen `STADTBONUS`-Werten neu.
+
+**Echter Fund dabei, kein Nebeneffekt:** der `localStorage`-Preiscache in
+`js/preise.js` war NICHT stadtabhaengig (Schluessel = reine Markt-ID). Ohne
+Korrektur haette ein frischer Cache-Eintrag aus Lymhurst faelschlich als
+gueltig fuer z.B. Bridgewatch gegolten, obwohl Preise je Stadt vollstaendig
+unabhaengig sind - derselbe Fehlertyp wie der v1.0.1-Zeitzonen-Bug, nur bei
+der Stadt statt bei der Uhrzeit. Behoben durch `cacheSchluessel(stadt, id)`
+(Format `"<Stadt>::<MarktId>"`) an allen Lese-/Schreibstellen des Preiscaches.
+Schema-Version dafuer hochgezaehlt, aber BEWUSST GETRENNT von der
+Eigenpreis-Schema-Version: `PREIS_CACHE_SCHEMA_VERSION` (1 -> 2) betrifft nur
+den Preiscache, `EIGENPREIS_SCHEMA_VERSION` (unveraendert bei 1) den separat
+gefuehrten Eigenpreis-Speicher (P6, vom Nutzer gepflegte 365 Kandidaten). Eine
+gemeinsame Version haette beim Hochzaehlen faelschlich auch die Eigenpreise
+geloescht, obwohl deren Format unveraendert ist - der Fehlertyp, den eine
+Schema-Version eigentlich verhindern soll. Konsequenz fuer bestehende Nutzer:
+der Preiscache wird beim ersten Laden nach diesem Update einmalig verworfen
+(Preise werden neu abgerufen), die gepflegten Eigenpreise bleiben erhalten.
+
+**Zwei-Staedte-Probe (Abnahmekriterium), live im Browser nachvollzogen:**
+Faser-zu-Stoff-Veredelung ("Guter Stoff", `craftingcategory` "fiber") mit
+Fokus zeigt im Bauplan der Koeniglichen Gugel des Adepten in Lymhurst
+**Rueckgewinnung 53,9 %** (Grund 0,18 + Veredelungsbonus 0,40 + Fokus 0,59 =
+1,17, RRR = 1,17/2,17), nach Umschalten auf Fort Sterling (dort ist Holz die
+Bonusgruppe, nicht Faser) **43,5 %** (0,18 + 0,59 = 0,77, RRR = 0,77/1,77),
+bei ansonsten unveraenderten Einstellungen. Preise wurden beim Umschalten
+nachweislich neu abgerufen (Statuszeile nennt die Stadt, `localStorage`-Cache
+zeigt getrennte Eintraege `Lymhurst::T4_HEAD_CLOTH_ROYAL` und
+`Fort Sterling::T4_HEAD_CLOTH_ROYAL`).
+
+**Tests:** 3 neue in `js/preise.js` selbsttest (Cache-Schluessel
+stadtabhaengig, zwei unabhaengige Schema-Versionen), 8 neue in
+`tests/test.html` (Voraussetzungen `hatVeredelBonus`, sowie
+`RECHENKERN.kosten()` mit `opts.stadt` "Lymhurst" vs. "Fort Sterling" am
+selben Testgraphen: RRR und Silberkosten unterscheiden sich nachweislich).
+Testsuite 111 -> 119 gruen. Eigene, in der Suite sonst nicht verwendete
+Item-Namen gewaehlt (`STADTTEST_R`, `STADTTEST_X_LEVEL2`): `REGELN.itemWert()`
+memoisiert modulweit ueber `item@stufe` unabhaengig vom uebergebenen
+Testgraphen, ein Namenszusammenstoss mit einem der Testbloecke weiter oben
+(die ebenfalls generische Namen wie "R" oder "X_LEVEL2" verwenden) haette
+sonst stillschweigend falsche Werte aus dem jeweils anderen Testgraphen
+uebernommen - live so aufgetreten und korrigiert, nicht nur theoretisch
+vermieden.
+
+**Browser-Pruefung, Umgebungs-Fund:** Kostenrechner.html wurde ueber mehrere
+Editier-Zyklen hinweg im selben Browser-Tab (127.0.0.1:8791) mehrfach neu
+geladen; der HTTP-Disk-Cache des Browsers behielt dabei eine veraltete Kopie
+von `js/ui.js`/`js/preise.js` weit laenger als erwartet (auch nach
+Query-String-Cache-Busting auf der HTML-Seite selbst und einem
+Hard-Reload-Tastaturkuerzel) - erkennbar erst durch direkten Abgleich von
+`PREISE.STADT_DEFAULT` (neu) gegen `PREISE.STADT` (alt) im laufenden
+Dokument. Umgangen durch eine temporaere Kopie mit cache-gebusteten
+`<script src=...?v=timestamp>`-Pfaden, danach geloescht. Betrifft nur diese
+Pruefsitzung (Original-`Kostenrechner.html` unveraendert), nicht Endnutzer
+mit einem regulaeren ersten Seitenaufruf; trotzdem hier vermerkt, falls eine
+kuenftige Sitzung an derselben Stelle haengen bleibt. **Bestaetigt erneut beim
+Feature "Fokuseinsatz steuerbar machen" (05.09.2026, v1.2.0):** selbes Muster,
+diesmal bei `js/rechenkern.js`, sogar in einem druckfrisch geoeffneten neuen
+Tab (nicht nur bei Wiederverwendung eines alten). Kein Einzelfall mehr,
+sondern eine wiederkehrende Eigenschaft dieser Browser-Pane-Umgebung; die
+cache-gebusteten Kopien bleiben der zuverlaessige Ausweg.
+
 ## Aktueller Stand (Fehlerkorrektur nach P7, 05.09.2026, v1.0.1)
 
 Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, s. Eintrag darunter

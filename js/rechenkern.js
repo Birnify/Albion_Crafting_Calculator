@@ -10,7 +10,10 @@
 //   KAUFEN     - Marktpreis, gesperrt ohne Preis (NIE Kosten 0)
 //   CRAFTEN    - jedes Alternativrezept einzeln, je einmal mit und einmal
 //                ohne Fokus (die Zielfunktion entscheidet danach automatisch,
-//                s. kostenrechner-PLAN.md Abschnitt 4.2)
+//                s. kostenrechner-PLAN.md Abschnitt 4.2) - AUSSER eine Regel
+//                aus opts.fokusRegelJeKategorie/opts.fokusUebersteuerungJeKnoten
+//                gibt "immer" oder "nie" fest vor (Feature "Fokuseinsatz
+//                steuerbar machen", 05.09.2026, s. fokusRegelFuer())
 //   VERZAUBERN - nur Stufe >= 1 mit vorhandenem upgraderequirements, kostet
 //                selbst weder Stationsgebuehr noch Fokus (vom Nutzer im Spiel
 //                bestaetigt), nur die Vorstufe plus Rune/Seele/Relikt
@@ -49,6 +52,13 @@ const RECHENKERN = (function () {
       stationssaetze: o.stationssaetze || {}, // Gebaeude/Gebuehrengruppe -> Satz (z.B. 380)
       fce: o.fce != null ? o.fce : 0, // globale Focus Cost Efficiency
       fceUeberschreibungen: o.fceUeberschreibungen || {}, // craftingcategory -> FCE
+      // Fokuseinsatz steuerbar machen (Feature 05.09.2026): zwei Ebenen nach
+      // demselben Muster wie fceUeberschreibungen oben, s. dortiger Kommentar
+      // und fokusRegelFuer() weiter unten. Werte je "immer"/"nie", ein
+      // fehlender Eintrag bedeutet weiterhin Automatik (Zielfunktion
+      // entscheidet, unveraendertes Verhalten).
+      fokusRegelJeKategorie: o.fokusRegelJeKategorie || {}, // craftingcategory -> "immer"|"nie"
+      fokusUebersteuerungJeKnoten: o.fokusUebersteuerungJeKnoten || {}, // "item@stufe" -> "immer"|"nie", schlaegt die Kategorie-Regel
       fokuswert: o.fokuswert != null ? o.fokuswert : 0, // Silber je Fokuspunkt (Zielfunktion)
       tagesbonus: o.tagesbonus || {}, // craftingcategory -> "silber"|"gold"
       maxTiefe: o.maxTiefe || STANDARD_MAX_TIEFE,
@@ -68,6 +78,36 @@ const RECHENKERN = (function () {
   function fceFuer(cc, opts) {
     if (cc && opts.fceUeberschreibungen[cc] != null) return opts.fceUeberschreibungen[cc];
     return opts.fce;
+  }
+
+  /**
+   * Ob fuer einen Knoten (item, stufe) der Fokuseinsatz beim Craften fest
+   * vorgegeben ist ("immer"/"nie") oder weiterhin automatisch ueber die
+   * Zielfunktion entscheidet, s. kostenrechner-KONTEXT.md Feature
+   * "Fokuseinsatz steuerbar machen". Vorrangreihenfolge, wie beauftragt:
+   * Knoten-Uebersteuerung schlaegt Kategorie-Regel schlaegt Automatik. Ohne
+   * gesetzte Regel/Uebersteuerung ist das Ergebnis immer "automatisch" -
+   * exakt das bisherige Verhalten (beide Kandidaten werden erzeugt, die
+   * Zielfunktion waehlt).
+   *
+   * `grund` ist nur bei "immer"/"nie" gesetzt und wird als Sperrgrund fuer
+   * die dadurch ausgeschlossene Variante verwendet (s. Aufrufer in
+   * kostenGesamt), damit ein Nutzer in der Alle-Wege-Tabelle sieht, WARUM
+   * eine Variante fehlt, statt dass sie kommentarlos verschwindet.
+   *
+   * @returns {{wert: "immer"|"nie"|"automatisch", grund: ?string}}
+   */
+  function fokusRegelFuer(item, stufe, cc, opts) {
+    const knotenSchluessel = item + "@" + stufe;
+    const knotenWert = opts.fokusUebersteuerungJeKnoten[knotenSchluessel];
+    if (knotenWert === "immer" || knotenWert === "nie") {
+      return { wert: knotenWert, grund: "Knoten-Uebersteuerung fuer " + knotenSchluessel + " (" + knotenWert + ")" };
+    }
+    const kategorieWert = cc ? opts.fokusRegelJeKategorie[cc] : null;
+    if (kategorieWert === "immer" || kategorieWert === "nie") {
+      return { wert: kategorieWert, grund: "Kategorie-Regel " + cc + " (" + kategorieWert + ")" };
+    }
+    return { wert: "automatisch", grund: null };
   }
 
   function tagesbonusFuer(cc, opts) {
@@ -473,14 +513,34 @@ const RECHENKERN = (function () {
       // el-Knoten nie etwas - der Craft-Weg fuer alle 299 el-Knoten fehlte
       // dadurch vollstaendig (rechenkern-pruefer, 04.09.2026, v0.3.1).
       const rezepte = REGELN.rezepteFuerStufe(node, stufe);
+      const cc = node.cc || null;
+      const fokusRegel = fokusRegelFuer(item, stufe, cc, opts);
       rezepte.forEach((rezept, idx) => {
         // Je Alternativrezept zwei Varianten: mit und ohne Fokuseinsatz bei
         // diesem Schritt. Die Zielfunktion entscheidet spaeter, welche
         // gewinnt (s. kostenrechner-PLAN.md Abschnitt 4.2); ohne Fokus ist
         // stets gueltig, auch wenn das Rezept gar keinen Fokus kostet
         // (mitFokus wirkt dann einfach nicht, kein Sonderfall noetig).
-        alle.push(craftKandidat(item, stufe, rezept, idx, true, node, opts, tiefe, neuerPfad));
-        alle.push(craftKandidat(item, stufe, rezept, idx, false, node, opts, tiefe, neuerPfad));
+        //
+        // Fokuseinsatz steuerbar machen: eine Regel "immer"/"nie" (Knoten
+        // oder Kategorie, s. fokusRegelFuer) schliesst die jeweils andere
+        // Variante aus. Statt sie einfach nicht zu erzeugen, wird sie als
+        // gesperrter Kandidat MIT Begruendung eingetragen - bleibt so in
+        // alleWege sichtbar (Transparenz-Vorgabe aus dem Plan) und macht im
+        // Extremfall "kein Weg verfuegbar" nachvollziehbar, statt
+        // kommentarlos zu verschwinden. "immer" auf einem Rezept ohne
+        // eigenen Fokuswert (z.B. koenigliche Items, craftingfocus 0) wirkt
+        // dabei einfach folgenlos, kein Sonderfall noetig (s. craftKandidat).
+        if (fokusRegel.wert === "nie") {
+          alle.push(gesperrterKandidat("craften", item, stufe, "mit Fokus craften ausgeschlossen: " + fokusRegel.grund, { rezeptIndex: idx, mitFokus: true }));
+        } else {
+          alle.push(craftKandidat(item, stufe, rezept, idx, true, node, opts, tiefe, neuerPfad));
+        }
+        if (fokusRegel.wert === "immer") {
+          alle.push(gesperrterKandidat("craften", item, stufe, "ohne Fokus craften ausgeschlossen: " + fokusRegel.grund, { rezeptIndex: idx, mitFokus: false }));
+        } else {
+          alle.push(craftKandidat(item, stufe, rezept, idx, false, node, opts, tiefe, neuerPfad));
+        }
       });
 
       if (stufe > 0 && node.e && node.e[String(stufe)] && node.e[String(stufe)].u) {
