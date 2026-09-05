@@ -166,6 +166,38 @@ details>.body{padding:0 20px 20px}
                        flex:none}
 .baum .fokus-schalter:hover{background:var(--accent-soft);border-color:var(--accent)}
 .baum .fokus-schalter.uebersteuert{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+/* Grafische Bauplan-Ansicht: Baumdiagramm links->rechts mit Item-Icons
+   (Zyklus "Bauplan grafisch als Baumdiagramm mit Item-Icons", 05./06.09.2026,
+   Nutzer-Entscheidungen s. kostenrechner-KONTEXT.md: Baumrichtung links->rechts,
+   kein Zoom-Regler (nur Scrollen im Panel), Details nur per title-Tooltip).
+   Badge-/Name-/Qualitaets-Farben stammen bewusst weiter aus .baum .kn-* oben
+   (derselbe Container traegt beide Klassen, s. ui.js renderBauplanGrafisch()),
+   hier nur das Kaestchen- und Baumlayout selbst. */
+.bg-scroll{overflow:auto;max-height:70vh;padding:10px 8px 20px}
+.bg-baum details.bg-node{display:flex;align-items:center;border:0;background:none;margin:0}
+.bg-baum details.bg-node>summary{padding:0;font-size:13px;font-weight:400;list-style:none}
+.bg-baum details.bg-node>summary::-webkit-details-marker{display:none}
+.bg-baum details.bg-node>summary::before{content:none}
+.bg-baum details.bg-node:hover{background:none}
+.bg-baum .bg-leaf{display:flex;align-items:center}
+.bg-baum .bg-card{display:flex;align-items:center;gap:8px;border:1px solid var(--line);
+                   background:var(--panel);border-radius:8px;padding:6px 10px;min-width:0}
+.bg-baum summary .bg-card{cursor:pointer}
+.bg-baum summary .bg-card:hover{background:var(--accent-soft)}
+.bg-baum .bg-icon{width:44px;height:44px;object-fit:contain;flex:none;border-radius:4px;background:var(--bg)}
+.bg-baum .bg-info{display:flex;flex-direction:column;gap:3px;min-width:0}
+.bg-baum .bg-name-zeile{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;white-space:nowrap}
+.bg-baum .bg-kosten-zeile{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.bg-baum .bg-children{display:flex;flex-direction:column;justify-content:center;margin-left:8px}
+.bg-baum .bg-child{position:relative;display:flex;align-items:center;padding:4px 0}
+.bg-baum .bg-child>.bg-stub{flex:none;width:22px;height:0;border-top:1px solid var(--line)}
+.bg-baum .bg-child>.kn-menge{margin-right:6px;flex:none}
+.bg-baum .bg-child::before,.bg-baum .bg-child::after{content:'';position:absolute;left:0;width:0;
+  border-left:1px solid var(--line)}
+.bg-baum .bg-child::before{top:0;height:50%}
+.bg-baum .bg-child::after{bottom:0;height:50%}
+.bg-baum .bg-child:first-child::before,.bg-baum .bg-child:last-child::after{display:none}
+.bg-baum .bg-child:only-child::before,.bg-baum .bg-child:only-child::after{display:none}
 /* Einstellungen: Gebaeude/Kategorie-Ausnahmelisten */
 .klein-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 .klein-tbl th{background:transparent;color:var(--dim);text-transform:uppercase;
@@ -274,6 +306,10 @@ details>.body{padding:0 20px 20px}
     <button id="alleAufBtn" class="mini">Alles aufklappen</button>
     <button id="alleZuBtn" class="mini">Alles zuklappen</button>
     <button id="volumenBtn" class="mini" title="Laedt fuer alle aktuell im Bauplan sichtbaren gesperrten Kaufen-Knoten das 7-Tage-Handelsvolumen (history/-Endpunkt) nach. Zusatzsignal, ob am Markt ueberhaupt gehandelt wird - ersetzt keinen Preis und hebt die Sperre nicht auf.">Handelsvolumen laden</button>
+    <div class="dreifach" id="bauplanAnsichtSchalter" role="group" aria-label="Bauplan-Ansicht" title="Zwischen Fliesstext- und grafischer Baumansicht umschalten. Wird dauerhaft gemerkt.">
+      <button type="button" data-ansicht="text" class="an">Text</button>
+      <button type="button" data-ansicht="grafisch">Grafisch</button>
+    </div>
   </div>
   <div id="bauplan" class="baum"></div>
 </div>

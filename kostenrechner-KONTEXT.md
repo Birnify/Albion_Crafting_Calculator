@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.7.0 · Handelsvolumen als Zusatzsignal bei gesperrten Preisen
+Stand: 2026-09-06 · Version: v1.8.0 · Bauplan grafisch als Baumdiagramm mit Item-Icons
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,108 +21,108 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Handelsvolumen als Zusatzsignal bei gesperrten Preisen, 05.09.2026, v1.7.0)
+## Aktueller Stand (Bauplan grafisch als Baumdiagramm mit Item-Icons, 06.09.2026, v1.8.0)
 
-**Auftrag:** Backlog-Punkt 1 ("Bekannte Grenze der Preisquelle") aus der
-vorherigen Fassung dieser Liste, den der Nutzer beim letzten Mal bewusst
-offen gelassen hatte. Vier Rückfragen aus der Brainstorming-Phase, alle vom
-Nutzer wie empfohlen beantwortet: (1) Zeitraum/Kennzahl = **7-Tage-Summe**
-von `item_count` plus mengengewichteter Durchschnittspreis, wie im
-Eintopf-Rechner (`volumen_holen()`); (2) Abruf-Auslöser = **Knopfdruck, ein
-globaler Knopf** fürs ganze Ergebnis, kein automatischer Abruf je Berechnung;
-(3) Caching = **nur laufende Sitzung**, kein neues `localStorage`-Schema;
-(4) Anzeigeort = **nur im Bauplan-Baum**, nicht in der "Alle Wege"-Tabelle.
+**Auftrag:** zusätzlich zur bestehenden Text-Baumansicht des Bauplans (bleibt
+vollständig erhalten) eine umschaltbare grafische Ansicht, die den Bauplan als
+Baumdiagramm zeigt: Knoten als Kästchen mit Item-Icon vom offiziellen
+Render-Dienst, Name, Kosten, durch Linien verbunden. Bestätigte
+Design-Entscheidungen aus der Brainstorming-Phase: Baumrichtung **links nach
+rechts** (Wurzel links, Zweige nach rechts), Umschalter-Wahl dauerhaft in
+`localStorage` gemerkt, kein Zoom-Regler (nur Scrollen), Kästchen zeigt
+Icon+Name+Verzauberungs-/Qualitäts-Badge+Silber+Fokus+Status-Badge, Details
+(Rezept-Index, Stationsgebühr, Rückgewinnung, Preisalter) nur im
+`title`-Tooltip, Icon-Größe 40-48px, bei Ladefehler kein Platzhalterbild,
+gleiche Auf-/Zuklapp-Logik wie die Text-Ansicht.
 
-**Umgesetzt:**
+**Umgesetzte Implementierung vorgefunden, nicht neu gebaut:** eine vorherige
+Sitzung dieses Zyklus hatte die Umsetzung bereits vollständig fertiggestellt
+und war am eigenen Sitzungslimit abgebrochen, während sie gerade den
+Node-Testlauf zur eigenen Verifikation ausführte (also nach abgeschlossener
+Implementierung, mitten in Phase 3). Diese Fortsetzung hat den unveränderten
+`git diff` gegen `fada022` (v1.7.0) Zeile für Zeile geprüft, bevor irgendetwas
+angefasst wurde, und keine Abweichung von den obigen Design-Entscheidungen
+gefunden - deshalb direkt verifiziert statt neu gebaut oder verworfen.
 
-- `js/preise.js`: `volumenAbrufen(ids, opts)` gegen den `history/`-Endpunkt
-  (`time-scale=24`), dieselbe Drossel-Disziplin wie `preiseAbrufen()`
-  (50er-Blöcke, 1,5 s Pause, Backoff bei 429), aber bewusst OHNE
-  `localStorage`-Cache. `normalisiereHistorieZeile(zeile, tageFenster)` als
-  reine Hilfsfunktion (Summe `item_count` der letzten 7 Tage,
-  mengengewichteter Durchschnittspreis), rechnet identisch zu
-  `eintopf_update.py` `volumen_holen()` (dort `d7`/`avg`). `history/` liefert
-  `location`, nicht `city` wie `prices/` - einmal mehr beachtet.
-- `js/ui.js`: `sammleGesperrteKaufMarktIds(weg)` (Modul-Ebene, reine
-  Funktion) traversiert dieselbe `weg`-Struktur wie `baueKnoten()`
-  (`zutaten`/`vorstufe`/`materialien`/`basis`) und sammelt alle Markt-IDs
-  von Knoten mit `typ:"gesperrt", ursprungsTyp:"kaufen"`. Neuer Knopf
-  "Handelsvolumen laden" neben "Alles auf-/zuklappen" ruft
-  `PREISE.volumenAbrufen()` für genau diese IDs auf, Ergebnis landet in
-  `zustand.handelsvolumen` (Session-Speicher, bleibt über mehrere Suchen
-  erhalten). `baueGesperrtZeile()` nimmt jetzt das ganze `weg`-Objekt
-  entgegen (vorher drei Einzelfelder) und hängt bei einem echten
-  "kaufen, gesperrt"-Knoten die neue `wegVolumenHtml()`-Anzeige an ("X Stk /
-  7 Tage, Y Silber im Schnitt", oder "keine Daten"/nichts, solange der Knopf
-  noch nicht geklickt wurde).
-- `Kostenrechner.html`: Knopf `#volumenBtn` plus CSS `.kn-volumen` (Stil wie
-  `.kn-alter`, gepunktet unterstrichen mit Tooltip). Keine belegten
-  Werte/Formeln berührt.
+**Umgesetzt in `js/ui.js`:**
 
-**Wichtiger Befund beim Bauen, den der Auftrag nicht vorwegnahm:** die
-Handelsvolumen-Anzeige greift nach genauer Prüfung der Sperrlogik in
-`js/rechenkern.js` in der Praxis fast ausschließlich am **Wurzelknoten**
-des Bauplans, nicht tief verschachtelt. Grund: `craftKandidat()`/
-`verzaubernKandidat()` setzen `gesperrt=true` an sich selbst, sobald
-IRGENDEINE Zutat/Vorstufe/Material gesperrt ist (s. `js/rechenkern.js`
-Zeile ~366 ff.), und diese Sperre kaskadiert konsequent nach oben bis zum
-nächsten Knoten mit einem tatsächlich funktionierenden Alternativweg, oder
-bis zur Wurzel. Ein GEWONNENER (nicht gesperrter) Teilbaum kann deshalb per
-Induktion nie einen gesperrten Kindknoten enthalten - der vorhandene
-`weg.typ === "gesperrt"`-Zweig in `baueKnoten()` (verschachtelter Fall) ist
-nach aktuellem Kaskadenverhalten praktisch nicht erreichbar, nur der
-Sonderfall in `renderBauplan()` (ganzer `r.weg` gesperrt) tritt real auf -
-genau der in `../CLAUDE.md` dokumentierte Fall (z. B.
-`T4_HEAD_CLOTH_ROYAL@3` komplett unbepreisbar). `sammleGesperrteKaufMarktIds()`
-spiegelt trotzdem bewusst die VOLLE Traversierung (craften/verzaubern/reroll),
-robust gegenüber diesem Kaskadenverhalten und zukunftssicher, falls sich das
-je ändert; die Tests decken beide Fälle (Wurzel und - synthetisch - auch
-verschachtelt) ab. Live gegenübergestellt: `T4_HEAD_CLOTH_ROYAL@3` ist über
-`prices/` in Lymhurst nicht bepreisbar, `history/` zeigt trotzdem 198
-tatsächlich gehandelte Stück in den letzten 7 Tagen zu durchschnittlich
-222.430 Silber - exakt das Zusatzsignal, das der Auftrag wollte.
+- `itemIconUrl(uniquename, qualitaetIndex)`: baut die URL des
+  Render-Diensts (`https://render.albiononline.com/v1/item/{id}.png?count=1&quality=Q&size=48`).
+  **Wichtigste Einzelheit:** der Dienst zählt Qualität 1-basiert (1=Normal),
+  die App 0-basiert (`weg.qualitaet` 0=Normal) - deshalb immer `+1`.
+  `count=1` unterdrückt den Mengen-Stapel-Aufdruck (die Menge zeigt die App
+  ohnehin separat an der Baumkante).
+- `bgBadgeInfo(weg)`: Aktionstyp-Badge (Farbe+Label), dieselbe Farbgebung wie
+  die Text-Ansicht (`kn-badge-*`).
+- `bgTooltipFuer(weg, r, kante)`/`altBeschreibungPlain()`/`wegVolumenTextPlain()`:
+  bauen den gesamten `title`-Tooltip-Text (Rezept-Index, Stationsgebühr samt
+  Gebäude, Rückgewinnung, Qualitätsweg, Kaufweg, Preisalter, Handelsvolumen,
+  nächstbeste Alternative) - Plain-Text-Varianten der bestehenden
+  HTML-Bausteine, weil `title` kein Markup erlaubt.
+- `bgCard(weg, r, kante)`: Kästchen-Inhalt (Icon, Badge, Name+Stufe,
+  Qualitäts-Badge, Silber, Fokus). Ladefehler: `img.addEventListener("error",
+  () => img.remove())` statt Platzhalterbild.
+- `baueKnotenGrafisch(weg, r, tiefe, kante)`: Baumaufbau links->rechts,
+  dieselbe Tiefenschwelle (`tiefe < 2` automatisch aufgeklappt) und dieselben
+  vier Wegtypen (craften/verzaubern/reroll/kaufen+gesperrt als Blätter) wie
+  `baueKnoten()` in der Text-Ansicht.
+- `renderBauplanGrafisch(r)`/`renderBauplan(r)`: Weiche zwischen Text- und
+  Grafisch-Ansicht über `einstellungen.bauplanAnsicht` (`"text"` Standard,
+  `"grafisch"` Opt-in), Auswahl dauerhaft in den bestehenden
+  Einstellungen-`localStorage` integriert (kein neues Schema).
 
-**Getestet:** Testsuite von 246 auf **261 Tests** gewachsen (15 neue): 5 in
-`PREISE.selbsttest()` für `normalisiereHistorieZeile()` (7-Tage-Fenster
-schneidet ältere Tage ab, mengengewichteter ≠ einfacher Durchschnitt, leere
-`data` ergibt 0/`null` statt `NaN`, `location`→`stadt`-Normalisierung,
-ungültige Zeile liefert `null` statt zu werfen), 10 im neuen Abschnitt
-"Regressionstest `UI.sammleGesperrteKaufMarktIds()`" (Wurzel/verschachtelt/
-Verzaubern/Reroll/Dedup/Negativfälle mit `ursprungsTyp !== "kaufen"` bzw.
-fehlender `marktId`). Alle 261 grün, per Node cachefrei gegen die Dateien
-auf der Platte geprüft (`vm.runInContext`, `document`/`localStorage`/`fetch`-
-Stub). **Zusätzlich live gegen die echte API geprüft** (kein Raten): drei
-echte `fetch`-Aufrufe gegen `europe.albion-online-data.com/.../history/`
-(einmal roh zur Feldnamen-Kontrolle, einmal durch `PREISE.volumenAbrufen()`
-mit zwei IDs inkl. `T4_HEAD_CLOTH_ROYAL@3`, einmal mit einer erfundenen ID
-zur Kontrolle des `null`-Falls) sowie eine volle Rechenkern-Integrationsprobe
-(`RECHENKERN.kosten()` + `UI.sammleGesperrteKaufMarktIds()` gegen den echten
-Rezeptgraphen ohne jeden hinterlegten Preis) bestätigen Feldnamen, Antwort-
-form und Zusammenspiel.
+**Umgesetzt in `Kostenrechner.html`:** CSS für `.bg-*`-Klassen (Kästchen,
+Icon, Verbindungslinien als `::before`/`::after`-Pseudoelemente auf
+`.bg-child`, links->rechts durch `.bg-children` als Spalte rechts vom
+Elternkästchen), Umschalter `#bauplanAnsichtSchalter` (Text/Grafisch, `.dreifach`-
+Stil wie andere Umschalter im Projekt) neben "Alles auf-/zuklappen"/
+"Handelsvolumen laden". Keine belegten Werte/Formeln berührt.
 
-**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.6.0:** weder
-`SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug standen in
-dieser Sitzung zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
-`spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht angefordert
-werden, obwohl `spieldaten-pruefer` (neuer API-Endpunkt) und
-`oberflaechen-pruefer` (neuer Knopf, neue Anzeige im Bauplan) hier fachlich
-angebracht gewesen wären. Ersatzweise: die oben beschriebenen echten
-Live-`fetch`-Aufrufe gegen die Produktions-API als Ersatz für
-`spieldaten-pruefer`, und eine sorgfältige Zeilen-für-Zeile-Prüfung von
-`baueGesperrtZeile()`/`wegVolumenHtml()` als Ersatz für
-`oberflaechen-pruefer` - aber **kein echter Klick-Test des neuen Knopfs im
-gerenderten Browser**. Empfehlung an den Nutzer: die App öffnen, ein Item
-ohne Marktpreis suchen (z. B. eine hohe Verzauberungsstufe), "Handelsvolumen
-laden" klicken und die neue Anzeige an der Gesperrt-Zeile prüfen.
+**Getestet:** Testsuite von 261 auf **273 Tests** gewachsen (12 neue), alle im
+neuen Abschnitt "Regressionstest `UI.itemIconUrl()`/`UI.bgBadgeInfo()`": die
++1-Qualitätsumrechnung (Index 0/undefined -> 1, Index 3 -> 4, Index 4 -> 5),
+URL-Kodierung des `uniquename`, alle fünf Badge-Zuordnungen plus
+Negativfall (`null`), und `defaultEinstellungen().bauplanAnsicht === "text"`
+als Standardwert. Alle 273 grün geprüft per eigenem Node-Harness
+(`vm.createContext`, `document`/`localStorage`/`fetch`-Stub, lädt
+`rezepte.js`/`js/*.js`/den Inline-Testblock aus `tests/test.html` cachefrei
+von der Platte, extrahiert `alleTests` über einen zweiten `vm.runInContext`-
+Lauf im selben Kontext, da `const` auf Skript-Ebene keine Eigenschaft des
+Sandbox-Objekts wird).
 
-Versions-Schnappschuss unter `Versionen/v1.7.0 - Handelsvolumen als
-Zusatzsignal bei gesperrten Preisen/` angelegt. Git-Commit und Push wie im
-Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+**Zusätzlich echt im Browser geprüft** (Puppeteer, da in dieser Sitzung kein
+interaktives Browser-Werkzeug zur Verfügung stand, wohl aber Netzzugriff für
+`npm install`): `Kostenrechner.html` per `file://` geladen, Gelehrtengugel
+T4.3 und T8.3 gesucht, berechnet, auf "Grafisch" umgeschaltet, "Alles
+aufklappen" geklickt. Bestätigt per Screenshot: Baum wächst tatsächlich
+**links nach rechts** (Wurzel links, mehrstufige Verzweigung nach rechts,
+Mengenlabel wie "8.00x"/"2.00x" an den Verbindungslinien, Icons laden
+sichtbar farbig, nicht nur der Text). Bestätigt per DOM-Auswertung: `title`-
+Tooltips enthalten die volle Detailtiefe ("Rezept #1. Stationsgebuehr 461
+(Magierturm). Rueckgewinnung 43,5 %. Naechstbeste Alternative: ..."); ein
+simulierter 404 auf eine Icon-URL entfernt genau das `<img>` (7 Icons -> 6),
+das Kästchen selbst bleibt intakt, kein Platzhalter erscheint; die
+Text/Grafisch-Wahl übersteht einen Seiten-Reload (localStorage-Persistenz
+bestätigt, Schlüssel `albion_kostenrechner_einstellungen`).
+
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.7.0:** weder
+`SendMessage` noch `Agent` standen in dieser Sitzung zur Verfügung, die drei
+Spezialisten (`rechenkern-pruefer`, `spieldaten-pruefer`, `oberflaechen-pruefer`)
+konnten deshalb nicht angefordert werden, obwohl `oberflaechen-pruefer` (neue
+Ansicht, neuer Umschalter) fachlich angebracht gewesen wäre. Ersatzweise
+diesmal aber, anders als in v1.4.0-v1.7.0, ein **echter** Klicktest im
+gerenderten Browser per Puppeteer (s. oben) statt nur Code-Review - dieser
+Zyklus hat die in den Vorgängern offen gebliebene Lücke ("kein echter
+Klick-Test im gerenderten Browser") also geschlossen.
+
+Versions-Schnappschuss unter `Versionen/v1.8.0 - Bauplan grafisch als
+Baumdiagramm mit Item-Icons/` angelegt. Git-Commit und Push wie im Projekt
+üblich (s. `../CLAUDE.md`, "Versionskontrolle").
 
 ---
 
-**Vorheriger Stand (v1.6.0, "Alle-Wege-Tabelle gruppiert gleichwertige
-Wege") und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
+**Vorheriger Stand (v1.7.0, "Handelsvolumen als Zusatzsignal bei gesperrten
+Preisen") und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
 ausgelagert (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
@@ -140,7 +140,9 @@ gruppiert gleichwertige Wege" (v1.6.0, nur `Kostenrechner.html`/`js/ui.js`/
 Dateien) plus Feature "Handelsvolumen als Zusatzsignal bei gesperrten
 Preisen" (v1.7.0, `js/preise.js`/`js/ui.js`/`Kostenrechner.html`/
 `tests/test.html`, kein Rechenkern-/Regeln-Code geaendert, keine neuen
-Dateien):
+Dateien) plus Feature "Bauplan grafisch als Baumdiagramm mit Item-Icons"
+(v1.8.0, `js/ui.js`/`Kostenrechner.html`/`tests/test.html`, kein
+Rechenkern-/Regeln-/Preise-Code geaendert, keine neuen Dateien):
 
 ```
 Kostenrechner/
@@ -151,7 +153,9 @@ Kostenrechner/
                               + Qualitaets-Chancenpunkte-Block v1.4.0; Schicksalsbrett-
                               Meisterschaft/Spezialisierung-Zeile ersetzt durch
                               #spezKnotenContainer-Panel v1.5.0; #volumenBtn +
-                              .kn-volumen v1.7.0): Suche, Hero,
+                              .kn-volumen v1.7.0; .bg-*-CSS (grafischer Bauplan-Baum,
+                              Verbindungslinien als Pseudoelemente) + #bauplanAnsichtSchalter
+                              v1.8.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
     preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
@@ -193,7 +197,10 @@ Kostenrechner/
                               sammleGesperrteKaufMarktIds() (Modul-Ebene), volumenBtn-Listener,
                               wegVolumenHtml(), baueGesperrtZeile() nimmt jetzt das ganze
                               weg-Objekt statt Einzelfeldern entgegen, zustand.handelsvolumen
-                              v1.7.0):
+                              v1.7.0; itemIconUrl()/bgBadgeInfo()/bgTooltipFuer()/bgCard()/
+                              baueKnotenGrafisch()/renderBauplanGrafisch() (alle Modul-Ebene
+                              bzw. im boot()-Scope wie baueKnoten()), einstellungen.bauplanAnsicht
+                              (Text/Grafisch, localStorage-persistiert) v1.8.0):
                               Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
@@ -217,7 +224,8 @@ Kostenrechner/
   Versionen/v1.5.2 - Fokus-Monotonie-Regressionstest (Diagnose ohne Codefehler)/
   Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert gleichwertige Wege/
   Versionen/v1.7.0 - Handelsvolumen als Zusatzsignal bei gesperrten Preisen/
-  tests/test.html           261 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.8.0 - Bauplan grafisch als Baumdiagramm mit Item-Icons/
+  tests/test.html           273 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 

@@ -1766,6 +1766,53 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Regressionstest UI.itemIconUrl()/UI.bgBadgeInfo() (Zyklus "Bauplan
+  // grafisch als Baumdiagramm mit Item-Icons", 05./06.09.2026): reine
+  // URL-Bau- bzw. Badge-Zuordnungsfunktionen fuer die grafische Bauplan-
+  // Ansicht, ohne DOM testbar. Der wichtigste Einzelpunkt: der Render-Dienst
+  // ist 1-basiert (1=Normal...5=Meisterwerk), diese App zaehlt qualitaetsIndex/
+  // weg.qualitaet 0-basiert - die Umrechnung (+1) ist der Kern dieses Tests.
+  // -----------------------------------------------------------------------
+  (function () {
+    pruefe(
+      "itemIconUrl: Realm-unabhaengiger Render-Dienst, korrekte uniquename und Standardgroesse 48",
+      UI.itemIconUrl("T4_HEAD_CLOTH_ROYAL", 0) === "https://render.albiononline.com/v1/item/T4_HEAD_CLOTH_ROYAL.png?count=1&quality=1&size=48",
+      UI.itemIconUrl("T4_HEAD_CLOTH_ROYAL", 0)
+    );
+    pruefe(
+      "itemIconUrl: qualitaetsIndex 0/undefined ergibt Render-Qualitaet 1 (Normal), NICHT 0",
+      UI.itemIconUrl("X", 0).indexOf("quality=1") !== -1 && UI.itemIconUrl("X", undefined).indexOf("quality=1") !== -1
+    );
+    pruefe(
+      "itemIconUrl: qualitaetsIndex 3 (Exzellent, 0-basiert) ergibt Render-Qualitaet 4 (1-basiert) - die im Auftrag hervorgehobene +1-Umrechnung",
+      UI.itemIconUrl("X", 3).indexOf("quality=4") !== -1,
+      UI.itemIconUrl("X", 3)
+    );
+    pruefe(
+      "itemIconUrl: qualitaetsIndex 4 (Meisterwerk) ergibt Render-Qualitaet 5, den laut Aufgabenstellung hoechsten gueltigen Wert",
+      UI.itemIconUrl("X", 4).indexOf("quality=5") !== -1,
+      UI.itemIconUrl("X", 4)
+    );
+    pruefe(
+      "itemIconUrl: uniquename wird URL-kodiert (defensiv, falls je ein Sonderzeichen vorkaeme)",
+      UI.itemIconUrl("A&B", 0).indexOf("A%26B") !== -1,
+      UI.itemIconUrl("A&B", 0)
+    );
+
+    pruefe("bgBadgeInfo: kaufen -> Label 'Kaufen', Farbklasse kn-badge-kaufen", JSON.stringify(UI.bgBadgeInfo({ typ: "kaufen" })) === JSON.stringify({ cls: "kn-badge-kaufen", label: "Kaufen" }));
+    pruefe("bgBadgeInfo: craften -> Label 'Craften', Farbklasse kn-badge-craften", JSON.stringify(UI.bgBadgeInfo({ typ: "craften" })) === JSON.stringify({ cls: "kn-badge-craften", label: "Craften" }));
+    pruefe("bgBadgeInfo: verzaubern -> Label 'Verzaubern', Farbklasse kn-badge-verzaubern", JSON.stringify(UI.bgBadgeInfo({ typ: "verzaubern" })) === JSON.stringify({ cls: "kn-badge-verzaubern", label: "Verzaubern" }));
+    pruefe("bgBadgeInfo: reroll -> Label 'Craften + Reroll', Farbklasse kn-badge-reroll", JSON.stringify(UI.bgBadgeInfo({ typ: "reroll" })) === JSON.stringify({ cls: "kn-badge-reroll", label: "Craften + Reroll" }));
+    pruefe("bgBadgeInfo: gesperrt -> Label 'Gesperrt', Farbklasse kn-badge-gesperrt", JSON.stringify(UI.bgBadgeInfo({ typ: "gesperrt" })) === JSON.stringify({ cls: "kn-badge-gesperrt", label: "Gesperrt" }));
+    pruefe("bgBadgeInfo: null/undefined liefert leere, aber gueltige Struktur statt zu werfen", JSON.stringify(UI.bgBadgeInfo(null)) === JSON.stringify({ cls: "", label: "" }));
+
+    pruefe(
+      "defaultEinstellungen: bauplanAnsicht startet auf 'text' (bisheriges Fliesstext-Verhalten bleibt Standard, Grafisch ist Opt-in)",
+      UI.defaultEinstellungen().bauplanAnsicht === "text"
+    );
+  })();
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {

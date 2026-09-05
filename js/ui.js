@@ -54,6 +54,12 @@ const UI = (function () {
       fokusRegelJeKategorie: {},
       fokusUebersteuerungJeKnoten: {},
       fokuswert: 0, // Silber je Fokuspunkt; 0 ist gueltig, verschiebt aber zu fokusintensiven Wegen
+      // Bauplan-Ansicht (Zyklus "Bauplan grafisch als Baumdiagramm mit Item-
+      // Icons", 05./06.09.2026): "text" (Fliesstext-Karten, bisheriges
+      // Verhalten) oder "grafisch" (Baumdiagramm links->rechts mit Item-
+      // Icons). Dauerhaft gemerkt wie die uebrigen Einstellungen (Nutzer-
+      // Entscheidung), s. renderBauplan()/renderBauplanGrafisch() unten.
+      bauplanAnsicht: "text",
       // Stationssaetze: Nutzer-Vorgabe vom 05.09.2026, pauschal 400 als Standard
       // fuer jedes Gebaeude, in jeder Stadt (der Satz ist absichtlich nicht nach
       // Stadt getrennt, s. CLAUDE.md "Craft-Kategorie zu Gebaeude": die Station
@@ -93,6 +99,7 @@ const UI = (function () {
       basis.fokusRegelJeKategorie = daten.fokusRegelJeKategorie || {};
       basis.fokusUebersteuerungJeKnoten = daten.fokusUebersteuerungJeKnoten || {};
       basis.fokuswert = daten.fokuswert != null ? daten.fokuswert : basis.fokuswert;
+      basis.bauplanAnsicht = daten.bauplanAnsicht === "grafisch" ? "grafisch" : basis.bauplanAnsicht;
       // Zusammenfuehren statt ersetzen: ein Gebaeude, das der Nutzer schon
       // ausdruecklich gesetzt hat (auch auf einen anderen Wert als 400), bleibt
       // erhalten. Ein Gebaeude, das im gespeicherten Stand noch fehlt (z.B. weil
@@ -450,6 +457,43 @@ const UI = (function () {
     return ids;
   }
 
+  /**
+   * Icon-URL des offiziellen Albion-Render-Diensts fuer die grafische
+   * Bauplan-Ansicht (Zyklus "Bauplan grafisch als Baumdiagramm mit Item-
+   * Icons", 05./06.09.2026). Reine Funktion (kein DOM), damit die URL-
+   * Bildung ohne Browser testbar ist.
+   *
+   * WICHTIG (Befund aus der Brainstorming-Phase dieses Zyklus, nicht
+   * vergessen): der Render-Dienst zaehlt Qualitaet 1-basiert (1=Normal ...
+   * 5=Meisterwerk), diese App zaehlt sie 0-basiert (weg.qualitaet ist nur
+   * bei qualitaetsgebundenen Knoten > 0 gesetzt, 0/undefined = Normal, s.
+   * Kommentar bei weg.qualitaet in knotenSchluessel() oben). Deshalb hier
+   * IMMER +1, sonst zeigt jeder Knoten die falsche Qualitaetsstufe.
+   *
+   * count=1 unterdrueckt den Mengen-Stapel-Aufdruck auf dem Icon (die Menge
+   * zeigt die App ohnehin separat an der Baumkante). size=48 passt zur
+   * Nutzer-Vorgabe "40 bis 48px".
+   */
+  function itemIconUrl(uniquename, qualitaetIndex) {
+    const q = (qualitaetIndex || 0) + 1;
+    return "https://render.albiononline.com/v1/item/" + encodeURIComponent(uniquename) + ".png?count=1&quality=" + q + "&size=48";
+  }
+
+  /**
+   * Aktionstyp-Badge (Farbe + Label) eines Weg-Knotens, fuer die grafische
+   * Bauplan-Ansicht dieselbe Farbgebung wie die Text-Ansicht (kn-badge-*,
+   * s. Kostenrechner.html). Reine Funktion, Modul-Ebene, testbar.
+   */
+  function bgBadgeInfo(weg) {
+    if (!weg) return { cls: "", label: "" };
+    if (weg.typ === "gesperrt") return { cls: "kn-badge-gesperrt", label: "Gesperrt" };
+    if (weg.typ === "kaufen") return { cls: "kn-badge-kaufen", label: "Kaufen" };
+    if (weg.typ === "craften") return { cls: "kn-badge-craften", label: "Craften" };
+    if (weg.typ === "verzaubern") return { cls: "kn-badge-verzaubern", label: "Verzaubern" };
+    if (weg.typ === "reroll") return { cls: "kn-badge-reroll", label: "Craften + Reroll" };
+    return { cls: "", label: weg.typ };
+  }
+
   // -----------------------------------------------------------------------
   // DOM-Verdrahtung. Bricht sofort ab, wenn das App-Markup fehlt (z.B. auf
   // tests/test.html, das ui.js nur wegen der Hilfsfunktionen oben mitlaedt).
@@ -481,6 +525,7 @@ const UI = (function () {
     const alleAufBtn = document.getElementById("alleAufBtn");
     const alleZuBtn = document.getElementById("alleZuBtn");
     const volumenBtn = document.getElementById("volumenBtn");
+    const bauplanAnsichtSchalterEl = document.getElementById("bauplanAnsichtSchalter");
 
     const alleWegeTabelleEl = document.getElementById("alleWegeTabelle");
 
@@ -577,6 +622,15 @@ const UI = (function () {
       (einstellungen.kaufweg === "order" ? kwOrderEl : kwSofortEl).checked = true;
       (einstellungen.verkaufsweg === "order" ? vwOrderEl : vwSofortEl).checked = true;
       aktualisiereFceAnzeige();
+      aktualisiereBauplanAnsichtSchalter();
+    }
+
+    /** Markiert den aktiven Text/Grafisch-Knopf im Bauplan-Panel (.an, wie die uebrigen Dreifach-Schalter). */
+    function aktualisiereBauplanAnsichtSchalter() {
+      if (!bauplanAnsichtSchalterEl) return;
+      bauplanAnsichtSchalterEl.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("an", btn.dataset.ansicht === einstellungen.bauplanAnsicht);
+      });
     }
 
     function aktualisiereFceAnzeige() {
@@ -1408,7 +1462,220 @@ const UI = (function () {
       return wrap;
     }
 
+    /**
+     * Plain-Text-Variante von altBeschreibungKurz() (oben), fuer den
+     * title-Tooltip der grafischen Bauplan-Ansicht: dort ist kein HTML
+     * erlaubt (title ist ein Attributwert, keine Markup-Senke), deshalb kein
+     * escapeHtml/keine <span>-Verschachtelung noetig, nur der reine Text.
+     */
+    function altBeschreibungPlain(alt) {
+      if (!alt) return "";
+      if (alt.gesperrt) return "Naechstbeste Alternative: gesperrt (" + (alt.grund || "") + ")";
+      const typLabel = { kaufen: "Kaufen", craften: "Craften", verzaubern: "Verzaubern", reroll: "Craften+Reroll" }[alt.typ] || alt.typ;
+      return "Naechstbeste Alternative: " + typLabel + " fuer " + formatSilber(alt.silber) + " Silber";
+    }
+
+    /** Plain-Text-Variante von wegVolumenHtml() (oben), fuer denselben Tooltip-Zweck wie altBeschreibungPlain(). */
+    function wegVolumenTextPlain(weg) {
+      if (!weg || weg.ursprungsTyp !== "kaufen" || !weg.marktId) return "";
+      const info = zustand.handelsvolumen[weg.marktId];
+      if (info === undefined) return "";
+      if (info === null) return "Handelsvolumen: keine Daten";
+      return info.umsatz7Tage > 0
+        ? "Handelsvolumen: " + formatSilber(info.umsatz7Tage) + " Stk / 7 Tage" + (info.mengengewichteterPreis != null ? ", " + formatSilber(info.mengengewichteterPreis) + " Silber im Schnitt" : "")
+        : "Handelsvolumen: kein Umsatz in den letzten 7 Tagen";
+    }
+
+    /**
+     * Gesamter title-Tooltip-Text eines Kaestchens in der grafischen Bauplan-
+     * Ansicht: alles, was in der Text-Ansicht als kn-detail/kn-flag/kn-alter
+     * sichtbar war (Rezept-Index, Stationsgebuehr samt Gebaeude,
+     * Rueckgewinnung, Qualitaetsweg, unvollstaendig-Warnung, Kaufweg,
+     * Eigenpreis-Kennzeichnung, Preisalter, "kein Ruecklauf"-Warnung,
+     * Handelsvolumen, naechstbeste Alternative), s. Nutzer-Entscheidung 4
+     * dieses Zyklus ("Details ... nur per title-Tooltip beim Hover, nicht
+     * permanent sichtbar"). Reihenfolge/Wortlaut lehnt sich an die
+     * bestehenden kn-detail-Texte in baueKnoten() an.
+     */
+    function bgTooltipFuer(weg, r, kante) {
+      const teile = [];
+      if (weg.typ === "gesperrt") {
+        teile.push("Gesperrt: " + (weg.grund || ""));
+        const vol = wegVolumenTextPlain(weg);
+        if (vol) teile.push(vol);
+        return teile.join(". ");
+      }
+      const alt = naechstbesteAlternative(r.knotenAlternativen, weg.item, weg.stufe, weg.qualitaet);
+      if (weg.typ === "kaufen") {
+        teile.push(weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf");
+        teile.push(weg.eigenpreis ? "Eigenpreis (keine Marktdaten)" : "Preisalter " + alterFuerMarktId(weg.marktId).text);
+      } else if (weg.typ === "craften") {
+        teile.push("Rezept #" + (weg.rezeptIndex + 1));
+        teile.push("Stationsgebuehr " + formatSilber(weg.stationsgebuehrJeStueck) + (weg.gebaeude ? " (" + weg.gebaeude + ")" : ""));
+        teile.push("Rueckgewinnung " + formatProzent(weg.rrr * 100));
+        if (weg.qualitaetsart === "preservequality") {
+          teile.push("Qualitaet " + REGELN.QUALITAETEN[weg.qualitaet] + " ueber preservequality-Zutat (kein Wurf, keine Fehlversuche)");
+        } else if (weg.qualitaetsart === "wurf") {
+          teile.push(
+            "Qualitaets-Wurf auf " +
+              REGELN.QUALITAETEN[weg.qualitaet] +
+              ": " +
+              formatProzent(weg.erfolgswahrscheinlichkeit * 100) +
+              " Erfolgschance je Versuch, erwartet " +
+              weg.erwarteteVersuche.toLocaleString("de-DE", { maximumFractionDigits: 2 }) +
+              " Versuche"
+          );
+        }
+        if (weg.unvollstaendig) teile.push("Stationssatz fuer mindestens ein Gebaeude fehlt, Silber ist eine Untergrenze");
+      } else if (weg.typ === "verzaubern") {
+        teile.push("Rezeptsilber " + formatSilber(weg.rezeptSilber));
+        if (weg.unvollstaendig) teile.push("Stationssatz fuer mindestens ein Gebaeude fehlt, Silber ist eine Untergrenze");
+      } else if (weg.typ === "reroll") {
+        teile.push("Reroll-Silber " + formatSilber(weg.rerollSilber) + " (Gegenstandswert " + formatSilber(weg.itemWertJeStueck) + ")");
+        teile.push("Normal -> " + REGELN.QUALITAETEN[weg.qualitaet]);
+        if (weg.unvollstaendig) teile.push("Stationssatz fuer mindestens ein Gebaeude fehlt, Silber ist eine Untergrenze");
+      }
+      if (kante && kante.ausschluss) teile.push("Ruecklauf ausgeschlossen (Mengenobergrenze fuer dieses Material erreicht)");
+      const altText = altBeschreibungPlain(alt);
+      if (altText) teile.push(altText);
+      return teile.join(". ");
+    }
+
+    /**
+     * Kaestchen-Inhalt der grafischen Bauplan-Ansicht (Nutzer-Entscheidung 4
+     * dieses Zyklus): Icon + Name(.Stufe) + Verzauberungs-/Qualitaets-Badge +
+     * Silber + Fokus + Status-/Aktionstyp-Badge. Alles Weitere steckt im
+     * title-Tooltip, s. bgTooltipFuer() oben. Kein Platzhalterbild bei
+     * Ladefehler (Nutzer-Entscheidung 5): der error-Handler entfernt das
+     * <img> ersatzlos, das Kaestchen bleibt ohne Icon, der Name bleibt
+     * sichtbar.
+     */
+    function bgCard(weg, r, kante) {
+      const badge = bgBadgeInfo(weg);
+      const card = document.createElement("div");
+      card.className = "bg-card" + (weg.typ === "gesperrt" ? " kn-zeile-gesperrt" : "");
+      card.title = bgTooltipFuer(weg, r, kante);
+
+      if (weg.item) {
+        const img = document.createElement("img");
+        img.className = "bg-icon";
+        img.loading = "lazy";
+        img.alt = "";
+        img.src = itemIconUrl(weg.item, weg.qualitaet);
+        img.addEventListener("error", () => img.remove());
+        card.appendChild(img);
+      }
+
+      const info = document.createElement("div");
+      info.className = "bg-info";
+      const nameZeile = document.createElement("div");
+      nameZeile.className = "bg-name-zeile";
+      nameZeile.innerHTML =
+        "<span class='kn-badge " + badge.cls + "'>" + escapeHtml(badge.label) + "</span>" +
+        "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>" +
+        qualitaetBadgeHtml(weg.qualitaet);
+      info.appendChild(nameZeile);
+
+      if (weg.typ !== "gesperrt") {
+        let silber, fokus;
+        if (weg.typ === "kaufen") {
+          silber = weg.preisJeStueck;
+          fokus = null;
+        } else {
+          const eigen = eigenerKandidat(r, weg);
+          silber = eigen && eigen.silber;
+          fokus = eigen && eigen.fokus;
+        }
+        const kostenZeile = document.createElement("div");
+        kostenZeile.className = "bg-kosten-zeile";
+        kostenZeile.innerHTML =
+          "<span class='kn-kosten'>" + formatSilber(silber) + " Silber</span>" +
+          (fokus ? "<span class='kn-fokus'>" + formatFokus(fokus) + " Fokus</span>" : "");
+        info.appendChild(kostenZeile);
+      }
+      card.appendChild(info);
+      return card;
+    }
+
+    /**
+     * Grafische Bauplan-Ansicht (Baumdiagramm links->rechts, Zyklus "Bauplan
+     * grafisch als Baumdiagramm mit Item-Icons", Nutzer-Entscheidungen s.
+     * kostenrechner-KONTEXT.md): dieselbe Auf-/Zuklapplogik wie baueKnoten()
+     * oben (Nutzer-Entscheidung 6) - Kaufen/Gesperrt sind Blaetter ohne
+     * eigenen Teilbaum (in der Text-Ansicht traegt "kaufen" zwar ebenfalls
+     * ein <details>, aber ohne jedes <body>-Element: die Detailzeile sitzt
+     * dort direkt IM <summary>, also immer sichtbar - das Aufklappen dort ist
+     * bereits ein Leerlauf-Effekt ohne sichtbaren Unterschied, hier deshalb
+     * bewusst weggelassen), Craften/Verzaubern/Reroll bleiben <details> mit
+     * Tiefenschwelle 2 wie in der Text-Ansicht. Reagiert auf denselben
+     * "Alles auf-/zuklappen"-Knopf, weil bauplanEl.querySelectorAll("details")
+     * generisch alle <details> im aktuell gerenderten Baum findet.
+     */
+    function baueKnotenGrafisch(weg, r, tiefe, kante) {
+      if (!weg) return document.createDocumentFragment();
+
+      if (weg.typ === "gesperrt" || weg.typ === "kaufen") {
+        const div = document.createElement("div");
+        div.className = "bg-node bg-leaf";
+        div.appendChild(bgCard(weg, r, kante));
+        return div;
+      }
+
+      const details = document.createElement("details");
+      details.className = "bg-node";
+      details.open = tiefe < 2;
+      const summary = document.createElement("summary");
+      summary.appendChild(bgCard(weg, r, kante));
+      details.appendChild(summary);
+
+      const children = document.createElement("div");
+      children.className = "bg-children";
+      function anhaengen(kindWeg, kindKante) {
+        const child = document.createElement("div");
+        child.className = "bg-child";
+        const stub = document.createElement("span");
+        stub.className = "bg-stub";
+        child.appendChild(stub);
+        if (kindKante && kindKante.label) {
+          const label = document.createElement("span");
+          label.className = "kn-menge";
+          label.textContent = kindKante.label;
+          child.appendChild(label);
+        }
+        child.appendChild(baueKnotenGrafisch(kindWeg, r, tiefe + 1, kindKante));
+        children.appendChild(child);
+      }
+
+      if (weg.typ === "craften") {
+        (weg.zutaten || []).forEach((z) =>
+          anhaengen(z.weg, { label: z.menge.toFixed(2) + "x", ausschluss: !!z.ruecklaufAusgeschlossen })
+        );
+      } else if (weg.typ === "verzaubern") {
+        anhaengen(weg.vorstufe, { label: "Vorstufe" });
+        (weg.materialien || []).forEach((m) => anhaengen(m.weg, { label: m.menge + "x" }));
+      } else if (weg.typ === "reroll") {
+        anhaengen(weg.basis, { label: "Normal beschaffen" });
+      }
+
+      if (children.childNodes.length) details.appendChild(children);
+      return details;
+    }
+
+    function renderBauplanGrafisch(r) {
+      bauplanEl.innerHTML = "";
+      bauplanEl.className = "baum bg-baum";
+      const scroll = document.createElement("div");
+      scroll.className = "bg-scroll";
+      scroll.appendChild(baueKnotenGrafisch(r.weg, r, 0));
+      bauplanEl.appendChild(scroll);
+    }
+
     function renderBauplan(r) {
+      if (einstellungen.bauplanAnsicht === "grafisch") {
+        renderBauplanGrafisch(r);
+        return;
+      }
+      bauplanEl.className = "baum";
       bauplanEl.innerHTML = "";
       if (r.gesperrt) {
         bauplanEl.appendChild(baueGesperrtZeile(r.weg, null));
@@ -1419,6 +1686,21 @@ const UI = (function () {
 
     alleAufBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = true)));
     alleZuBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = false)));
+
+    // Text/Grafisch-Umschalter (Zyklus "Bauplan grafisch als Baumdiagramm mit
+    // Item-Icons"): dauerhaft in localStorage gemerkt wie die uebrigen
+    // Einstellungen (Nutzer-Entscheidung 05./06.09.2026), kein separater
+    // Zoom-Regler - nur Scrollen im Panel (s. .bg-scroll in Kostenrechner.html).
+    if (bauplanAnsichtSchalterEl) {
+      bauplanAnsichtSchalterEl.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("button[data-ansicht]");
+        if (!btn) return;
+        einstellungen.bauplanAnsicht = btn.dataset.ansicht === "grafisch" ? "grafisch" : "text";
+        einstellungenSchreiben(einstellungen);
+        aktualisiereBauplanAnsichtSchalter();
+        if (zustand.ergebnis) renderBauplan(zustand.ergebnis);
+      });
+    }
 
     /**
      * Handelsvolumen-Zusatzsignal (Zyklus "history/-Handelsvolumen als
@@ -2042,5 +2324,7 @@ const UI = (function () {
     gruppiereAlleWege,
     wegGruppenLabel,
     sammleGesperrteKaufMarktIds,
+    itemIconUrl,
+    bgBadgeInfo,
   };
 })();

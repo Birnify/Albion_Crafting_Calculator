@@ -7,6 +7,106 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Handelsvolumen als Zusatzsignal bei gesperrten Preisen, 05.09.2026, v1.7.0)
+
+**Auftrag:** Backlog-Punkt 1 ("Bekannte Grenze der Preisquelle") aus der
+vorherigen Fassung dieser Liste, den der Nutzer beim letzten Mal bewusst
+offen gelassen hatte. Vier Rückfragen aus der Brainstorming-Phase, alle vom
+Nutzer wie empfohlen beantwortet: (1) Zeitraum/Kennzahl = **7-Tage-Summe**
+von `item_count` plus mengengewichteter Durchschnittspreis, wie im
+Eintopf-Rechner (`volumen_holen()`); (2) Abruf-Auslöser = **Knopfdruck, ein
+globaler Knopf** fürs ganze Ergebnis, kein automatischer Abruf je Berechnung;
+(3) Caching = **nur laufende Sitzung**, kein neues `localStorage`-Schema;
+(4) Anzeigeort = **nur im Bauplan-Baum**, nicht in der "Alle Wege"-Tabelle.
+
+**Umgesetzt:**
+
+- `js/preise.js`: `volumenAbrufen(ids, opts)` gegen den `history/`-Endpunkt
+  (`time-scale=24`), dieselbe Drossel-Disziplin wie `preiseAbrufen()`
+  (50er-Blöcke, 1,5 s Pause, Backoff bei 429), aber bewusst OHNE
+  `localStorage`-Cache. `normalisiereHistorieZeile(zeile, tageFenster)` als
+  reine Hilfsfunktion (Summe `item_count` der letzten 7 Tage,
+  mengengewichteter Durchschnittspreis), rechnet identisch zu
+  `eintopf_update.py` `volumen_holen()` (dort `d7`/`avg`). `history/` liefert
+  `location`, nicht `city` wie `prices/` - einmal mehr beachtet.
+- `js/ui.js`: `sammleGesperrteKaufMarktIds(weg)` (Modul-Ebene, reine
+  Funktion) traversiert dieselbe `weg`-Struktur wie `baueKnoten()`
+  (`zutaten`/`vorstufe`/`materialien`/`basis`) und sammelt alle Markt-IDs
+  von Knoten mit `typ:"gesperrt", ursprungsTyp:"kaufen"`. Neuer Knopf
+  "Handelsvolumen laden" neben "Alles auf-/zuklappen" ruft
+  `PREISE.volumenAbrufen()` für genau diese IDs auf, Ergebnis landet in
+  `zustand.handelsvolumen` (Session-Speicher, bleibt über mehrere Suchen
+  erhalten). `baueGesperrtZeile()` nimmt jetzt das ganze `weg`-Objekt
+  entgegen (vorher drei Einzelfelder) und hängt bei einem echten
+  "kaufen, gesperrt"-Knoten die neue `wegVolumenHtml()`-Anzeige an ("X Stk /
+  7 Tage, Y Silber im Schnitt", oder "keine Daten"/nichts, solange der Knopf
+  noch nicht geklickt wurde).
+- `Kostenrechner.html`: Knopf `#volumenBtn` plus CSS `.kn-volumen` (Stil wie
+  `.kn-alter`, gepunktet unterstrichen mit Tooltip). Keine belegten
+  Werte/Formeln berührt.
+
+**Wichtiger Befund beim Bauen, den der Auftrag nicht vorwegnahm:** die
+Handelsvolumen-Anzeige greift nach genauer Prüfung der Sperrlogik in
+`js/rechenkern.js` in der Praxis fast ausschließlich am **Wurzelknoten**
+des Bauplans, nicht tief verschachtelt. Grund: `craftKandidat()`/
+`verzaubernKandidat()` setzen `gesperrt=true` an sich selbst, sobald
+IRGENDEINE Zutat/Vorstufe/Material gesperrt ist (s. `js/rechenkern.js`
+Zeile ~366 ff.), und diese Sperre kaskadiert konsequent nach oben bis zum
+nächsten Knoten mit einem tatsächlich funktionierenden Alternativweg, oder
+bis zur Wurzel. Ein GEWONNENER (nicht gesperrter) Teilbaum kann deshalb per
+Induktion nie einen gesperrten Kindknoten enthalten - der vorhandene
+`weg.typ === "gesperrt"`-Zweig in `baueKnoten()` (verschachtelter Fall) ist
+nach aktuellem Kaskadenverhalten praktisch nicht erreichbar, nur der
+Sonderfall in `renderBauplan()` (ganzer `r.weg` gesperrt) tritt real auf -
+genau der in `../CLAUDE.md` dokumentierte Fall (z. B.
+`T4_HEAD_CLOTH_ROYAL@3` komplett unbepreisbar). `sammleGesperrteKaufMarktIds()`
+spiegelt trotzdem bewusst die VOLLE Traversierung (craften/verzaubern/reroll),
+robust gegenüber diesem Kaskadenverhalten und zukunftssicher, falls sich das
+je ändert; die Tests decken beide Fälle (Wurzel und - synthetisch - auch
+verschachtelt) ab. Live gegenübergestellt: `T4_HEAD_CLOTH_ROYAL@3` ist über
+`prices/` in Lymhurst nicht bepreisbar, `history/` zeigt trotzdem 198
+tatsächlich gehandelte Stück in den letzten 7 Tagen zu durchschnittlich
+222.430 Silber - exakt das Zusatzsignal, das der Auftrag wollte.
+
+**Getestet:** Testsuite von 246 auf **261 Tests** gewachsen (15 neue): 5 in
+`PREISE.selbsttest()` für `normalisiereHistorieZeile()` (7-Tage-Fenster
+schneidet ältere Tage ab, mengengewichteter ≠ einfacher Durchschnitt, leere
+`data` ergibt 0/`null` statt `NaN`, `location`→`stadt`-Normalisierung,
+ungültige Zeile liefert `null` statt zu werfen), 10 im neuen Abschnitt
+"Regressionstest `UI.sammleGesperrteKaufMarktIds()`" (Wurzel/verschachtelt/
+Verzaubern/Reroll/Dedup/Negativfälle mit `ursprungsTyp !== "kaufen"` bzw.
+fehlender `marktId`). Alle 261 grün, per Node cachefrei gegen die Dateien
+auf der Platte geprüft (`vm.runInContext`, `document`/`localStorage`/`fetch`-
+Stub). **Zusätzlich live gegen die echte API geprüft** (kein Raten): drei
+echte `fetch`-Aufrufe gegen `europe.albion-online-data.com/.../history/`
+(einmal roh zur Feldnamen-Kontrolle, einmal durch `PREISE.volumenAbrufen()`
+mit zwei IDs inkl. `T4_HEAD_CLOTH_ROYAL@3`, einmal mit einer erfundenen ID
+zur Kontrolle des `null`-Falls) sowie eine volle Rechenkern-Integrationsprobe
+(`RECHENKERN.kosten()` + `UI.sammleGesperrteKaufMarktIds()` gegen den echten
+Rezeptgraphen ohne jeden hinterlegten Preis) bestätigen Feldnamen, Antwort-
+form und Zusammenspiel.
+
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.6.0:** weder
+`SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug standen in
+dieser Sitzung zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
+`spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht angefordert
+werden, obwohl `spieldaten-pruefer` (neuer API-Endpunkt) und
+`oberflaechen-pruefer` (neuer Knopf, neue Anzeige im Bauplan) hier fachlich
+angebracht gewesen wären. Ersatzweise: die oben beschriebenen echten
+Live-`fetch`-Aufrufe gegen die Produktions-API als Ersatz für
+`spieldaten-pruefer`, und eine sorgfältige Zeilen-für-Zeile-Prüfung von
+`baueGesperrtZeile()`/`wegVolumenHtml()` als Ersatz für
+`oberflaechen-pruefer` - aber **kein echter Klick-Test des neuen Knopfs im
+gerenderten Browser**. Empfehlung an den Nutzer: die App öffnen, ein Item
+ohne Marktpreis suchen (z. B. eine hohe Verzauberungsstufe), "Handelsvolumen
+laden" klicken und die neue Anzeige an der Gesperrt-Zeile prüfen.
+
+Versions-Schnappschuss unter `Versionen/v1.7.0 - Handelsvolumen als
+Zusatzsignal bei gesperrten Preisen/` angelegt. Git-Commit und Push wie im
+Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
 ## Aktueller Stand (Alle-Wege-Tabelle gruppiert gleichwertige Wege, 05.09.2026, v1.6.0)
 
 **Auftrag:** Backlog-Punkt "'Alle Wege'-Tabelle zeigt bei baugleichen
