@@ -1,7 +1,7 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-04 · Version: v1.0.0 · Paket P7 (Haertung und Abschluss) erledigt,
-alle sechs Baupakete (P1-P6) fertig
+Stand: 2026-09-05 · Version: v1.0.1 · Fehlerkorrektur nach v1.0.0 (Zeitzonen-Bug
+bei der Preisalter-Berechnung), kein neues Paket
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -20,65 +20,42 @@ ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (P7, 04.09.2026, v1.0.0)
+## Aktueller Stand (Fehlerkorrektur nach P7, 05.09.2026, v1.0.1)
 
-P1 bis P7 stehen: Rezeptgraph, Preisschicht, Rechenkern, Testsuite, Oberfläche,
-Eigenpreis-Pflege und jetzt Härtung/Abschluss. Details zu P1-P6 (rezepte.js-Schema,
-Markt-ID-Regel, Cache-Schema, ItemValue-Herleitung, Rezeptsuche-Verwechslung, die
-fünf oberflaechen-pruefer-Befunde, Eigenpreis-Pflegeansicht) stehen unverkürzt in
-`kostenrechner-KONTEXT-HISTORIE.md`.
+Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, s.
+`kostenrechner-KONTEXT-HISTORIE.md` für die Details dazu. Dieser Fund kam erst
+danach, beim gemeinsamen Nachprüfen einzelner Preise mit dem Nutzer.
 
-**P7 ist das letzte Paket des Plans, damit gilt die App als vollständig im Sinne
-von `kostenrechner-PLAN.md` Abschnitt 1** (Kaufen, Craften und Verzaubern über
-den ganzen Baum, mit Oberfläche und Eigenpreis-Pflege). SemVer-Entscheidung:
-**Major** (v0.5.0 auf v1.0.0), kein Minor: Abschluss aller sechs Baupakete, kein
-einzelnes neues Feature.
+**Zeitzonen-Bug bei der Preisalter-Berechnung, gefunden und behoben.** Die
+Albion-Online-Data-API liefert Zeitstempel ohne Zeitzonen-Kennung
+(`"2026-09-04T20:05:00"`, kein `Z`). Ein rohes `Date.parse()`/`new Date()`
+darauf interpretiert das laut ECMAScript-Spezifikation als **lokale Zeit**,
+nicht als UTC. In Mitteleuropa (Sommerzeit, UTC+2) ergab das einen Fehler von
+exakt 2 Stunden bei jeder Altersberechnung: ein Preis von 20:05 Uhr UTC wurde
+als „vor 3,2 Std." angezeigt statt korrekt „vor 1,2 Std.".
 
-**Kontextdatei:** war mit 252 Zeilen bereits schlank, keine inhaltliche Kürzung
-nötig. Der P6-Detailblock ist mit dieser Aktualisierung nach
-`kostenrechner-KONTEXT-HISTORIE.md` gewandert (gleiches Muster wie zuvor bei
-P1-P5), damit diese Datei unter der 300-Zeilen-Schwelle bleibt.
+Betraf zwei Stellen mit dem exakt gleichen Fehler: `js/ui.js`
+(`alterFuerMarktId()`, nur Anzeige) und `js/rechenkern.js`
+(`preisMitGrund()`, echte Sperrlogik gegen `opts.maxPreisAlterMin`). Die
+Überschätzung wirkt konservativ (macht Preise fälschlich älter, sperrt also
+eher zu viel statt zu wenig durchzulassen), ist aber trotzdem ein echter
+Fehler: ein Preis, der eigentlich noch innerhalb der eingestellten
+Höchstgrenze liegt, konnte fälschlich als zu alt gesperrt werden.
 
-**Testsuite:** 106/106 grün, live über `http://127.0.0.1:8791/tests/test.html`
-geprüft (unverändert seit P6; P7 ändert nichts am Rechenkern, reine Härtung).
-Der in P6 vermerkte `localhost`-Cache-Fund trat in dieser Prüfung nicht erneut
-auf; `127.0.0.1` bleibt trotzdem die empfohlene Adresse für künftige
-Browser-Prüfungen.
+Behoben durch eine gemeinsame Funktion `REGELN.parseApiDatumUtc()` in
+`js/regeln.js`, die ein fehlendes Zeitzonen-Suffix erkennt und `Z` ergänzt,
+bevor geparst wird. Beide Stellen nutzen jetzt diese Funktion statt eines
+rohen `Date.parse()`. 5 neue Tests (3 für `parseApiDatumUtc()` selbst, 2 für
+das Verhalten in `RECHENKERN.kosten()` mit einem API-Datum ohne `Z`), Testsuite
+106 → 111, live im Browser bestätigt. Zusätzlich live nachgestellt: derselbe
+Fall (75 Minuten echtes Alter, API-Format ohne `Z`) ergab vorher 195 Minuten
+(195 − 75 = 120 = genau der Zeitzonen-Versatz), nachher korrekt 75.
 
-**`.bat`-Dateien** (`../Kostenrechner öffnen.bat`, `../Rezeptgraph neu bauen.bat`,
-eine Ebene über diesem Ordner, außerhalb des Git-Repos) referenzieren beide nur
-relative Pfade und funktionieren nach dem Git-Umzug (P5/P6) unverändert weiter,
-per Pfadprüfung bestätigt.
+Gefunden durch den Nutzer beim Vergleich eines von der App angezeigten Alters
+mit der tatsächlichen Uhrzeit der API-Antwort, nicht durch einen Prüfer-Agenten.
 
-**Excel-Gegenprobe (Nutzer-Vorgabe):** `../Verzaubern Kalkulator.xlsx`, Blatt
-„Kalkulator", als Beleg für den Verzauberungsschritt (Runen/Seelen/Relikte je
-Waffentyp), nicht für den vollen Beschaffungsbaum; der ist bereits früher gegen
-die Königliche Gugel geprüft (s. Historie/Commits). Beim Auslesen stand in der
-Datei ein anderes Beispiel als in der Aufgabenstellung notiert: **Typus
-Werkstück war auf Zweihänder gestellt** (Bedarf 384, nicht Einhänder/288 wie
-zuvor in der Hauptsitzung vermerkt; das Dropdown wurde offenbar zwischenzeitlich
-umgestellt). Nachgerechnet mit dem tatsächlich vorgefundenen Stand, per
-`RECHENKERN.kosten()` mit einem synthetischen Testgraphen (`opts.graph`, Start
-Tx.1, Ziel T4.x, 384x Seele à 85, 384x Relikt à 410, keine Rune nötig, da schon
-auf .1):
-
-| Größe | Excel | RECHENKERN.kosten() |
-|---|---|---|
-| Materialkosten (384 Seele + 384 Relikt) | 190.080 | 190.080 |
-| Fokus fürs Verzaubern | (kein Feld, konzeptionell 0) | 0 |
-| Gewinn (Verkaufsorder, Einkauf 225.000, Verkauf 700.000) | 239.420 | 239.420 |
-
-Exakte Übereinstimmung, Gewinn zusätzlich über `REGELN.STEUER_PREMIUM` und
-`REGELN.EINSTELLGEBUEHR_SATZ` nachgerechnet. Bestätigt den Verzauberungszweig
-(„Verzaubern kostet nur Materialien, keine Stationsgebühr, keinen Fokus") gegen
-eine echte, vom Nutzer selbst gepflegte Referenz. Kein Ersatz für die frühere,
-ausführlichere Prüfung des vollen Baums der Königlichen Gugel.
-
-**Live-Plausibilitätslauf (Momentaufnahme, keine Abnahme):** Königliche Gugel .3
-mit aktuellen Marktpreisen (04.09.2026, Testsuite Abschnitt 3): günstigster Weg
-146.823 Silber, 2.298 Fokus, über Craften der Gelehrtengugel .3 (Rezept #0, mit
-Fokus) plus 2x Königliches Siegel. Marktpreise ändern sich laufend, das ist
-erwartet und keine Abweichung.
+**Version:** Patch (v1.0.0 auf v1.0.1), reine Fehlerkorrektur, kein neues
+Feature und keine Verhaltensänderung außerhalb dieses Bugs.
 
 ## Dateistruktur
 

@@ -183,6 +183,31 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       rAltInnerhalbGrenze.gesperrt === false && rAltInnerhalbGrenze.silber === 100,
       JSON.stringify({ gesperrt: rAltInnerhalbGrenze.gesperrt, silber: rAltInnerhalbGrenze.silber })
     );
+
+    // Regression: die Albion-Online-Data-API liefert Datumsangaben OHNE
+    // Zeitzonen-Kennung (z.B. "2026-09-04T20:05:00", kein "Z"), anders als
+    // new Date().toISOString() oben im Test. Ein rohes Date.parse() liest so
+    // einen String als LOKALE Zeit statt als UTC, das ergab in Mitteleuropa
+    // einen Fehler von 2 Stunden bei jeder Altersberechnung (belegt am
+    // 04.09.2026: 20:05 UTC wurde als "vor 3,2 Std." statt korrekt "vor 1,2
+    // Std." angezeigt). Dieser Test baut absichtlich einen API-Zeitstempel
+    // OHNE "Z" mit bekanntem Abstand zu "jetzt" nach.
+    const vor90MinutenOhneZ = new Date(Date.now() - 90 * 60 * 1000).toISOString().replace("Z", "");
+    const preisOhneZeitzone = {
+      T_PREIS_OHNE_TZ: { sell: { preis: 100, kein: false, datum: vor90MinutenOhneZ }, buy: { preis: 0, kein: true } },
+    };
+    const rOhneTzInnerhalb = RECHENKERN.kosten("T_PREIS_OHNE_TZ", 0, 1, { preise: preisOhneZeitzone, maxPreisAlterMin: 120 });
+    pruefe(
+      "rechenkern: API-Datum ohne Zeitzonen-Kennung (90 Min alt) gilt bei 120-Minuten-Grenze als gueltig, nicht faelschlich als ueber 2 Std. alt",
+      rOhneTzInnerhalb.gesperrt === false && rOhneTzInnerhalb.silber === 100,
+      JSON.stringify({ gesperrt: rOhneTzInnerhalb.gesperrt, silber: rOhneTzInnerhalb.silber, grund: rOhneTzInnerhalb.grund })
+    );
+    const rOhneTzKnapp = RECHENKERN.kosten("T_PREIS_OHNE_TZ", 0, 1, { preise: preisOhneZeitzone, maxPreisAlterMin: 60 });
+    pruefe(
+      "rechenkern: derselbe 90 Minuten alte Preis ist bei 60-Minuten-Grenze zu Recht gesperrt (kein Ueber- oder Unterschaetzen des Alters)",
+      rOhneTzKnapp.gesperrt === true,
+      JSON.stringify({ gesperrt: rOhneTzKnapp.gesperrt, grund: rOhneTzKnapp.grund })
+    );
   })();
 
   // ---- rechenkern (P6): weg.eigenpreis kennzeichnet einen Kauf-Kandidaten,

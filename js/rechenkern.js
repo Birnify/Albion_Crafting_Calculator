@@ -179,7 +179,7 @@ const RECHENKERN = (function () {
           return { preis: null, grund: "Preis fuer " + marktId + " ist 0 oder kleiner und gilt als kein Preis, nicht als kostenloses Angebot", eigenpreis: false };
         }
         if (opts.maxPreisAlterMin != null && seite.datum) {
-          const alterMin = (Date.now() - Date.parse(seite.datum)) / 60000;
+          const alterMin = (Date.now() - REGELN.parseApiDatumUtc(seite.datum)) / 60000;
           if (isFinite(alterMin) && alterMin > opts.maxPreisAlterMin) {
             return {
               preis: null,

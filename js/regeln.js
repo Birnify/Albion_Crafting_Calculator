@@ -242,6 +242,31 @@ const REGELN = (function () {
     return weg === "order" ? preisBasis * (1 + EINSTELLGEBUEHR_SATZ) : preisBasis;
   }
 
+  /**
+   * Parst ein API-Datum (z.B. "2026-09-04T20:05:00", von preise.js aus
+   * sell_price_min_date/buy_price_max_date der Albion-Online-Data-API) sicher
+   * als UTC. Die API liefert diese Zeitstempel ohne Zeitzonen-Kennung. Ein
+   * roher new Date(...)/Date.parse(...) auf so einen String interpretiert ihn
+   * per ECMAScript-Spezifikation als LOKALE Zeit, nicht als UTC, das ergibt in
+   * Mitteleuropa (Sommerzeit) einen Fehler von 2 Stunden bei jeder
+   * Altersberechnung. CLAUDE.md, Abschnitt "Albion Online Data Project API":
+   * "Zeitstempel sind UTC. Umrechnung in Ortszeit gehoert in den Browser."
+   * Belegt am 04.09.2026: ein Preis von 20:05 UTC wurde als "vor 3,2 Std."
+   * angezeigt statt korrekt "vor 1,2 Std.", weil new Date() ihn als 20:05
+   * Lokalzeit (= 18:05 UTC) las. Betrifft nicht nur die Anzeige
+   * (js/ui.js, alterFuerMarktId), sondern auch die Sperrlogik gegen zu alte
+   * Preise (preisMitGrund unten): die Ueberschaetzung wirkt konservativ (macht
+   * Preise faelschlich AELTER, sperrt also eher zu viel statt zu wenig), ist
+   * aber trotzdem ein echter Fehler und keine Kleinigkeit.
+   * @returns {number} Millisekunden seit Epoch (UTC), oder NaN bei leerem/
+   *   ungueltigem Datum.
+   */
+  function parseApiDatumUtc(datum) {
+    if (!datum) return NaN;
+    const hatZone = /[zZ]$|[+-]\d\d:?\d\d$/.test(datum);
+    return Date.parse(hatZone ? datum : datum + "Z");
+  }
+
   // -----------------------------------------------------------------------
   // ItemValue: rekursiv aus (Item, Verzauberungsstufe, Rezept), mit
   // Memoisierung und Besuchsschutz. S. ../../CLAUDE.md, Abschnitt "ItemValue
@@ -480,6 +505,29 @@ const REGELN = (function () {
       pruefe("itemWert-Gegenproben uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
     }
 
+    // parseApiDatumUtc: API-Daten ohne Zeitzonen-Kennung muessen als UTC
+    // gelesen werden, nicht als Lokalzeit (belegter Fehler, s. Funktionskommentar).
+    (function () {
+      const ohneZ = parseApiDatumUtc("2026-09-04T20:05:00");
+      const mitZ = Date.parse("2026-09-04T20:05:00Z");
+      pruefe(
+        "parseApiDatumUtc: Datum ohne Zeitzonen-Kennung wird als UTC gelesen, nicht als Lokalzeit",
+        ohneZ === mitZ,
+        "parseApiDatumUtc=" + ohneZ + " erwartet(als UTC)=" + mitZ
+      );
+      const mitZBereits = parseApiDatumUtc("2026-09-04T20:05:00Z");
+      pruefe(
+        "parseApiDatumUtc: Datum MIT Zeitzonen-Kennung wird nicht doppelt veraendert",
+        mitZBereits === mitZ,
+        "parseApiDatumUtc=" + mitZBereits + " erwartet=" + mitZ
+      );
+      pruefe(
+        "parseApiDatumUtc: leeres/fehlendes Datum ergibt NaN, kein falscher Wert",
+        Number.isNaN(parseApiDatumUtc("")) && Number.isNaN(parseApiDatumUtc(null)) && Number.isNaN(parseApiDatumUtc(undefined)),
+        String(parseApiDatumUtc(""))
+      );
+    })();
+
     return ergebnisse;
   }
 
@@ -507,6 +555,7 @@ const REGELN = (function () {
     stationsgebuehr,
     steuerUndGebuehr,
     kaufKostenJeStueck,
+    parseApiDatumUtc,
     rezepteFuerStufe,
     itemWert,
     itemWertMemoLeeren,

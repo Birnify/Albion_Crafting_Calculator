@@ -598,7 +598,7 @@ const UI = (function () {
       if (!eintrag) return { text: "unbekannt", stale: false };
       const seite = einstellungen.kaufweg === "order" ? eintrag.buy : eintrag.sell;
       if (!seite || seite.kein || !seite.datum) return { text: "unbekannt", stale: false };
-      const alterMs = Date.now() - Date.parse(seite.datum);
+      const alterMs = Date.now() - REGELN.parseApiDatumUtc(seite.datum);
       if (!isFinite(alterMs)) return { text: "unbekannt", stale: false };
       const min = alterMs / 60000;
       const grenze = einstellungen.maxPreisAlterMin;
