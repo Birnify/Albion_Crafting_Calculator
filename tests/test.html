@@ -1262,6 +1262,136 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     }
   })();
 
+  // h) Regressionstest (05.09.2026, gemeldeter Bug "Fokus steigt trotz
+  // hoeherer Spezialisierung"): eine hoehere Spezialisierungsstufe (FCE) darf
+  // den fuer denselben Bauplan berechneten Fokus NIEMALS erhoehen,
+  // ueber mehrere FCE-Werte hinweg monoton fallend (0,5^(FCE/10.000) ist
+  // streng monoton fallend in FCE, s. REGELN.fokusMultiplikator/CLAUDE.md).
+  //
+  // Diagnose vom 05.09.2026 (systematisch, nicht geraten): der gemeldete
+  // Anstieg (754,9 -> 1233,5 Fokus fuer "Craften ... Gelehrtengugel des
+  // Adepten.3 mit Fokus" bei Koenigliche Gugel .3/Exzellent, alle
+  // Spezialisierungsknoten von 0 auf cloth_helmet/HEAD_CLOTH_SET1=60 und
+  // fiber/T4_CLOTH=75+T5/T6/T7_CLOTH=1 gesetzt) liess sich weder mit einer
+  // Node-Reproduktion gegen den ECHTEN Rezeptgraphen (der NACH-Wert unten
+  // trifft die gemeldeten 1233,5 exakt auf 10 Nachkommastellen) noch mit
+  // ueber 1.500 zufaelligen Kombinationen aus Kategorien, Qualitaetsstufen
+  // und Marktpreisen reproduzieren. Die Formel ist bei fokuswert:0 nachweislich
+  // UNABHAENGIG von den Marktpreisen: RRR haengt nur vom mitFokus-Flag ab,
+  // nicht von der FCE (s. regeln.js/rrr()), und "wert" ist bei fokuswert:0
+  // identisch mit "silber", das die FCE gar nicht referenziert (s.
+  // craftKandidat()/craftBeiQualitaetKandidat() in rechenkern.js). Eine
+  // hoehere FCE kann den gewaehlten Bauplan bei fokuswert:0 also nicht mehr
+  // veraendern, nur noch den Fokus-Anteil EINES bereits feststehenden Pfads
+  // senken - der beobachtete Anstieg ist mit dem aktuellen Code bei fokuswert:0
+  // rechnerisch ausgeschlossen. Wahrscheinlichste Erklaerung, NICHT bestaetigt:
+  // ein von 0 abweichender, aus einer frueheren Sitzung in localStorage
+  // verbliebener Fokuswert (bei fokuswert > 0 KANN sich der guenstigste Weg
+  // mit steigender FCE tatsaechlich von einem 0-Fokus-Weg zu einem
+  // fokusnutzenden Weg verschieben, das ist kein Formelfehler, sondern die
+  // gewollte "Silber + Fokus x Fokuswert"-Abwaegung selbst). Dieser Test
+  // verankert die Formel-Invariante bei fokuswert:0 dauerhaft, unabhaengig
+  // von der ungeklaerten Sitzungsursache.
+  (function () {
+    if (typeof REZEPTGRAPH === "undefined" || !REZEPTGRAPH.items["T4_HEAD_CLOTH_ROYAL"]) {
+      pruefe("Regressionstest Fokus-Monotonie uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+    // Gleiche Ableitung wie js/ui.js/fceUeberschreibungenFuerOpts(): eine
+    // Kategorie nur beruecksichtigen, wenn tatsaechlich eine Stufe > 0 gesetzt
+    // wurde (sonst faelschlich eine Ueberschreibung auf "0 FCE").
+    function fceUeberschreibungenAus(spezialisierung) {
+      const out = {};
+      Object.keys(spezialisierung || {}).forEach((cc) => {
+        if (!REGELN.spezTypVonKategorie(cc)) return;
+        const eintrag = spezialisierung[cc] || {};
+        const knotenStufen = eintrag.knoten || {};
+        const summe = Object.values(knotenStufen).reduce((a, b) => a + (b || 0), 0) + (eintrag.meisterschaft || 0);
+        if (summe <= 0) return;
+        REGELN.spezialisierungsGruppen(cc).forEach((g) => {
+          out[cc + "|" + g.schluessel] = REGELN.fceAusSpezialisierungsknoten(cc, g.schluessel, knotenStufen, eintrag.meisterschaft);
+        });
+      });
+      return out;
+    }
+    // Preise so gewaehlt, dass der Baum tatsaechlich einen fokusnutzenden
+    // Craft-/Reroll-Schritt waehlt (sonst waere die Invariante trivial an
+    // Fokus=0 erfuellt): Basisrohstoffe billig und bepreist, alle
+    // Zwischen-/Endprodukte OHNE Marktpreis -> craften ist die einzige Option.
+    const preise = {
+      "T4_FIBER_LEVEL3@3": { sell: { preis: 1, kein: false }, buy: { preis: 0, kein: true } },
+      T3_FIBER: { sell: { preis: 1, kein: false }, buy: { preis: 0, kein: true } },
+      T2_FIBER: { sell: { preis: 1, kein: false }, buy: { preis: 0, kein: true } },
+      T1_FACTION_SWAMP_TOKEN_1: { sell: { preis: 1, kein: false }, buy: { preis: 0, kein: true } },
+      QUESTITEM_TOKEN_ROYAL_T4: { sell: { preis: 10000, kein: false }, buy: { preis: 0, kein: true } },
+      T4_RUNE: { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+      T4_SOUL: { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+      T4_RELIC: { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    function ergebnisBei(spezialisierung) {
+      return RECHENKERN.kosten("T4_HEAD_CLOTH_ROYAL", 3, 1, {
+        preise,
+        preiseQualitaet: {},
+        stationssaetze: { Magierturm: 380, Weber: 380 },
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0, // wie in der gemeldeten Sitzung angegeben
+        qualitaetsIndex: 3, // Exzellent, wie in der Reproduktion
+        fceUeberschreibungen: fceUeberschreibungenAus(spezialisierung),
+      });
+    }
+
+    const schritte = [
+      {}, // Reproduktion "VOR": alle Spezialisierungsknoten 0
+      { cloth_helmet: { meisterschaft: 0, knoten: { HEAD_CLOTH_SET1: 10 } } },
+      { cloth_helmet: { meisterschaft: 0, knoten: { HEAD_CLOTH_SET1: 30 } }, fiber: { meisterschaft: 0, knoten: { T4_CLOTH: 20 } } },
+      // Reproduktion "NACH": exakt die vom Nutzer gemeldeten Werte.
+      {
+        cloth_helmet: { meisterschaft: 0, knoten: { HEAD_CLOTH_SET1: 60 } },
+        fiber: { meisterschaft: 0, knoten: { T4_CLOTH: 75, T5_CLOTH: 1, T6_CLOTH: 1, T7_CLOTH: 1 } },
+      },
+      {
+        cloth_helmet: { meisterschaft: 5, knoten: { HEAD_CLOTH_SET1: 190 } },
+        fiber: { meisterschaft: 5, knoten: { T4_CLOTH: 190, T5_CLOTH: 20, T6_CLOTH: 20, T7_CLOTH: 20, T8_CLOTH: 20 } },
+      },
+    ];
+
+    const ergebnisse = schritte.map(ergebnisBei);
+    pruefe(
+      "Regressionstest Fokus-Monotonie: Reproduktion in allen Schritten loesbar (nicht gesperrt)",
+      ergebnisse.every((r) => !r.gesperrt),
+      JSON.stringify(ergebnisse.map((r) => r.gesperrt))
+    );
+    pruefe(
+      "Regressionstest Fokus-Monotonie: der NACH-Schritt (Nutzerwerte) nutzt tatsaechlich Fokus (sonst waere die Monotonie-Pruefung trivial)",
+      ergebnisse[3].fokus > 0,
+      String(ergebnisse[3].fokus)
+    );
+    // Kernpruefung: streng monoton FALLEND (1e-6 Toleranz gegen Rundung),
+    // Schritt fuer Schritt, nicht nur Anfang gegen Ende.
+    for (let i = 1; i < ergebnisse.length; i++) {
+      pruefe(
+        "Regressionstest Fokus-Monotonie: Schritt " + i + " Fokus (" + ergebnisse[i].fokus.toFixed(2) + ") <= Schritt " + (i - 1) + " (" + ergebnisse[i - 1].fokus.toFixed(2) + ")",
+        ergebnisse[i].fokus <= ergebnisse[i - 1].fokus + 1e-6,
+        "vorher=" + ergebnisse[i - 1].fokus + " nachher=" + ergebnisse[i].fokus
+      );
+    }
+    // Silber bleibt bei fokuswert:0 exakt gleich ueber alle Schritte (FCE
+    // beeinflusst nie den gewaehlten Pfad, s. Kommentar oben) - das deckt sich
+    // mit der Beobachtung aus der gemeldeten Sitzung ("Silber blieb identisch").
+    pruefe(
+      "Regressionstest Fokus-Monotonie: Silber unveraendert ueber alle Schritte (FCE beeinflusst bei fokuswert 0 nie den gewaehlten Pfad)",
+      ergebnisse.every((r) => Math.abs(r.silber - ergebnisse[0].silber) < 0.01),
+      JSON.stringify(ergebnisse.map((r) => r.silber))
+    );
+    // Exakte Gegenprobe des gemeldeten NACH-Werts (05.09.2026).
+    pruefe(
+      "Regressionstest Fokus-Monotonie: NACH-Schritt (Nutzerwerte) exakt 1.233,50 Fokus (Gegenprobe der gemeldeten Reproduktion)",
+      nahe(ergebnisse[3].fokus, 1233.5021946275801, 0.01),
+      String(ergebnisse[3].fokus)
+    );
+  })();
+
   // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------

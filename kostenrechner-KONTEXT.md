@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.5.1 · Veredeln-Spezialisierungsknoten nach Tier gruppiert (Bugfix)
+Stand: 2026-09-05 · Version: v1.5.2 · Fokus-Monotonie-Regressionstest (Diagnose, kein Codefehler gefunden)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,86 +21,96 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Veredeln-Spezialisierungsknoten nach Tier gruppiert, Bugfix, 05.09.2026, v1.5.1)
+## Aktueller Stand (Fokus-Monotonie-Regressionstest, Diagnose ohne Codefehler, 05.09.2026, v1.5.2)
 
-**Bug, im Hauptgespräch per Browser-Test gefunden** (an v1.5.0 direkt im
-Anschluss, noch bevor der Browser-Check aus v1.5.0 nachgeholt wurde): das
-`fiber`-Panel der Königlichen Gugel zeigte 5 Knoten **nach Verzauberungsstufe
-getrennt** ("Einfacher Stoff", CLOTH_LEVEL1 bis LEVEL4), statt der im Spiel
-tatsächlich existierenden 5 Knoten **nach Tier-Stufe getrennt** (Weberadept T4,
-Weberexperte T5, Webermeister T6, Webergroßmeister T7, Weberältester T8),
-bestätigt durch Schicksalsbrett-Screenshots des Nutzers.
+**Gemeldeter kritischer Bug (Hauptgespräch, Live-Browser-Test):** Königliche
+Gugel des Adepten .3, Qualität Exzellent, Lymhurst, FCE-Feld 0, Fokuswert 0.
+Vor Eintragen der Spezialisierungsknoten zeigte der Bauplan-Schritt "Craften
+Normal beschaffen Gelehrtengugel des Adepten.3 mit Fokus" 754,9 Fokus; nach
+Eintragen echter Werte (`cloth_helmet` → Gelehrtengugel-Knoten 60,
+`fiber` → Guter Stoff 75 + Kunstvoller/Qualitäts-/Luxusstoff je 1) zeigte
+derselbe Schritt 1.233,5 Fokus, obwohl die FCE für beide Kategorien massiv
+gestiegen war (0 → 15.000 bzw. 18.840). Das widerspräche der belegten Formel
+`Fokus = Grundfokus × 0,5^(FCE/10.000)` (streng monoton fallend in FCE).
+Silber blieb bei beiden Zuständen identisch (165.856).
 
-**Ursache:** `gruppenSchluesselVonItem()` (`js/regeln.js`) strippte einheitlich
-das Tier-Präfix und ließ den Verzauberungs-Suffix stehen. Das passt für
-Ausrüstung (ein Item-Name über alle Tiers, Verzauberungsstufe steckt NICHT im
-Namen, sondern in `e[stufe].r`), aber nicht für Veredeln: dort ist jede
-Verzauberungsstufe ein **eigener** uniquename mit `_LEVEL1` bis `_LEVEL4`-Suffix
-(`T4_CLOTH`, `T4_CLOTH_LEVEL1` ... `T4_CLOTH_LEVEL4`), während das Tier-Präfix
-die eigentlich zählende Größe ist.
+**Systematische Diagnose (kein Raten), Ergebnis: kein Fehler in
+`js/regeln.js`/`js/rechenkern.js` gefunden.** Vorgehen:
 
-**Fix:** `gruppenSchluesselVonItem(item, cc)` bekommt einen zweiten,
-optionalen Parameter. Bei `spezTypVonKategorie(cc) === "veredeln"`
-(`fiber`/`ore`/`hide`/`wood`/`rock`) wird der `_LEVEL\d+`-Suffix entfernt, das
-Tier-Präfix aber **behalten** (Gegenteil der Ausrüstungs-Regel). Beide
-Aufrufstellen (`spezialisierungsGruppen()` in `regeln.js`, `fceFuer()` in
-`rechenkern.js`) reichen `cc` jetzt durch. `js/ui.js` unverändert, da es nur
-`REGELN.spezialisierungsGruppen(cc)` aufruft, die die Weiche intern trägt.
+1. Isolierte Node-Reproduktion gegen den ECHTEN Rezeptgraphen (`rezepte.js`),
+   mit `fceUeberschreibungenFuerOpts()` (aus `js/ui.js`) 1:1 nachgebaut. Mit
+   passend gewählten Preisen (Basisrohstoffe billig und bepreist, alle
+   Zwischen-/Endprodukte ohne Marktpreis → craften/reroll ist die einzige
+   Option) trifft der berechnete NACH-Wert **exakt** 1.233,5021946275801 -
+   die gemeldete Reproduktion ist damit nachvollzogen. Der VOR-Wert der
+   gleichen Rechnung ergab aber 3.677,02, nicht 754,9 - also ein Rückgang
+   (3.677 → 1.234), keine Erhöhung.
+2. **Mathematischer Beweis, warum bei `fokuswert:0` keine Erhöhung möglich
+   ist:** `RRR` hängt in `regeln.js`/`rrr()` ausschließlich vom `mitFokus`-Flag
+   ab, nie von der FCE. `wert = silber + fokus × fokuswert` ist bei
+   `fokuswert:0` identisch mit `silber`, und `silber` referenziert die FCE an
+   keiner Stelle (`craftKandidat()`/`craftBeiQualitaetKandidat()`). Der
+   gewählte Bauplan (welcher Knoten kauft/craftet/verzaubert/rerollt) kann sich
+   durch eine reine FCE-Änderung bei `fokuswert:0` also gar nicht verschieben -
+   nur der Fokus-Anteil eines bereits feststehenden Pfads sinkt mit steigender
+   FCE, niemals steigt er.
+3. **Property-Test (kein Einzelfall):** über 1.500 zufällige Kombinationen aus
+   Kategorien, Qualitätsstufen (Normal bis Meisterwerk), Qualitäts-
+   Chancenpunkten und Marktpreisen gegen mehrere echte Items unterschiedlicher
+   `SPEZ_TYP`-Klassen (Waffen/Rüstung, Umhang, Tasche, Werkzeug/fused, Tränke)
+   durchprobiert, dabei die Spezialisierungsstufen monoton erhöht: **keine
+   einzige Verletzung** der Monotonie gefunden.
 
-**Nebenbefund beim Testen, im Auftrag nicht erwähnt, aber vom selben Fix
-mitbehoben:** `rock` (Steinblöcke) hat gar keine `_LEVEL`-Suffixe im
-Item-Namen (Steinblöcke werden nicht verzaubert), die alte Regel hätte dort
-alle 7 Tiers (T2 bis T8) fälschlich zu EINEM einzigen Knoten "STONEBLOCK"
-zusammengefasst - das genaue Gegenteil des gemeldeten Fehlers, aber derselbe
-Kategorie-Typ und vom selben Fix (Tier-Präfix behalten) automatisch mit
-korrigiert. Gegenprobe gegen den echten Graphen: `spezialisierungsGruppen("fiber")`
-liefert jetzt 7 Gruppen (T2_CLOTH bis T8_CLOTH, je ein Knoten mit allen 5
-Verzauberungsstufen als Mitgliedern), `spezialisierungsGruppen("cloth_helmet")`
-unverändert 9 Gruppen (Ausrüstung, tier-übergreifend). FCE-Rechenprobe mit den
-Nutzer-Testwerten (Weberadept 75, Weberexperte/-meister/-großmeister je 1,
-Weberältester 0): `T4_CLOTH` → 18.840 FCE (75×250 Unique + 90 Mutual von den
-drei anderen Stufe-1-Knoten).
+**Wahrscheinlichste Erklärung, NICHT bestätigt (dafür fehlt der Zugriff auf
+die tatsächliche Sitzung/den localStorage-Stand):** ein von 0 abweichender
+Fokuswert, der aus einer früheren Sitzung noch in `localStorage` stand (die
+App persistiert Einstellungen dauerhaft, s. `einstellungenLesen()`/
+`einstellungenSchreiben()` in `js/ui.js`; die eigenen Testfixturen dieses
+Projekts verwenden z. B. `fokuswert: 5`). Bei `fokuswert > 0` KANN sich der
+günstigste Weg mit steigender FCE tatsächlich von einem 0-Fokus-Weg (kaufen/
+verzaubern) zu einem fokusnutzenden Weg verschieben, sobald der sinkende
+Fokus-Malus den Silbervorteil des Craftens überwiegt - das ist kein
+Formelfehler, sondern die gewollte Abwägung der Zielfunktion selbst, kann aber
+den Gesamtfokus des gewählten Pfads erhöhen, wenn vorher ein 0-Fokus-Weg
+gewonnen hatte. Per `AskUserQuestion`/Rückfrage zu klären: den Fokuswert im
+Einstellungen-Panel vor einem erneuten Test ausdrücklich auf 0 prüfen.
 
-**Getestet:** Testsuite von 212 auf 220 Tests gewachsen (8 neue: 5
-Einheitstests `gruppenSchluesselVonItem(item, cc)` inkl. Regressionstest "ohne
-cc/nicht-veredelnde Kategorie unverändert", 3 Gegenproben
-`spezialisierungsGruppen("fiber")` gegen den echten Rezeptgraphen: T4-Gruppe
-fasst alle 5 Stufen zusammen, T5 ist eine eigene Gruppe, keine
-`CLOTH_LEVEL*`-Gruppe mehr). Alle 220 grün, per Node cachefrei gegen die
-Dateien auf der Platte geprüft (Testrahmen aus `tests/test.html`,
-Zeilen 71-1263, per `vm.runInContext` mit `localStorage`/`performance`-Stub
-ausgeführt, identische Logik wie im Browser, kein Node-Modul-Cache möglich, da
-frisch aus der Datei geladen). Zusätzlich zwei eigene Rechenskripte gegen den ECHTEN
-Rezeptgraphen: Gruppenliste für `fiber` und `cloth_helmet` von Hand
-nachgesehen (s. Nebenbefund oben), FCE-Werte mit den Nutzer-Testdaten von Hand
-nachgerechnet.
+**Umgesetzt statt eines Codefixes:** ein permanenter Regressionstest in
+`tests/test.html` (Abschnitt "Regressionstest Fokus-Monotonie", gegen den
+ECHTEN Rezeptgraphen, 5 Stufen aufsteigender Spezialisierung inklusive exakt
+der gemeldeten Nutzerwerte als einer der Stufen), der genau diese Invariante
+dauerhaft absichert: Fokus darf über keine zwei aufeinanderfolgenden Stufen
+steigen, Silber muss bei `fokuswert:0` über alle Stufen identisch bleiben, und
+der gemeldete NACH-Wert wird als Fixpunkt exakt nachgerechnet. **Kein
+`regeln.js`/`rechenkern.js` geändert** - die Diagnose fand dort keinen Fehler.
 
-**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0/v1.5.0:** weder
-die `SendMessage`-Funktion für Phasen-Meldungen/Subagenten-Anfragen noch ein
-interaktives Browser-Werkzeug standen in dieser Sitzung zur Verfügung (kein
-`SendMessage`, kein `Agent`, keine `mcp__claude-in-chrome__*`- oder
-`mcp__computer-use__*`-Tools im verfügbaren Werkzeugsatz, trotz
-Systemhinweisen, die sie erwähnen). Die drei Spezialisten
-(`rechenkern-pruefer`, `spieldaten-pruefer`, `oberflaechen-pruefer`) konnten
-deshalb NICHT angefordert werden. Ein lokaler Server
-(`.claude/no_cache_server.py`, Port 8791) wurde probehalber gestartet und
-antwortete mit HTTP 200 auf `Kostenrechner.html`, konnte aber mangels
-Browser-Werkzeug nicht tatsächlich angesehen werden. **Die reparierte
-Oberfläche wurde also weiterhin NICHT im Browser angesehen** - das steht schon
-so in der v1.5.0-Notiz und gilt unverändert. Vor der nächsten inhaltlichen
-Änderung an der Oberfläche nachholen, sobald ein Browser-Werkzeug verfügbar
+**Getestet:** Testsuite von 220 auf 228 Tests gewachsen (8 neue, alle in
+Abschnitt "Regressionstest Fokus-Monotonie"). Alle 228 grün, per Node
+cachefrei gegen die Dateien auf der Platte geprüft (`vm.runInContext` mit
+`document`/`localStorage`/`performance`-Stub, identische Logik wie im
+Browser, kein Modul-Cache möglich, da frisch aus der Datei geladen).
+
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.5.1:** weder
+`SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug
+(`mcp__claude-in-chrome__*`/`mcp__computer-use__*`) standen in dieser Sitzung
+zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
+`spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht
+angefordert werden. Da diese Runde ausschließlich `tests/test.html` erweitert
+(kein `regeln.js`/`rechenkern.js`/`ui.js`/`Kostenrechner.html` geändert), ist
+weder ein Browser-Rundgang noch ein Rechenkern-/Oberflächen-Review inhaltlich
+zwingend nötig; nachzuholen ist trotzdem eine echte Bestätigung durch den
+Nutzer im Spiel/in der laufenden App, sobald der Fokuswert-Verdacht geklärt
 ist.
 
-Versions-Schnappschuss unter `Versionen/v1.5.1 - Veredeln-
-Spezialisierungsknoten nach Tier gruppiert/` angelegt. Git-Commit und Push wie
+Versions-Schnappschuss unter `Versionen/v1.5.2 - Fokus-Monotonie-
+Regressionstest (Diagnose ohne Codefehler)/` angelegt. Git-Commit und Push wie
 im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
 
 ---
 
-**Vorheriger Stand (v1.5.0, Feature "FCE-Ableitung ueber
-Schicksalsbrett-Knotenliste je Kategorie") und alles davor** unverkürzt nach
-`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
-"Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v1.5.1, Bugfix "Veredeln-Spezialisierungsknoten nach Tier
+gruppiert") und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
+ausgelagert (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
 
@@ -109,9 +119,9 @@ Feature "Fokuseinsatz steuerbar machen" (v1.2.0) plus Feature "Bauplan-Ansicht
 ergonomisch ueberarbeitet" (v1.3.0) plus Standardwert Stationssaetze (v1.3.1)
 plus Feature "Qualitaetsstufen" (v1.4.0) plus "FCE-Ableitung ueber
 Schicksalsbrett-Knotenliste je Kategorie" (v1.5.0) plus Bugfix "Veredeln-
-Spezialisierungsknoten nach Tier gruppiert" (v1.5.1, nur `js/regeln.js` und
-`js/rechenkern.js` geaendert, `tests/test.html` erweitert, `js/ui.js` und
-`Kostenrechner.html` unveraendert, keine neuen Dateien):
+Spezialisierungsknoten nach Tier gruppiert" (v1.5.1) plus Diagnose
+"Fokus-Monotonie-Regressionstest" (v1.5.2, nur `tests/test.html` erweitert,
+kein Rechenkern-/Regeln-/UI-Code geaendert, keine neuen Dateien):
 
 ```
 Kostenrechner/
@@ -173,7 +183,8 @@ Kostenrechner/
   Versionen/v1.4.0 - Qualitaetsstufen/
   Versionen/v1.5.0 - FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie/
   Versionen/v1.5.1 - Veredeln-Spezialisierungsknoten nach Tier gruppiert/
-  tests/test.html           220 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.5.2 - Fokus-Monotonie-Regressionstest (Diagnose ohne Codefehler)/
+  tests/test.html           228 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -258,6 +269,19 @@ keiner zu Ende entschieden:**
    dokumentieren, ohne Code-Änderung; erstmal nur festhalten), er hat die
    Frage **bewusst offen gelassen** ("dismissed - do not proceed"). Vor einer
    Umsetzung erneut fragen, nicht selbst entscheiden.
+
+3. **Fokuswert-Verdacht aus der v1.5.2-Diagnose, noch nicht durch den Nutzer
+   bestätigt.** Der gemeldete Fokus-Anstieg (754,9 → 1.233,5) ließ sich mit
+   `fokuswert:0` rechnerisch nicht reproduzieren (s. "Aktueller Stand"), wohl
+   aber die Erklärung, dass ein aus einer früheren Sitzung noch in
+   `localStorage` stehender Fokuswert > 0 einen legitimen Pfadwechsel ausgelöst
+   haben könnte (kein Formelfehler). **Vor der nächsten Sitzung zu diesem
+   Thema:** den Nutzer bitten, das Feld "Was ist mir ein Fokuspunkt wert?" in
+   den Einstellungen zu prüfen und den Test bei bestätigtem `Fokuswert = 0` zu
+   wiederholen. Bestätigt sich die Erklärung nicht, ist das eine echte Lücke,
+   die eine erneute, tiefere Diagnose braucht (evtl. mit Zugriff auf ein
+   Browser-Werkzeug, um den tatsächlichen `localStorage`-Stand der gemeldeten
+   Sitzung einzusehen).
 
 **Kleinere offene Punkte, unverändert seit früheren Paketen:**
 

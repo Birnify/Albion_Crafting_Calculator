@@ -7,6 +7,82 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Veredeln-Spezialisierungsknoten nach Tier gruppiert, Bugfix, 05.09.2026, v1.5.1)
+
+**Bug, im Hauptgespräch per Browser-Test gefunden** (an v1.5.0 direkt im
+Anschluss, noch bevor der Browser-Check aus v1.5.0 nachgeholt wurde): das
+`fiber`-Panel der Königlichen Gugel zeigte 5 Knoten **nach Verzauberungsstufe
+getrennt** ("Einfacher Stoff", CLOTH_LEVEL1 bis LEVEL4), statt der im Spiel
+tatsächlich existierenden 5 Knoten **nach Tier-Stufe getrennt** (Weberadept T4,
+Weberexperte T5, Webermeister T6, Webergroßmeister T7, Weberältester T8),
+bestätigt durch Schicksalsbrett-Screenshots des Nutzers.
+
+**Ursache:** `gruppenSchluesselVonItem()` (`js/regeln.js`) strippte einheitlich
+das Tier-Präfix und ließ den Verzauberungs-Suffix stehen. Das passt für
+Ausrüstung (ein Item-Name über alle Tiers, Verzauberungsstufe steckt NICHT im
+Namen, sondern in `e[stufe].r`), aber nicht für Veredeln: dort ist jede
+Verzauberungsstufe ein **eigener** uniquename mit `_LEVEL1` bis `_LEVEL4`-Suffix
+(`T4_CLOTH`, `T4_CLOTH_LEVEL1` ... `T4_CLOTH_LEVEL4`), während das Tier-Präfix
+die eigentlich zählende Größe ist.
+
+**Fix:** `gruppenSchluesselVonItem(item, cc)` bekommt einen zweiten,
+optionalen Parameter. Bei `spezTypVonKategorie(cc) === "veredeln"`
+(`fiber`/`ore`/`hide`/`wood`/`rock`) wird der `_LEVEL\d+`-Suffix entfernt, das
+Tier-Präfix aber **behalten** (Gegenteil der Ausrüstungs-Regel). Beide
+Aufrufstellen (`spezialisierungsGruppen()` in `regeln.js`, `fceFuer()` in
+`rechenkern.js`) reichen `cc` jetzt durch. `js/ui.js` unverändert, da es nur
+`REGELN.spezialisierungsGruppen(cc)` aufruft, die die Weiche intern trägt.
+
+**Nebenbefund beim Testen, im Auftrag nicht erwähnt, aber vom selben Fix
+mitbehoben:** `rock` (Steinblöcke) hat gar keine `_LEVEL`-Suffixe im
+Item-Namen (Steinblöcke werden nicht verzaubert), die alte Regel hätte dort
+alle 7 Tiers (T2 bis T8) fälschlich zu EINEM einzigen Knoten "STONEBLOCK"
+zusammengefasst - das genaue Gegenteil des gemeldeten Fehlers, aber derselbe
+Kategorie-Typ und vom selben Fix (Tier-Präfix behalten) automatisch mit
+korrigiert. Gegenprobe gegen den echten Graphen: `spezialisierungsGruppen("fiber")`
+liefert jetzt 7 Gruppen (T2_CLOTH bis T8_CLOTH, je ein Knoten mit allen 5
+Verzauberungsstufen als Mitgliedern), `spezialisierungsGruppen("cloth_helmet")`
+unverändert 9 Gruppen (Ausrüstung, tier-übergreifend). FCE-Rechenprobe mit den
+Nutzer-Testwerten (Weberadept 75, Weberexperte/-meister/-großmeister je 1,
+Weberältester 0): `T4_CLOTH` → 18.840 FCE (75×250 Unique + 90 Mutual von den
+drei anderen Stufe-1-Knoten).
+
+**Getestet:** Testsuite von 212 auf 220 Tests gewachsen (8 neue: 5
+Einheitstests `gruppenSchluesselVonItem(item, cc)` inkl. Regressionstest "ohne
+cc/nicht-veredelnde Kategorie unverändert", 3 Gegenproben
+`spezialisierungsGruppen("fiber")` gegen den echten Rezeptgraphen: T4-Gruppe
+fasst alle 5 Stufen zusammen, T5 ist eine eigene Gruppe, keine
+`CLOTH_LEVEL*`-Gruppe mehr). Alle 220 grün, per Node cachefrei gegen die
+Dateien auf der Platte geprüft (Testrahmen aus `tests/test.html`,
+Zeilen 71-1263, per `vm.runInContext` mit `localStorage`/`performance`-Stub
+ausgeführt, identische Logik wie im Browser, kein Node-Modul-Cache möglich, da
+frisch aus der Datei geladen). Zusätzlich zwei eigene Rechenskripte gegen den ECHTEN
+Rezeptgraphen: Gruppenliste für `fiber` und `cloth_helmet` von Hand
+nachgesehen (s. Nebenbefund oben), FCE-Werte mit den Nutzer-Testdaten von Hand
+nachgerechnet.
+
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0/v1.5.0:** weder
+die `SendMessage`-Funktion für Phasen-Meldungen/Subagenten-Anfragen noch ein
+interaktives Browser-Werkzeug standen in dieser Sitzung zur Verfügung (kein
+`SendMessage`, kein `Agent`, keine `mcp__claude-in-chrome__*`- oder
+`mcp__computer-use__*`-Tools im verfügbaren Werkzeugsatz, trotz
+Systemhinweisen, die sie erwähnen). Die drei Spezialisten
+(`rechenkern-pruefer`, `spieldaten-pruefer`, `oberflaechen-pruefer`) konnten
+deshalb NICHT angefordert werden. Ein lokaler Server
+(`.claude/no_cache_server.py`, Port 8791) wurde probehalber gestartet und
+antwortete mit HTTP 200 auf `Kostenrechner.html`, konnte aber mangels
+Browser-Werkzeug nicht tatsächlich angesehen werden. **Die reparierte
+Oberfläche wurde also weiterhin NICHT im Browser angesehen** - das steht schon
+so in der v1.5.0-Notiz und gilt unverändert. Vor der nächsten inhaltlichen
+Änderung an der Oberfläche nachholen, sobald ein Browser-Werkzeug verfügbar
+ist.
+
+Versions-Schnappschuss unter `Versionen/v1.5.1 - Veredeln-
+Spezialisierungsknoten nach Tier gruppiert/` angelegt. Git-Commit und Push wie
+im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
 ## Aktueller Stand (FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie, 05.09.2026, v1.5.0)
 
 **Vorheriger Stand (v1.4.0, Feature "Qualitaetsstufen") und alles davor**
