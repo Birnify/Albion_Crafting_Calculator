@@ -705,11 +705,44 @@ const UI = (function () {
       }
     }
 
-    function altBeschreibung(alt) {
-      if (!alt) return "<span class='alt'>(keine Alternative verfuegbar)</span>";
-      if (alt.gesperrt) return "<span class='alt'>naechstbeste Alternative: gesperrt (" + escapeHtml(alt.grund || "") + ")</span>";
-      const typLabel = alt.typ === "kaufen" ? "Kaufen" : alt.typ === "craften" ? "Craften" : "Verzaubern";
-      return "<span class='alt'>naechstbeste Alternative: " + typLabel + " fuer " + formatSilber(alt.silber) + " Silber</span>";
+    /**
+     * Kurzform der naechstbesten Alternative fuer die Detailzeile: sichtbar nur
+     * "Alt.: Craften 135.290", die volle Erklaerung (Grund bei gesperrt, "Silber"
+     * ausgeschrieben) steckt im title-Tooltip. Ergonomie-Umbau 05.09.2026: vorher
+     * stand der volle Satz immer ausgeschrieben in der Zeile, obwohl er im
+     * Alltag selten gebraucht wird (s. kostenrechner-KONTEXT.md). Gibt es keine
+     * Alternative, wird nichts angezeigt statt eines Fuelltexts.
+     */
+    function altBeschreibungKurz(alt) {
+      if (!alt) return "";
+      let kurz, voll;
+      if (alt.gesperrt) {
+        kurz = "gesperrt";
+        voll = "Naechstbeste Alternative: gesperrt (" + (alt.grund || "") + ")";
+      } else {
+        const typLabel = alt.typ === "kaufen" ? "Kaufen" : alt.typ === "craften" ? "Craften" : "Verzaubern";
+        kurz = typLabel + " " + formatSilber(alt.silber);
+        voll = "Naechstbeste Alternative: " + typLabel + " fuer " + formatSilber(alt.silber) + " Silber";
+      }
+      return " <span class='kn-alt' title='" + escapeHtml(voll) + "'>Alt.: " + escapeHtml(kurz) + "</span>";
+    }
+
+    /**
+     * Eigene (per-Stueck) Kosten eines Knotens, itemgenerisch nutzbar fuer
+     * Wurzel, Zutat, Material und Vorstufe gleichermassen: r.knotenAlternativen
+     * fuehrt je "item@stufe" die sortierte Kandidatenliste, Index 0 ist immer
+     * der guenstigste/tatsaechlich gewaehlte (s. rechenkern.js kostenGesamt(),
+     * "alle" wird VOR dem Ablegen in knotenAlternativen aufsteigend sortiert).
+     * Craften-/Verzaubern-Knoten tragen ihre eigenen Silber/Fokus-Werte NICHT
+     * in sich selbst (nur die umschliessenden zutatenWeg-/materialien-
+     * Eintraege kennen silberJeStueck/fokusJeStueck) - das war der Grund,
+     * warum der Bauplan bisher gar keine Kosten je Knoten anzeigte. Diese
+     * Funktion liest sie stattdessen ueber den globalen, bereits vorhandenen
+     * Index nach, ohne die Rechenlogik selbst anzufassen.
+     */
+    function eigenerKandidat(r, weg) {
+      const liste = r && r.knotenAlternativen && r.knotenAlternativen[weg.item + "@" + weg.stufe];
+      return liste && liste[0] ? liste[0] : null;
     }
 
     // ---- Knoten-Uebersteuerung des Fokuseinsatzes (Feature "Fokuseinsatz
@@ -752,20 +785,62 @@ const UI = (function () {
       return btn;
     }
 
-    function baueKnoten(weg, r, tiefe) {
+    /**
+     * Ergonomie-Umbau des Bauplans (05.09.2026, "Bauplan-Ansicht ergonomisch
+     * ueberarbeiten"): vorher eine einzige lange Fliesstextzeile je Knoten mit
+     * Aktionstyp, Item, Rezept-Index, Fokus-Flag, Stationsgebuehr samt Gebaeude,
+     * Rueckgewinnung UND der vollen "naechstbeste Alternative"-Erklaerung in
+     * einem Satz; Farbe faerbte nur die ganze Zeile im Aktionsfarbton ein.
+     * Jetzt zwei Zeilen je Knoten:
+     *   kn-zeile (primaer, immer sichtbar): farbiges Badge des Aktionstyps,
+     *     Menge (nur bei Zutat/Material/Vorstufe), Item.Stufe fett, bei
+     *     Craften der Fokus-Schalter, Warn-Badges (unvollstaendig/kein
+     *     Ruecklauf/Eigenpreis), rechtsbuendig die tatsaechlichen Kosten
+     *     GENAU DIESES Knotens (Silber, ggf. Fokus).
+     *   kn-detail (sekundaer, kleiner/gedaempft): Rezept-Index,
+     *     Stationsgebuehr samt Gebaeude, genaue Rueckgewinnung bzw. Kaufweg,
+     *     dazu die naechstbeste Alternative in Kurzform mit vollem Text im
+     *     title-Tooltip.
+     * Die Kosten je Knoten sind eine neue ANZEIGE, keine neue Berechnung:
+     * eigenerKandidat() liest sie aus dem bereits vorhandenen
+     * r.knotenAlternativen, das es seit dem Fokus-Feature schon gibt, aber
+     * bisher im Baum nirgends gezeigt wurde.
+     *
+     * Die Ruecklauf-Prozentzahl je Zutat entfaellt bewusst (s. kostenrechner-
+     * KONTEXT.md): sie ist rechnerisch IMMER identisch mit der Rueckgewinnung,
+     * die der umschliessende Craften-Knoten ohnehin schon in seiner eigenen
+     * Detailzeile zeigt (beide stammen aus demselben rrrWert in
+     * rechenkern.js), einzige Ausnahme ist "Ruecklauf ausgeschlossen" bei
+     * erreichter Mengenobergrenze je Material - das bleibt als eigenes
+     * Warn-Badge erhalten, alles Weitere waere reine Wiederholung gewesen.
+     */
+    function baueGesperrtZeile(item, stufe, grund, kante) {
+      const div = document.createElement("div");
+      div.className = "kn-zeile kn-zeile-gesperrt";
+      div.innerHTML =
+        "<span class='kn-badge kn-badge-gesperrt'>Gesperrt</span>" +
+        (kante ? "<span class='kn-menge'>" + escapeHtml(kante.label) + "</span>" : "") +
+        "<span class='kn-name'>" + escapeHtml(nameVon(item)) + (stufe ? "." + stufe : "") + "</span>" +
+        "<span class='kn-grund'>" + escapeHtml(grund || "") + "</span>";
+      return div;
+    }
+
+    function baueKnoten(weg, r, tiefe, kante) {
       const wrap = document.createElement("div");
       if (!weg) return wrap;
 
       if (weg.typ === "gesperrt") {
-        const zeile = document.createElement("div");
-        zeile.className = "zeile-gesperrt";
-        zeile.textContent = "Gesperrt: " + (weg.grund || "");
-        wrap.appendChild(zeile);
+        wrap.appendChild(baueGesperrtZeile(weg.item, weg.stufe, weg.grund, kante));
         return wrap;
       }
 
       const alt = naechstbesteAlternative(r.knotenAlternativen, weg.item, weg.stufe);
-      const altHtml = altBeschreibung(alt);
+      const altHtml = altBeschreibungKurz(alt);
+      const mengeHtml = kante ? "<span class='kn-menge'>" + escapeHtml(kante.label) + "</span>" : "";
+      const ausschlussHtml =
+        kante && kante.ausschluss
+          ? "<span class='kn-flag kn-flag-ausschluss' title='Mengenobergrenze fuer dieses Material erreicht: es wird bei der Rueckgewinnung dieses Crafts nicht mehr beruecksichtigt.'>kein Ruecklauf</span>"
+          : "";
 
       if (weg.typ === "kaufen") {
         const details = document.createElement("details");
@@ -773,19 +848,26 @@ const UI = (function () {
         const summary = document.createElement("summary");
         summary.className = "zeile-kaufen";
         const alterInfo = alterFuerMarktId(weg.marktId);
-        summary.innerHTML =
-          "Kaufen: " +
-          escapeHtml(nameVon(weg.item)) +
-          (weg.stufe ? "." + weg.stufe : "") +
-          " fuer " +
-          formatSilber(weg.preisJeStueck) +
-          " Silber/Stueck (" +
-          (weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") +
-          ")" +
+        const zeile = document.createElement("div");
+        zeile.className = "kn-zeile";
+        zeile.innerHTML =
+          "<span class='kn-badge kn-badge-kaufen'>Kaufen</span>" +
+          mengeHtml +
+          "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>" +
+          ausschlussHtml +
           (weg.eigenpreis
-            ? "<span class='badge-eigen' title='Kein Marktpreis, sondern eine hinterlegte eigene Schaetzung.'>Eigenpreis</span>"
-            : "<span class='alter" + (alterInfo.stale ? " stale" : "") + "'> [Preis " + alterInfo.text + "]</span>") +
-          altHtml;
+            ? "<span class='kn-flag kn-flag-eigen' title='Kein Marktpreis, sondern eine hinterlegte eigene Schaetzung.'>Eigenpreis</span>"
+            : "") +
+          "<span class='kn-spacer'></span>" +
+          "<span class='kn-kosten'>" + formatSilber(weg.preisJeStueck) + " Silber</span>" +
+          (!weg.eigenpreis
+            ? "<span class='kn-alter" + (alterInfo.stale ? " stale" : "") + "' title='Alter des Marktpreises'>" + escapeHtml(alterInfo.text) + "</span>"
+            : "");
+        summary.appendChild(zeile);
+        const detail = document.createElement("div");
+        detail.className = "kn-detail";
+        detail.innerHTML = (weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") + altHtml;
+        summary.appendChild(detail);
         details.appendChild(summary);
         wrap.appendChild(details);
         return wrap;
@@ -797,40 +879,58 @@ const UI = (function () {
         const summary = document.createElement("summary");
         summary.className = "zeile-craften";
 
-        const praefix = document.createElement("span");
-        praefix.innerHTML = "Craften: " + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + " (Rezept #" + (weg.rezeptIndex + 1) + ", ";
-        summary.appendChild(praefix);
-        summary.appendChild(baueFokusSchalter(weg));
+        const zeile = document.createElement("div");
+        zeile.className = "kn-zeile";
+        zeile.innerHTML =
+          "<span class='kn-badge kn-badge-craften'>Craften</span>" +
+          mengeHtml +
+          "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>";
+        summary.appendChild(zeile);
+        zeile.appendChild(baueFokusSchalter(weg));
 
-        const suffix = document.createElement("span");
-        let text =
-          "), Stationsgebuehr " +
+        const flags = document.createElement("span");
+        let flagsHtml = ausschlussHtml;
+        if (weg.unvollstaendig)
+          flagsHtml +=
+            "<span class='kn-flag kn-flag-unvoll' title='Stationssatz fuer mindestens ein Gebaeude fehlt. Silber ist eine Untergrenze.'>unvollstaendig</span>";
+        flags.innerHTML = flagsHtml;
+        zeile.appendChild(flags);
+
+        const spacer = document.createElement("span");
+        spacer.className = "kn-spacer";
+        zeile.appendChild(spacer);
+
+        const eigen = eigenerKandidat(r, weg);
+        const kostenSpan = document.createElement("span");
+        kostenSpan.className = "kn-kosten";
+        kostenSpan.textContent = formatSilber(eigen && eigen.silber) + " Silber";
+        zeile.appendChild(kostenSpan);
+        if (eigen && eigen.fokus) {
+          const fokusSpan = document.createElement("span");
+          fokusSpan.className = "kn-fokus";
+          fokusSpan.textContent = formatFokus(eigen.fokus) + " Fokus";
+          zeile.appendChild(fokusSpan);
+        }
+
+        const detail = document.createElement("div");
+        detail.className = "kn-detail";
+        detail.innerHTML =
+          "Rezept #" +
+          (weg.rezeptIndex + 1) +
+          ", Stationsgebuehr " +
           formatSilber(weg.stationsgebuehrJeStueck) +
           (weg.gebaeude ? " (" + escapeHtml(weg.gebaeude) + ")" : "") +
           ", Rueckgewinnung " +
-          formatProzent(weg.rrr * 100);
-        if (weg.unvollstaendig) text += "<span class='badge-unvoll'>unvollstaendig</span>";
-        text += altHtml;
-        suffix.innerHTML = text;
-        summary.appendChild(suffix);
+          formatProzent(weg.rrr * 100) +
+          altHtml;
+        summary.appendChild(detail);
         details.appendChild(summary);
+
         const body = document.createElement("div");
         body.className = "body";
         (weg.zutaten || []).forEach((z) => {
-          const zeile = document.createElement("div");
-          const ruecklaufText = z.gesperrt
-            ? ""
-            : z.ruecklaufAusgeschlossen
-            ? " (Ruecklauf ausgeschlossen)"
-            : z.ruecklaufAnteil
-            ? " (Ruecklauf " + formatProzent(z.ruecklaufAnteil * 100) + ")"
-            : "";
-          const kopf = document.createElement("div");
-          kopf.className = "hint";
-          kopf.textContent = z.menge.toFixed(2) + "x " + nameVon(z.item) + (z.stufe ? "." + z.stufe : "") + ruecklaufText;
-          zeile.appendChild(kopf);
-          zeile.appendChild(baueKnoten(z.weg, r, tiefe + 1));
-          body.appendChild(zeile);
+          const zutatKante = { label: z.menge.toFixed(2) + "x", ausschluss: !!z.ruecklaufAusgeschlossen };
+          body.appendChild(baueKnoten(z.weg, r, tiefe + 1, zutatKante));
         });
         details.appendChild(body);
         wrap.appendChild(details);
@@ -842,28 +942,34 @@ const UI = (function () {
         details.open = tiefe < 2;
         const summary = document.createElement("summary");
         summary.className = "zeile-verzaubern";
-        let text = "Verzaubern auf ." + weg.stufe + " (Rezeptsilber " + formatSilber(weg.rezeptSilber) + ")";
-        if (weg.unvollstaendig) text += "<span class='badge-unvoll'>unvollstaendig</span>";
-        text += altHtml;
-        summary.innerHTML = text;
+
+        const eigen = eigenerKandidat(r, weg);
+        const zeile = document.createElement("div");
+        zeile.className = "kn-zeile";
+        zeile.innerHTML =
+          "<span class='kn-badge kn-badge-verzaubern'>Verzaubern</span>" +
+          mengeHtml +
+          "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + "." + weg.stufe + "</span>" +
+          ausschlussHtml +
+          (weg.unvollstaendig
+            ? "<span class='kn-flag kn-flag-unvoll' title='Stationssatz fuer mindestens ein Gebaeude fehlt. Silber ist eine Untergrenze.'>unvollstaendig</span>"
+            : "") +
+          "<span class='kn-spacer'></span>" +
+          "<span class='kn-kosten'>" + formatSilber(eigen && eigen.silber) + " Silber</span>" +
+          (eigen && eigen.fokus ? "<span class='kn-fokus'>" + formatFokus(eigen.fokus) + " Fokus</span>" : "");
+        summary.appendChild(zeile);
+
+        const detail = document.createElement("div");
+        detail.className = "kn-detail";
+        detail.innerHTML = "Rezeptsilber " + formatSilber(weg.rezeptSilber) + altHtml;
+        summary.appendChild(detail);
         details.appendChild(summary);
+
         const body = document.createElement("div");
         body.className = "body";
-        const vorstufeZeile = document.createElement("div");
-        const vorstufeKopf = document.createElement("div");
-        vorstufeKopf.className = "hint";
-        vorstufeKopf.textContent = "Vorstufe ." + (weg.stufe - 1);
-        vorstufeZeile.appendChild(vorstufeKopf);
-        vorstufeZeile.appendChild(baueKnoten(weg.vorstufe, r, tiefe + 1));
-        body.appendChild(vorstufeZeile);
+        body.appendChild(baueKnoten(weg.vorstufe, r, tiefe + 1, { label: "Vorstufe" }));
         (weg.materialien || []).forEach((m) => {
-          const zeile = document.createElement("div");
-          const kopf = document.createElement("div");
-          kopf.className = "hint";
-          kopf.textContent = m.menge + "x " + nameVon(m.item);
-          zeile.appendChild(kopf);
-          zeile.appendChild(baueKnoten(m.weg, r, tiefe + 1));
-          body.appendChild(zeile);
+          body.appendChild(baueKnoten(m.weg, r, tiefe + 1, { label: m.menge + "x" }));
         });
         details.appendChild(body);
         wrap.appendChild(details);
@@ -876,10 +982,7 @@ const UI = (function () {
     function renderBauplan(r) {
       bauplanEl.innerHTML = "";
       if (r.gesperrt) {
-        const div = document.createElement("div");
-        div.className = "zeile-gesperrt";
-        div.textContent = "Gesperrt: " + (r.grund || "");
-        bauplanEl.appendChild(div);
+        bauplanEl.appendChild(baueGesperrtZeile(r.weg && r.weg.item, r.weg && r.weg.stufe, r.grund, null));
         return;
       }
       bauplanEl.appendChild(baueKnoten(r.weg, r, 0));

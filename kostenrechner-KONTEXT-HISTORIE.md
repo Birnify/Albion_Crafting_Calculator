@@ -7,6 +7,106 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Feature "Fokuseinsatz steuerbar machen", 05.09.2026, v1.2.0)
+
+**Vorheriger Stand (v1.1.0, Feature "Craft-Stadt waehlbar") und alles davor**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** die App entschied bislang je Craft-Schritt automatisch ueber
+"mit Fokus"/"ohne Fokus" nach der Zielfunktion (Silber + Fokus x Fokuswert).
+Bei `fokuswert: 0` (Standard) ist Fokus darin faktisch gratis, die Automatik
+waehlt deshalb fast immer die Fokus-Variante - genau das wollte der Nutzer
+selbst steuern koennen, statt sich auf den Fokuswert zu verlassen.
+
+**Was gebaut wurde**, nach dem Vorbild von `opts.fceUeberschreibungen`
+(FCE-Ausnahmen je Kategorie, P5): zwei neue `opts`-Felder in
+`js/rechenkern.js`, beide Werte `"immer"`/`"nie"`, fehlend = Automatik wie
+bisher.
+
+- `opts.fokusRegelJeKategorie` (`craftingcategory -> "immer"|"nie"`): gilt fuer
+  **jedes** Vorkommen dieser Kategorie im ganzen Baum.
+- `opts.fokusUebersteuerungJeKnoten` (`"item@stufe" -> "immer"|"nie"`): gilt fuer
+  genau diesen Knoten und schlaegt die Kategorie-Regel. Vorrang: Knoten vor
+  Kategorie vor Automatik.
+
+In `kostenGesamt()` entscheidet `fokusRegelFuer(item, stufe, cc, opts)` vor der
+`rezepte.forEach`-Schleife, welche der beiden Fokus-Varianten je Alternativrezept
+ueberhaupt erzeugt wird. Die durch eine Regel ausgeschlossene Variante wird
+NICHT einfach weggelassen, sondern als gesperrter Kandidat MIT lesbarem Grund
+eingetragen (z.B. "mit Fokus craften ausgeschlossen: Kategorie-Regel fiber
+(nie)") - bleibt so in `alleWege` sichtbar (Transparenz-Vorgabe aus dem Plan)
+und macht auch einen etwaigen Totalausfall ("kein Weg verfuegbar")
+nachvollziehbar. "immer" an einem Rezept ohne eigenen Fokuswert (koenigliche
+Items, `craftingfocus: 0`, keine `craftingcategory`) wirkt einfach folgenlos,
+kein Sonderfall noetig.
+
+**Oberflaeche, zwei Ebenen:**
+
+- Kategorie-Regel: neue Tabelle "Fokus-Regel je Kategorie" in den
+  Einstellungen (Charakter & Station), exakt nach dem Muster der bestehenden
+  FCE-Ausnahmen-Tabelle (zeigt zuerst nur die im aktuellen Bauplan verwendeten
+  Kategorien, Knopf fuer alle 43). Dreifach-Schalter Automatisch/Immer/Nie wie
+  beim bereits vorhandenen Tagesbonus-Schalter, kein neuer UI-Baustein noetig.
+- Knoten-Uebersteuerung: **bewusst keine zusaetzliche Liste**, um den
+  Ergonomie-Wunsch des Nutzers zu treffen ("wenige, klar auffindbare Regeln").
+  Stattdessen wurde der bereits vorhandene Text "(Rezept #n, mit/ohne Fokus)"
+  im Bauplan-Baum selbst interaktiv gemacht: ein Klick auf den Fokus-Teil
+  zyklisch automatisch -> immer -> nie -> automatisch (Button mit
+  `preventDefault`/`stopPropagation`, damit der Klick nicht zugleich den
+  umgebenden `<details>`-Knoten auf-/zuklappt). Genau dort schaut der Nutzer
+  ohnehin schon hin, wenn er einen Schritt uebersteuern will.
+
+**Persistenz, bewusste Entscheidung:** beide Regelebenen liegen dauerhaft in
+`localStorage` (`einstellungen.fokusRegelJeKategorie`/`.fokusUebersteuerungJeKnoten`),
+nicht nur fuer die aktuelle Berechnung. Begruendung: ein Knoten wie
+`T4_CLOTH_LEVEL3@3` taucht in vielen verschiedenen Bauplaenen wieder auf (jedes
+Item, das verzauberten T4-Stoff braucht) und `kostenGesamt()` memoisiert ohnehin
+global ueber `item@stufe`, nicht pfadabhaengig - eine einmal getroffene
+Entscheidung soll deshalb nicht bei jedem neuen Suchbegriff verloren gehen.
+Identisch zur bestehenden Persistenz der FCE-Ausnahmen.
+
+**Konkretes Zahlenbeispiel (Abnahmekriterium), live im Browser mit echten
+Marktpreisen nachvollzogen** (Königliche Gugel des Adepten .3, Lymhurst,
+FCE 0, Fokuswert 0):
+
+- Ohne Regel (Automatik): `T4_CLOTH_LEVEL3.3` wird mit Fokus gecraftet
+  (Rueckgewinnung 53,9 %), Wurzel kostet **150.808 Silber, 3.677 Fokus**.
+- Mit Kategorie-Regel `fiber -> nie`: dieselbe Craft-mit-Fokus-Variante wird
+  ausgeschlossen; da craften-ohne-Fokus (Rueckgewinnung nur noch 36,7 %, ca.
+  7.605 Silber/Stueck) teurer ist als der Marktpreis, kauft die App
+  `T4_CLOTH_LEVEL3.3` jetzt direkt (5.835 Silber/Stueck). Wurzel kostet
+  **152.245 Silber (+1.437), 2.298 Fokus (-1.379)** - nachweislich teurer, wie
+  vom Nutzer gewuenscht erzwungen, nicht zufaellig gleich geblieben.
+- Knoten-Uebersteuerung `"T4_CLOTH_LEVEL3@3": "nie"` (ohne Kategorie-Regel)
+  liefert dieselben 152.245/2.298 wie oben; `"immer"` liefert wieder die
+  Automatik-Zahlen 150.808/3.677 (hier ohnehin schon die automatische Wahl).
+  Vorrang Knoten vor Kategorie eigens mit einer Kombination beider Regeln
+  gegeneinander getestet (s. Tests).
+
+**Tests:** 17 neue in `tests/test.html` (Regressionstest ohne jede Regel,
+Kategorie-Regel "nie" inkl. Handrechnung, Vorrang Knoten vor Kategorie, "immer"
+an einem Rezept ohne Fokuswert). Testsuite 119 -> 136 gruen. Zusaetzlich, weil
+dieses Feature den Rechenkern selbst aendert: unabhaengige Nachrechnung per
+Node-Skript im Scratchpad (eigener Testgraph, vier Faelle inkl. Handrechnung
+der erwarteten RRR/Silberwerte), alle bestanden, bevor die Browser-Pruefung
+folgte.
+
+**Browser-Cache-Falle erneut aufgetreten, jetzt als wiederkehrendes Muster
+bestaetigt** (s. Backlog/Umgebungs-Fund bei v1.1.0 in der Historie): eine
+Aenderung an `js/rechenkern.js` blieb sowohl im wiederverwendeten Tab als auch
+in einem frisch geoeffneten neuen Tab unwirksam (`fetch(...,{cache:'no-store'})`
+zeigte den frischen Dateiinhalt, das ausgefuehrte Skript verhielt sich aber
+nach dem alten). Ausweg wie beim letzten Mal: eine temporaere Kopie mit
+cache-gebusteten `?v=timestamp`-Pfaden fuer `tests/test.html` UND
+`Kostenrechner.html`, damit 136/136 gruen sowie das obige Zahlenbeispiel im
+echten Browser bestaetigt, beide Kopien danach geloescht (Original-Dateien
+unveraendert). Fuer kuenftige Sitzungen: bei einer Aenderung an `js/*.js`, die
+im Browser nicht ankommt, direkt zu dieser Umgehung greifen, nicht erst lange
+mit Hard-Reload experimentieren.
+
+---
+
 ## Aktueller Stand (Feature "Craft-Stadt waehlbar", 05.09.2026, v1.1.0)
 
 Der Plan (P1-P7) war mit v1.0.0 vollständig abgeschlossen, v1.0.1 war eine

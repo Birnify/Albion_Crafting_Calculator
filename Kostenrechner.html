@@ -110,27 +110,46 @@ details>.body{padding:0 20px 20px}
              justify-content:space-between;gap:10px}
 .ausgewaehlt.aktiv{display:flex}
 .ausgewaehlt .id{color:var(--dim);font-size:11px;font-family:monospace}
-/* Bauplan-Baum */
+/* Bauplan-Baum: jeder Knoten eine klar abgegrenzte Karte statt einer
+   Fliesstext-Zeile (Ergonomie-Umbau 05.09.2026, s. kostenrechner-KONTEXT.md).
+   Farbe sitzt nur noch auf dem Aktions-Badge, nicht mehr auf der ganzen
+   Zeile: ein eingefaerbtes Kurzwort ist leichter zu scannen als ein
+   komplett eingefaerbter Satz, besonders bei tiefen, langen Baeumen. */
 .baum{font-size:13px}
-.baum details{border:none;background:transparent;margin:0 0 2px;border-radius:6px}
-.baum details>summary{padding:6px 8px;font-weight:400;font-size:13px;
-                       border-radius:6px;list-style:none}
+.baum details{border:1px solid var(--line);background:var(--panel);margin:0 0 6px;
+              border-radius:8px}
+.baum details>summary{padding:8px 10px;font-weight:400;font-size:13px;
+                       border-radius:8px;list-style:none}
 .baum details>summary:hover{background:var(--accent-soft)}
 .baum details>summary::before{margin-right:6px;font-size:11px}
-.baum .body{padding:0 0 0 22px;border-left:1px dotted var(--line);margin-left:9px}
-.baum .zeile-kaufen{color:var(--accent)}
-.baum .zeile-craften{color:var(--good)}
-.baum .zeile-verzaubern{color:var(--warn)}
-.baum .zeile-gesperrt{color:var(--bad)}
-.baum .alt{color:var(--dim);font-size:11.5px;margin-left:4px}
-.baum .badge-unvoll{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;
-                     background:var(--warn-bg);color:var(--warn);font-size:10.5px;font-weight:700}
-.baum .badge-eigen{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;
-                    background:var(--accent-soft);color:var(--accent);font-size:10.5px;font-weight:700}
-.baum .alter{color:var(--dim);font-size:11px;margin-left:4px}
-.baum .alter.stale{color:var(--warn);font-weight:600}
+.baum .body{padding:6px 0 2px 20px;border-left:1px dotted var(--line);margin-left:15px}
+.baum .kn-zeile{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px}
+.baum .kn-zeile-gesperrt{border:1px solid var(--bad);background:var(--bad-bg);
+                          border-radius:8px;padding:8px 10px;margin:0 0 6px}
+.baum .kn-badge{display:inline-block;padding:2px 7px;border-radius:5px;font-size:10.5px;
+                font-weight:700;text-transform:uppercase;letter-spacing:.03em;flex:none}
+.baum .kn-badge-kaufen{background:var(--accent-soft);color:var(--accent)}
+.baum .kn-badge-craften{background:var(--good-bg);color:var(--good)}
+.baum .kn-badge-verzaubern{background:var(--warn-bg);color:var(--warn)}
+.baum .kn-badge-gesperrt{background:var(--bad-bg);color:var(--bad)}
+.baum .kn-menge{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums;flex:none}
+.baum .kn-name{font-weight:600;color:var(--text)}
+.baum .kn-grund{color:var(--bad);font-size:12.5px}
+.baum .kn-flag{font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:8px;flex:none}
+.baum .kn-flag-unvoll{background:var(--warn-bg);color:var(--warn)}
+.baum .kn-flag-eigen{background:var(--accent-soft);color:var(--accent)}
+.baum .kn-flag-ausschluss{background:var(--bad-bg);color:var(--bad)}
+.baum .kn-spacer{flex:1 1 16px}
+.baum .kn-kosten{font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;
+                 white-space:nowrap}
+.baum .kn-fokus{color:var(--dim);font-size:12px;white-space:nowrap}
+.baum .kn-alter{color:var(--dim);font-size:11px;white-space:nowrap}
+.baum .kn-alter.stale{color:var(--warn);font-weight:600}
+.baum .kn-detail{color:var(--dim);font-size:11.5px;margin-top:3px;padding-left:1px}
+.baum .kn-alt{cursor:help;text-decoration:underline dotted var(--dim);text-underline-offset:2px}
 .baum .fokus-schalter{border:1px solid var(--line);border-radius:4px;background:var(--bg);
-                       color:inherit;font:inherit;font-size:12.5px;padding:0 5px;cursor:pointer}
+                       color:inherit;font:inherit;font-size:12.5px;padding:0 5px;cursor:pointer;
+                       flex:none}
 .baum .fokus-schalter:hover{background:var(--accent-soft);border-color:var(--accent)}
 .baum .fokus-schalter.uebersteuert{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
 /* Einstellungen: Gebaeude/Kategorie-Ausnahmelisten */

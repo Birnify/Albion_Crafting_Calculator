@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.2.0 · Feature: Fokuseinsatz steuerbar machen
+Stand: 2026-09-05 · Version: v1.3.0 · Feature: Bauplan-Ansicht ergonomisch ueberarbeitet
 (kein Paket aus dem Plan, Nutzer-Feature ausserhalb der P0-P7-Reihenfolge)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
@@ -20,108 +20,100 @@ ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Feature "Fokuseinsatz steuerbar machen", 05.09.2026, v1.2.0)
+## Aktueller Stand (Feature "Bauplan-Ansicht ergonomisch ueberarbeitet", 05.09.2026, v1.3.0)
 
-**Vorheriger Stand (v1.1.0, Feature "Craft-Stadt waehlbar") und alles davor**
-unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+**Vorheriger Stand (v1.2.0, Feature "Fokuseinsatz steuerbar machen") und alles
+davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
 (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** die App entschied bislang je Craft-Schritt automatisch ueber
-"mit Fokus"/"ohne Fokus" nach der Zielfunktion (Silber + Fokus x Fokuswert).
-Bei `fokuswert: 0` (Standard) ist Fokus darin faktisch gratis, die Automatik
-waehlt deshalb fast immer die Fokus-Variante - genau das wollte der Nutzer
-selbst steuern koennen, statt sich auf den Fokuswert zu verlassen.
+**Auftrag:** rein visuelle Ueberarbeitung des Bauplan-Baums (`js/ui.js`,
+`baueKnoten()`), keine Aenderung an der Rechenlogik. Auslöser war ein
+Nutzer-Screenshot der Gelehrtengugel: jeder Knoten eine einzige lange
+Fliesstextzeile mit Aktionstyp, Item, Rezept-Index, Fokus-Flag,
+Stationsgebuehr samt Gebaeude, Rueckgewinnung und der vollen "naechstbeste
+Alternative"-Erklaerung, Farbe faerbte nur die ganze Zeile ein. Bei einem
+tief verschachtelten Baum kaum noch lesbar ("man sieht nicht, was genau,
+wann, wie, wo zu tun ist").
 
-**Was gebaut wurde**, nach dem Vorbild von `opts.fceUeberschreibungen`
-(FCE-Ausnahmen je Kategorie, P5): zwei neue `opts`-Felder in
-`js/rechenkern.js`, beide Werte `"immer"`/`"nie"`, fehlend = Automatik wie
-bisher.
+**Neue Struktur je Knoten, zwei Zeilen statt einer:**
 
-- `opts.fokusRegelJeKategorie` (`craftingcategory -> "immer"|"nie"`): gilt fuer
-  **jedes** Vorkommen dieser Kategorie im ganzen Baum.
-- `opts.fokusUebersteuerungJeKnoten` (`"item@stufe" -> "immer"|"nie"`): gilt fuer
-  genau diesen Knoten und schlaegt die Kategorie-Regel. Vorrang: Knoten vor
-  Kategorie vor Automatik.
+- **kn-zeile (primaer, immer sichtbar):** farbiges Badge des Aktionstyps
+  (Kaufen/Craften/Verzaubern/Gesperrt, Farbe sitzt NUR noch auf dem Badge,
+  nicht mehr auf der ganzen Zeile), Menge als Chip (nur bei Zutat/Material/
+  Vorstufe, z.B. "8,00x"), Item.Stufe fett, bei Craften der bestehende
+  Fokus-Schalter, Warn-Badges (unvollstaendig/kein Ruecklauf/Eigenpreis),
+  rechtsbuendig die tatsaechlichen Kosten GENAU DIESES Knotens (Silber, ggf.
+  Fokus).
+- **kn-detail (sekundaer, kleiner/gedaempft):** Rezept-Index, Stationsgebuehr
+  samt Gebaeude, genaue Rueckgewinnung bzw. Kaufweg, dazu die naechstbeste
+  Alternative in Kurzform ("Alt.: Craften 135.290") mit dem vollen Satz im
+  `title`-Tooltip. Gibt es keine Alternative, steht dort nichts (vorher immer
+  ein Fuelltext "(keine Alternative verfuegbar)").
+- Jeder Knoten ist jetzt eine klar umrandete Karte (`<details>` mit Rahmen),
+  nicht mehr eine randlose Zeile. Tiefenverschachtelung bleibt ueber Einrueckung
+  und den gepunkteten linken Rand erhalten, wird durch die Kartenoptik eher
+  klarer als vorher.
 
-In `kostenGesamt()` entscheidet `fokusRegelFuer(item, stufe, cc, opts)` vor der
-`rezepte.forEach`-Schleife, welche der beiden Fokus-Varianten je Alternativrezept
-ueberhaupt erzeugt wird. Die durch eine Regel ausgeschlossene Variante wird
-NICHT einfach weggelassen, sondern als gesperrter Kandidat MIT lesbarem Grund
-eingetragen (z.B. "mit Fokus craften ausgeschlossen: Kategorie-Regel fiber
-(nie)") - bleibt so in `alleWege` sichtbar (Transparenz-Vorgabe aus dem Plan)
-und macht auch einen etwaigen Totalausfall ("kein Weg verfuegbar")
-nachvollziehbar. "immer" an einem Rezept ohne eigenen Fokuswert (koenigliche
-Items, `craftingfocus: 0`, keine `craftingcategory`) wirkt einfach folgenlos,
-kein Sonderfall noetig.
+**Relevanz-Entscheidung (Auftrag: "triff eine klare, begruendete
+Entscheidung"):**
 
-**Oberflaeche, zwei Ebenen:**
+- **Immer sichtbar:** Aktionstyp, Item+Stufe, Menge, Kosten - genau die vier
+  Fragen "was/welches/wieviel/wieviel kostet's", die der Nutzer im Auslöser-
+  Zitat als fehlend nannte.
+- **Kosten je Knoten sind neu.** Vorher zeigte der Baum nirgends, was ein
+  einzelner Zwischenschritt selbst kostet (nur die Stationsgebuehr-Teilsumme
+  bei Craften). Das ist keine neue Berechnung: `eigenerKandidat(r, weg)` liest
+  den Wert aus dem seit v1.2.0 vorhandenen `r.knotenAlternativen` aus (Index 0
+  ist dort immer der guenstigste/gewaehlte Kandidat je "item@stufe",
+  rechenkern.js sortiert `alle` genau dafuer aufsteigend), der Bauplan hat ihn
+  vorher schlicht nicht angezeigt.
+- **Rueckgewinnungs-Prozentzahl je Zutat entfaellt.** Nachgewiesen (nicht nur
+  vermutet): `ruecklaufAnteil` je Zutat in `rechenkern.js` ist exakt derselbe
+  `rrrWert`, der auch als `weg.rrr` im umschliessenden Craften-Knoten landet
+  (`rechenkern.js` Zeilen 297/336/397) - beide Zahlen sind in JEDEM Fall
+  identisch, ausser eine einzelne Zutat hat die Mengenobergrenze erreicht
+  (`zutat.m===0`, dann greift ihr Ruecklauf gar nicht). Die alte Anzeige
+  wiederholte also bei jeder Zutat exakt den Wert, den die Detailzeile des
+  Eltern-Craftens ohnehin schon zeigt. Verbleibt: ein rotes "kein Ruecklauf"-
+  Badge nur fuer den Ausnahmefall (`ruecklaufAusgeschlossen`), das ist der
+  einzige Fall mit echtem Informationsgehalt.
+- **Sekundaer (kn-detail, kleiner):** Rezept-Index, Stationsgebuehr-
+  Aufschluesselung, genaue Rueckgewinnung, Kaufweg, naechstbeste Alternative -
+  im Alltag selten die erste Frage, deshalb kleiner statt gleichrangig, aber
+  nicht versteckt (keine zusaetzliche Klickinteraktion noetig, nur optisch
+  nachrangig). Vollstaendiger Text der Alternative steckt im `title`-Tooltip.
+- Nichts geht ersatzlos verloren: jede vorher gezeigte Angabe ist entweder in
+  kn-zeile, in kn-detail, oder im Tooltip weiterhin da; nur die nachgewiesen
+  redundante Ruecklaufzahl je Zutat wurde gestrichen (Begruendung oben).
 
-- Kategorie-Regel: neue Tabelle "Fokus-Regel je Kategorie" in den
-  Einstellungen (Charakter & Station), exakt nach dem Muster der bestehenden
-  FCE-Ausnahmen-Tabelle (zeigt zuerst nur die im aktuellen Bauplan verwendeten
-  Kategorien, Knopf fuer alle 43). Dreifach-Schalter Automatisch/Immer/Nie wie
-  beim bereits vorhandenen Tagesbonus-Schalter, kein neuer UI-Baustein noetig.
-- Knoten-Uebersteuerung: **bewusst keine zusaetzliche Liste**, um den
-  Ergonomie-Wunsch des Nutzers zu treffen ("wenige, klar auffindbare Regeln").
-  Stattdessen wurde der bereits vorhandene Text "(Rezept #n, mit/ohne Fokus)"
-  im Bauplan-Baum selbst interaktiv gemacht: ein Klick auf den Fokus-Teil
-  zyklisch automatisch -> immer -> nie -> automatisch (Button mit
-  `preventDefault`/`stopPropagation`, damit der Klick nicht zugleich den
-  umgebenden `<details>`-Knoten auf-/zuklappt). Genau dort schaut der Nutzer
-  ohnehin schon hin, wenn er einen Schritt uebersteuern will.
+**Alle-Wege-Tabelle bewusst unveraendert gelassen:** sie ist bereits eine
+echte Tabelle mit getrennten Spalten (Weg/Silber/Fokus/Zielwert/Status) und
+Status-Pills statt einer Fliesstextzeile - teilt die Dichte-Problematik des
+Bauplans nicht, deshalb kein Umbau noetig.
 
-**Persistenz, bewusste Entscheidung:** beide Regelebenen liegen dauerhaft in
-`localStorage` (`einstellungen.fokusRegelJeKategorie`/`.fokusUebersteuerungJeKnoten`),
-nicht nur fuer die aktuelle Berechnung. Begruendung: ein Knoten wie
-`T4_CLOTH_LEVEL3@3` taucht in vielen verschiedenen Bauplaenen wieder auf (jedes
-Item, das verzauberten T4-Stoff braucht) und `kostenGesamt()` memoisiert ohnehin
-global ueber `item@stufe`, nicht pfadabhaengig - eine einmal getroffene
-Entscheidung soll deshalb nicht bei jedem neuen Suchbegriff verloren gehen.
-Identisch zur bestehenden Persistenz der FCE-Ausnahmen.
+**Fokus-Schalter, Eigenpreis-Badge, Preisalter-Anzeige, Unvollstaendig-
+Warnung, Gesperrt-Karten:** alle im Browser tatsaechlich angeklickt bzw.
+erzwungen und geprueft (Königliche Gugel des Adepten .3, Lymhurst):
+Fokus-Schalter dreimal durchgeklickt (automatisch -> immer -> nie ->
+automatisch), Alle-Wege-Tabelle reagierte je Klick korrekt; Eigenpreis-Badge
+durch Setzen echter Eigenpreise fuer zwei nicht handelbare Zutaten sichtbar
+gemacht; Preisalter-Tooltip per DOM-Abfrage bestaetigt; Unvollstaendig-Warnung
+war durchgehend sichtbar (fehlende Stationssaetze); Gesperrt-Karte (rot,
+Badge "Gesperrt", Item+Stufe, Grund) durch `maxPreisAlterMin=0` erzwungen und
+sowohl als Wurzel- als auch als generische Karte bestaetigt, danach
+zurueckgesetzt.
 
-**Konkretes Zahlenbeispiel (Abnahmekriterium), live im Browser mit echten
-Marktpreisen nachvollzogen** (Königliche Gugel des Adepten .3, Lymhurst,
-FCE 0, Fokuswert 0):
-
-- Ohne Regel (Automatik): `T4_CLOTH_LEVEL3.3` wird mit Fokus gecraftet
-  (Rueckgewinnung 53,9 %), Wurzel kostet **150.808 Silber, 3.677 Fokus**.
-- Mit Kategorie-Regel `fiber -> nie`: dieselbe Craft-mit-Fokus-Variante wird
-  ausgeschlossen; da craften-ohne-Fokus (Rueckgewinnung nur noch 36,7 %, ca.
-  7.605 Silber/Stueck) teurer ist als der Marktpreis, kauft die App
-  `T4_CLOTH_LEVEL3.3` jetzt direkt (5.835 Silber/Stueck). Wurzel kostet
-  **152.245 Silber (+1.437), 2.298 Fokus (-1.379)** - nachweislich teurer, wie
-  vom Nutzer gewuenscht erzwungen, nicht zufaellig gleich geblieben.
-- Knoten-Uebersteuerung `"T4_CLOTH_LEVEL3@3": "nie"` (ohne Kategorie-Regel)
-  liefert dieselben 152.245/2.298 wie oben; `"immer"` liefert wieder die
-  Automatik-Zahlen 150.808/3.677 (hier ohnehin schon die automatische Wahl).
-  Vorrang Knoten vor Kategorie eigens mit einer Kombination beider Regeln
-  gegeneinander getestet (s. Tests).
-
-**Tests:** 17 neue in `tests/test.html` (Regressionstest ohne jede Regel,
-Kategorie-Regel "nie" inkl. Handrechnung, Vorrang Knoten vor Kategorie, "immer"
-an einem Rezept ohne Fokuswert). Testsuite 119 -> 136 gruen. Zusaetzlich, weil
-dieses Feature den Rechenkern selbst aendert: unabhaengige Nachrechnung per
-Node-Skript im Scratchpad (eigener Testgraph, vier Faelle inkl. Handrechnung
-der erwarteten RRR/Silberwerte), alle bestanden, bevor die Browser-Pruefung
-folgte.
-
-**Browser-Cache-Falle erneut aufgetreten, jetzt als wiederkehrendes Muster
-bestaetigt** (s. Backlog/Umgebungs-Fund bei v1.1.0 in der Historie): eine
-Aenderung an `js/rechenkern.js` blieb sowohl im wiederverwendeten Tab als auch
-in einem frisch geoeffneten neuen Tab unwirksam (`fetch(...,{cache:'no-store'})`
-zeigte den frischen Dateiinhalt, das ausgefuehrte Skript verhielt sich aber
-nach dem alten). Ausweg wie beim letzten Mal: eine temporaere Kopie mit
-cache-gebusteten `?v=timestamp`-Pfaden fuer `tests/test.html` UND
-`Kostenrechner.html`, damit 136/136 gruen sowie das obige Zahlenbeispiel im
-echten Browser bestaetigt, beide Kopien danach geloescht (Original-Dateien
-unveraendert). Fuer kuenftige Sitzungen: bei einer Aenderung an `js/*.js`, die
-im Browser nicht ankommt, direkt zu dieser Umgehung greifen, nicht erst lange
-mit Hard-Reload experimentieren.
+**Tests:** 136/136 weiterhin gruen, unveraendert (reine Darstellungsaenderung,
+keine neue Testabdeckung noetig - die getesteten `UI.*`-Funktionen sind reine,
+DOM-freie Helfer, `baueKnoten()`/`altBeschreibung()` waren nie oeffentlich und
+sind nicht Teil der Testsuite).
 
 ## Dateistruktur
 
 Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0) plus
-Feature "Fokuseinsatz steuerbar machen" (v1.2.0):
+Feature "Fokuseinsatz steuerbar machen" (v1.2.0) plus Feature "Bauplan-Ansicht
+ergonomisch ueberarbeitet" (v1.3.0, nur `Kostenrechner.html`/`js/ui.js`
+geaendert, keine Dateien neu hinzugekommen):
 
 ```
 Kostenrechner/
@@ -144,9 +136,10 @@ Kostenrechner/
                               Schaetzung (P6), fokusRegelFuer() steuert mit/ohne Fokus je
                               Knoten/Kategorie (v1.2.0)
     ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
-                              Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0): Suche
+                              Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0,
+                              Bauplan-Knoten als Karten statt Fliesstext v1.3.0): Suche
                               mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
-                              Pflegeansicht (P6)
+                              Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
   kostenrechner-KONTEXT.md
   kostenrechner-KONTEXT-HISTORIE.md
@@ -160,6 +153,7 @@ Kostenrechner/
   Versionen/v1.0.1 - Zeitzonen-Bug Preisalter behoben/
   Versionen/v1.1.0 - Craft-Stadt waehlbar/
   Versionen/v1.2.0 - Fokuseinsatz steuerbar machen/
+  Versionen/v1.3.0 - Bauplan-Ansicht ergonomisch ueberarbeitet/
   tests/test.html           136 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
