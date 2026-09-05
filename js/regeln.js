@@ -232,6 +232,128 @@ const REGELN = (function () {
   }
 
   // -----------------------------------------------------------------------
+  // Spezialisierungsknoten am Schicksalsbrett (05.09.2026, Zyklus
+  // "FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie"). Ersetzt
+  // die fruehere, strukturell falsche Herleitung "FCE = Meisterschaftsstufe x
+  // 30 + Spezialisierungsstufe x 250" (js/ui.js, ehemals
+  // fceAusSchicksalsbrett()): die nahm faelschlich EINEN globalen
+  // Spezialisierungswert an und ignorierte sowohl den je Knotentyp
+  // unterschiedlichen Unique-/Mutual-Anteil (s. CLAUDE.md "FCE je Stufe
+  // haengt vom Knotentyp ab") als auch, dass der Mutual-Anteil JEDES
+  // Spezialisierungsknotens auf ALLE ANDEREN Knoten derselben Kategorie
+  // wirkt, nicht nur auf sich selbst.
+  //
+  // Modell: pro craftingcategory (falls hier abgebildet) ein Knotentyp mit
+  // Unique-/Mutual-/Meisterschafts-FCE je Stufe (Tabelle CLAUDE.md). Die
+  // einzelnen Spezialisierungsknoten werden NICHT von Hand gepflegt, sondern
+  // aus dem Rezeptgraphen abgeleitet: alle Items derselben craftingcategory,
+  // gruppiert nach ihrem Namen ohne Tier-Praefix (z.B. T4_MAIN_SWORD bis
+  // T8_MAIN_SWORD -> ein Knoten "MAIN_SWORD"). Das ist eine Naeherung (echte
+  // Schicksalsbrett-Knoten koennen anders geschnitten sein), deshalb bleibt
+  // die bestehende kategorieweite FCE-Ausnahme (opts.fceUeberschreibungen[cc]
+  // in rechenkern.js) als Freitext-Fallback erhalten: sie gilt automatisch
+  // weiter, solange fuer eine Kategorie hier keine (oder ausschliesslich
+  // Nullstufen-)Eingabe gemacht wurde, s. js/ui.js/fceUeberschreibungenFuerOpts().
+  // -----------------------------------------------------------------------
+
+  const SPEZ_TYP = {
+    // Ruestungs-/Waffenknoten und Veredeln teilen dieselben Werte (250/30 je
+    // Stufe, plus eigener Meisterschaftsknoten mit 30 je Stufe).
+    waffen_ruestung: { unique: 250, mutual: 30, mastery: 30, einFeld: false },
+    veredeln: { unique: 250, mutual: 30, mastery: 30, einFeld: false },
+    umhang: { unique: 370, mutual: 0, mastery: 30, einFeld: false },
+    tasche: { unique: 340, mutual: 0, mastery: 30, einFeld: false },
+    // Uebrige Werkzeuge: Meisterschaft und Spezialisierung sind zu EINEM
+    // Knoten verschmolzen ("fused"), kein getrennter Meisterschaftsknoten,
+    // s. CLAUDE.md "Fokuskosten"/Wiki Specializations.
+    werkzeug_fused: { unique: 250, mutual: 60, mastery: 0, einFeld: true },
+    // Speisen (Koch) und Traenke (Alchemist): gleiche Struktur wie Waffen/
+    // Ruestung (250/30 + eigene Meisterschaft 30 je Stufe), nur
+    // unterschiedliche Anzahl Spezialisierungsknoten (Koch 9, Alchemist 8)
+    // und Maximalwert (55.000 bzw. 52.000 FCE laut Wiki "Specializations").
+    speise: { unique: 250, mutual: 30, mastery: 30, einFeld: false },
+    trank: { unique: 250, mutual: 30, mastery: 30, einFeld: false },
+  };
+
+  const KATEGORIE_ZU_SPEZTYP = {
+    sword: "waffen_ruestung", axe: "waffen_ruestung", mace: "waffen_ruestung", hammer: "waffen_ruestung",
+    crossbow: "waffen_ruestung", bow: "waffen_ruestung", dagger: "waffen_ruestung", quarterstaff: "waffen_ruestung",
+    naturestaff: "waffen_ruestung", spear: "waffen_ruestung", arcanestaff: "waffen_ruestung", firestaff: "waffen_ruestung",
+    holystaff: "waffen_ruestung", cursestaff: "waffen_ruestung", froststaff: "waffen_ruestung",
+    plate_armor: "waffen_ruestung", plate_helmet: "waffen_ruestung", plate_shoes: "waffen_ruestung",
+    cloth_armor: "waffen_ruestung", cloth_helmet: "waffen_ruestung", cloth_shoes: "waffen_ruestung",
+    leather_armor: "waffen_ruestung", leather_helmet: "waffen_ruestung", leather_shoes: "waffen_ruestung",
+    fiber: "veredeln", ore: "veredeln", rock: "veredeln", hide: "veredeln", wood: "veredeln",
+    cape: "umhang",
+    bag: "tasche",
+    tools: "werkzeug_fused", gatherergear: "werkzeug_fused",
+    food: "speise",
+    potion: "trank",
+    // offhand, knuckles, meat_* absichtlich NICHT abgebildet, s. CLAUDE.md
+    // "Craft-Kategorie zu Gebaeude": keine eindeutige Wiki-Zuordnung. Bleiben
+    // beim bisherigen Freitext-Fallback (opts.fceUeberschreibungen[cc]).
+  };
+
+  function spezTypVonKategorie(cc) {
+    return (cc && KATEGORIE_ZU_SPEZTYP[cc]) || null;
+  }
+
+  /** Gruppenschluessel eines Items: uniquename ohne fuehrendes Tier-Praefix (T1_..T8_). */
+  function gruppenSchluesselVonItem(item) {
+    return String(item || "").replace(/^T\d+_/, "");
+  }
+
+  /**
+   * Alle Spezialisierungsknoten-Gruppen einer Kategorie, abgeleitet aus dem
+   * Rezeptgraphen (nicht von Hand gepflegt): jedes Item mit dieser
+   * craftingcategory, gruppiert nach gruppenSchluesselVonItem(). Sortiert
+   * alphabetisch nach Gruppenschluessel fuer eine stabile Anzeige.
+   * @returns {{schluessel: string, items: string[]}[]}
+   */
+  function spezialisierungsGruppen(cc, graph) {
+    const g = aktuellerGraph(graph);
+    if (!g || !cc) return [];
+    const gruppen = {};
+    Object.keys(g.items).forEach((item) => {
+      const node = g.items[item];
+      if (!node || node.cc !== cc) return;
+      const schluessel = gruppenSchluesselVonItem(item);
+      if (!gruppen[schluessel]) gruppen[schluessel] = { schluessel, items: [] };
+      gruppen[schluessel].items.push(item);
+    });
+    return Object.keys(gruppen)
+      .sort()
+      .map((k) => {
+        gruppen[k].items.sort();
+        return gruppen[k];
+      });
+  }
+
+  /**
+   * FCE fuer einen Spezialisierungsknoten (Gruppe `gruppenSchluessel`)
+   * innerhalb der Kategorie `cc`: eigener Unique-Anteil (Stufe dieses
+   * Knotens) + Mutual-Anteil ALLER ANDEREN Knoten derselben Kategorie (deren
+   * Stufe x Mutual je Stufe) + bei getrenntem Meisterschaftsknoten dessen
+   * Anteil (Meisterschaftsstufe x 30). 0, wenn die Kategorie hier nicht
+   * abgebildet ist (s. KATEGORIE_ZU_SPEZTYP).
+   * @param {string} cc
+   * @param {string} gruppenSchluessel Gruppe des Zielknotens
+   * @param {Object<string,number>} knotenStufen gruppenSchluessel -> Stufe (>= 0)
+   * @param {number} [meisterschaftsstufe] nur bei getrenntem Meisterschaftsknoten (einFeld: false)
+   */
+  function fceAusSpezialisierungsknoten(cc, gruppenSchluessel, knotenStufen, meisterschaftsstufe) {
+    const typ = SPEZ_TYP[spezTypVonKategorie(cc)];
+    if (!typ) return 0;
+    const stufen = knotenStufen || {};
+    let fce = Math.max(0, stufen[gruppenSchluessel] || 0) * typ.unique;
+    Object.keys(stufen).forEach((k) => {
+      if (k !== gruppenSchluessel) fce += Math.max(0, stufen[k] || 0) * typ.mutual;
+    });
+    if (!typ.einFeld) fce += Math.max(0, meisterschaftsstufe || 0) * typ.mastery;
+    return fce;
+  }
+
+  // -----------------------------------------------------------------------
   // Qualitaetsstufen: Craft-Qualitaetswurf (Korn) und Reroll an der
   // Reparaturstation. S. ../../CLAUDE.md "Craft-Qualitaetswurf" und
   // "Qualitaet rerollen an der Reparaturstation" fuer die Belege.
@@ -578,6 +700,90 @@ const REGELN = (function () {
     pruefe("Kategorie knuckles -> eigene Gebuehrengruppe", gebaeudeVonKategorie("knuckles") !== null && gebaeudeVonKategorie("knuckles") !== "Kriegerschmiede");
     pruefe("Kategorie meat_cow -> Tierhaltung", gebaeudeVonKategorie("meat_cow") === "Tierhaltung");
 
+    // Spezialisierungsknoten (05.09.2026, Zyklus "FCE-Ableitung ueber
+    // Schicksalsbrett-Knotenliste je Kategorie")
+    pruefe("spezTypVonKategorie(sword) = waffen_ruestung", spezTypVonKategorie("sword") === "waffen_ruestung");
+    pruefe("spezTypVonKategorie(fiber) = veredeln", spezTypVonKategorie("fiber") === "veredeln");
+    pruefe("spezTypVonKategorie(cape) = umhang", spezTypVonKategorie("cape") === "umhang");
+    pruefe("spezTypVonKategorie(bag) = tasche", spezTypVonKategorie("bag") === "tasche");
+    pruefe("spezTypVonKategorie(tools) = werkzeug_fused", spezTypVonKategorie("tools") === "werkzeug_fused");
+    pruefe("spezTypVonKategorie(gatherergear) = werkzeug_fused", spezTypVonKategorie("gatherergear") === "werkzeug_fused");
+    pruefe("spezTypVonKategorie(food) = speise", spezTypVonKategorie("food") === "speise");
+    pruefe("spezTypVonKategorie(potion) = trank", spezTypVonKategorie("potion") === "trank");
+    pruefe(
+      "spezTypVonKategorie(offhand/knuckles/meat_cow) = null (keine eindeutige Wiki-Zuordnung, bleibt Freitext-Fallback)",
+      spezTypVonKategorie("offhand") === null && spezTypVonKategorie("knuckles") === null && spezTypVonKategorie("meat_cow") === null
+    );
+
+    pruefe("gruppenSchluesselVonItem(T4_MAIN_SWORD) = MAIN_SWORD", gruppenSchluesselVonItem("T4_MAIN_SWORD") === "MAIN_SWORD");
+    pruefe("gruppenSchluesselVonItem(T8_HEAD_CLOTH_SET1) = HEAD_CLOTH_SET1", gruppenSchluesselVonItem("T8_HEAD_CLOTH_SET1") === "HEAD_CLOTH_SET1");
+    pruefe(
+      "gruppenSchluesselVonItem: Item ohne Tier-Praefix bleibt unveraendert (z.B. Waehrungscodes)",
+      gruppenSchluesselVonItem("QUESTITEM_TOKEN_ROYAL_T4") === "QUESTITEM_TOKEN_ROYAL_T4"
+    );
+
+    (function () {
+      // waffen_ruestung: unique 250, mutual 30, mastery 30. Knoten A Stufe 10,
+      // Knoten B Stufe 5 (wirkt nur als Mutual auf A), Meisterschaft 3.
+      const stufen = { A: 10, B: 5 };
+      const erwartet = 10 * 250 + 5 * 30 + 3 * 30; // 2.500 + 150 + 90 = 2.740
+      pruefe(
+        "fceAusSpezialisierungsknoten (Waffen/Ruestung): eigener Unique + fremder Mutual + Meisterschaft",
+        fceAusSpezialisierungsknoten("sword", "A", stufen, 3) === erwartet,
+        fceAusSpezialisierungsknoten("sword", "A", stufen, 3) + " vs " + erwartet
+      );
+    })();
+    (function () {
+      // umhang: mutual 0 -> der fremde Knoten B traegt NICHTS bei, nur eigener
+      // Unique (370/Stufe) und die eigene Meisterschaft (30/Stufe).
+      const stufen = { A: 4, B: 9 };
+      const erwartet = 4 * 370 + 9 * 0 + 2 * 30; // 1.480 + 0 + 60 = 1.540
+      pruefe(
+        "fceAusSpezialisierungsknoten (Umhaenge): kein Mutual-Anteil von anderen Knoten (370/0)",
+        fceAusSpezialisierungsknoten("cape", "A", stufen, 2) === erwartet,
+        fceAusSpezialisierungsknoten("cape", "A", stufen, 2) + " vs " + erwartet
+      );
+    })();
+    (function () {
+      // werkzeug_fused: unique 250, mutual 60, KEINE getrennte Meisterschaft -
+      // ein uebergebener Meisterschaftswert wird ignoriert (einFeld: true).
+      const stufen = { A: 5, B: 2 };
+      const erwartet = 5 * 250 + 2 * 60; // 1.250 + 120 = 1.370, ohne Meisterschaftsanteil
+      const mitIgnorierterMeisterschaft = fceAusSpezialisierungsknoten("tools", "A", stufen, 100);
+      pruefe(
+        "fceAusSpezialisierungsknoten (uebrige Werkzeuge, fused): Meisterschaftsparameter wird ignoriert",
+        mitIgnorierterMeisterschaft === erwartet,
+        mitIgnorierterMeisterschaft + " vs " + erwartet
+      );
+    })();
+    pruefe(
+      "fceAusSpezialisierungsknoten: nicht abgebildete Kategorie (offhand) liefert immer 0",
+      fceAusSpezialisierungsknoten("offhand", "X", { X: 50 }, 50) === 0
+    );
+
+    if (typeof REZEPTGRAPH !== "undefined") {
+      (function () {
+        const gruppen = spezialisierungsGruppen("sword");
+        const mainSword = gruppen.find((g) => g.schluessel === "MAIN_SWORD");
+        pruefe(
+          "spezialisierungsGruppen(sword) findet die Gruppe MAIN_SWORD mit T4_MAIN_SWORD bis T8_MAIN_SWORD",
+          !!mainSword && mainSword.items.indexOf("T4_MAIN_SWORD") !== -1 && mainSword.items.indexOf("T8_MAIN_SWORD") !== -1,
+          JSON.stringify(mainSword)
+        );
+      })();
+      (function () {
+        const gruppen = spezialisierungsGruppen("cloth_helmet");
+        const gugel = gruppen.find((g) => g.schluessel === "HEAD_CLOTH_SET1");
+        pruefe(
+          "spezialisierungsGruppen(cloth_helmet) findet die Gruppe HEAD_CLOTH_SET1 (Gelehrtengugel ueber alle Tiers)",
+          !!gugel && gugel.items.indexOf("T4_HEAD_CLOTH_SET1") !== -1,
+          JSON.stringify(gugel)
+        );
+      })();
+    } else {
+      pruefe("spezialisierungsGruppen-Gegenproben uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+    }
+
     // P5-Nacharbeit (oberflaechen-pruefer, Befund 5): Verteidigung in der Tiefe
     // gegen negative/unsinnige Eingaben direkt in den Kernfunktionen, unabhaengig
     // davon, ob der eigentliche App-Pfad (stationssatzFuer in rechenkern.js,
@@ -777,6 +983,12 @@ const REGELN = (function () {
     fokusMultiplikator,
     fokusKosten,
     fceAusAbgelesenemFokus,
+    SPEZ_TYP,
+    KATEGORIE_ZU_SPEZTYP,
+    spezTypVonKategorie,
+    gruppenSchluesselVonItem,
+    spezialisierungsGruppen,
+    fceAusSpezialisierungsknoten,
     rerollUebergaenge,
     rerollKostenZuQualitaet,
     qualitaetWurfErfolgswahrscheinlichkeit,

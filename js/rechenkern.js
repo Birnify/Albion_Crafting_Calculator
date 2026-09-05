@@ -51,7 +51,9 @@ const RECHENKERN = (function () {
       stadt: o.stadt || "Lymhurst",
       stationssaetze: o.stationssaetze || {}, // Gebaeude/Gebuehrengruppe -> Satz (z.B. 380)
       fce: o.fce != null ? o.fce : 0, // globale Focus Cost Efficiency
-      fceUeberschreibungen: o.fceUeberschreibungen || {}, // craftingcategory -> FCE
+      // craftingcategory -> FCE (Freitext/Fallback) UND/ODER "craftingcategory|Gruppe" -> FCE
+      // (aus dem Spezialisierungsknoten-Panel abgeleitet, s. fceFuer() unten).
+      fceUeberschreibungen: o.fceUeberschreibungen || {},
       // Fokuseinsatz steuerbar machen (Feature 05.09.2026): zwei Ebenen nach
       // demselben Muster wie fceUeberschreibungen oben, s. dortiger Kommentar
       // und fokusRegelFuer() weiter unten. Werte je "immer"/"nie", ein
@@ -91,8 +93,26 @@ const RECHENKERN = (function () {
     };
   }
 
-  function fceFuer(cc, opts) {
-    if (cc && opts.fceUeberschreibungen[cc] != null) return opts.fceUeberschreibungen[cc];
+  /**
+   * Effektive FCE fuer einen Craft-Schritt, drei Ebenen, jede schlaegt die
+   * naechst allgemeinere (05.09.2026, Zyklus "FCE-Ableitung ueber
+   * Schicksalsbrett-Knotenliste je Kategorie"):
+   *   1. Knoten-spezifisch: opts.fceUeberschreibungen["cc|Gruppe"], befuellt
+   *      aus dem Spezialisierungsknoten-Panel (s. REGELN.fceAusSpezialisierungsknoten()).
+   *   2. Kategorie-weiter Freitext: opts.fceUeberschreibungen[cc], die
+   *      urspruengliche P5-Ausnahme, jetzt zugleich der Fallback fuer
+   *      Kategorien ohne abgeleitete Knotenliste (offhand/knuckles/meat_*)
+   *      bzw. fuer Faelle, in denen die automatische Gruppierung nicht passt.
+   *   3. Globaler Wert: opts.fce.
+   * js/ui.js befuellt beide Ueberschreibungs-Schluessel in derselben Map,
+   * s. dort fceUeberschreibungenFuerOpts().
+   */
+  function fceFuer(item, cc, opts) {
+    if (cc) {
+      const knotenSchluessel = cc + "|" + REGELN.gruppenSchluesselVonItem(item);
+      if (opts.fceUeberschreibungen[knotenSchluessel] != null) return opts.fceUeberschreibungen[knotenSchluessel];
+      if (opts.fceUeberschreibungen[cc] != null) return opts.fceUeberschreibungen[cc];
+    }
     return opts.fce;
   }
 
@@ -308,7 +328,7 @@ const RECHENKERN = (function () {
     const gebaeude = REGELN.gebaeudeVonKategorie(cc);
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
-    const fce = fceFuer(cc, opts);
+    const fce = fceFuer(item, cc, opts);
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) / amountcrafted : 0;
     const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
@@ -643,7 +663,7 @@ const RECHENKERN = (function () {
     const gebaeude = REGELN.gebaeudeVonKategorie(cc);
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
-    const fce = fceFuer(cc, opts);
+    const fce = fceFuer(item, cc, opts);
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) / amountcrafted : 0;
     const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);

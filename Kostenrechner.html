@@ -178,6 +178,12 @@ details>.body{padding:0 20px 20px}
 .konv .zeile{display:flex;align-items:end;gap:8px;flex-wrap:wrap;margin-top:8px}
 .konv .zeile .feld{min-height:auto;min-width:110px;flex:1}
 .konv .erg{font-size:11.5px;color:var(--dim);margin-top:6px}
+.spezknoten details{border:1px solid var(--line);background:var(--bg);margin:0 0 8px;border-radius:8px}
+.spezknoten details>summary{padding:8px 12px;font-weight:600;font-size:12.5px}
+.spezknoten details>.body{padding:0 12px 12px}
+.spezknoten .meister{display:flex;align-items:end;gap:8px;margin-bottom:8px}
+.spezknoten .meister .feld{min-height:auto;min-width:160px;flex:0 0 auto}
+.spezknoten .summe{font-size:11.5px;color:var(--dim);margin-top:6px}
 </style>
 </head>
 <body>
@@ -316,12 +322,7 @@ details>.body{padding:0 20px 20px}
 </div>
 
 <div class="konv">
-  <div class="sek-t" style="margin-bottom:6px">FCE ableiten (setzt das Feld oben)</div>
-  <div class="zeile">
-    <div class="feld"><label for="skMeister">Meisterschaftsstufe</label><input type="number" id="skMeister" min="0" step="1" value="0"></div>
-    <div class="feld"><label for="skSpez">Spezialisierungsstufe</label><input type="number" id="skSpez" min="0" step="1" value="0"></div>
-    <button id="skUebernehmen" class="mini" type="button">Aus Schicksalsbrett uebernehmen</button>
-  </div>
+  <div class="sek-t" style="margin-bottom:6px">FCE aus abgelesenem Fokus ableiten (setzt das Feld oben)</div>
   <div class="zeile">
     <div class="feld"><label for="abgAbgelesen" title="Der Fokuswert, den das Craft-Fenster fuer diesen Schritt tatsaechlich anzeigt.">Abgelesener Fokus</label><input type="number" id="abgAbgelesen" min="0" step="1"></div>
     <div class="feld"><label for="abgGrundfokus" title="Der Rohfokus laut Dump fuer denselben Schritt. Erscheint automatisch, sobald ein Bauplan mit diesem Craft-Schritt berechnet wurde (im Baum unten unter dem jeweiligen Schritt sichtbar).">Grundfokus (Dump)</label><input type="number" id="abgGrundfokus" min="0" step="1"></div>
@@ -331,7 +332,14 @@ details>.body{padding:0 20px 20px}
 </div>
 
 <div style="margin-top:16px">
-  <label style="margin-bottom:6px">Fokus-Effizienz-Ausnahmen je Kategorie</label>
+  <label style="margin-bottom:6px" title="Pro Kategorie im Bauplan: alle Spezialisierungsknoten dieser Kategorie, automatisch aus dem Rezeptgraphen abgeleitet (Items derselben Kategorie ohne Tier-Praefix gruppiert). Eigener Unique-Anteil + Mutual-Anteil ALLER anderen Knoten derselben Kategorie + ggf. eigene Meisterschaftsstufe, s. CLAUDE.md 'FCE je Stufe haengt vom Knotentyp ab'.">Spezialisierungsknoten je Kategorie</label>
+  <div class="hint">Stufen direkt vom Schicksalsbrett uebernehmen. Deckt Waffen/Ruestung, Veredeln, Umhaenge, Taschen, uebrige Werkzeuge, Speisen und Traenke ab. Solange hier nichts eingetragen ist (alle Stufen 0), gilt weiterhin die Fokus-Effizienz-Ausnahme unten bzw. der globale Wert oben.</div>
+  <div class="spezknoten" id="spezKnotenContainer"></div>
+  <button id="spezKnotenAlleZeigenBtn" class="mini" type="button" style="margin-top:4px">Alle abgebildeten Kategorien anzeigen</button>
+</div>
+
+<div style="margin-top:16px">
+  <label style="margin-bottom:6px" title="Manueller FCE-Wert fuer eine ganze Kategorie. Fallback fuer Kategorien ohne Spezialisierungsknoten-Panel oben (offhand, knuckles, meat_*) und fuer Faelle, in denen die automatische Knoten-Ableitung dort nicht passt (Freitext statt Einzelknoten). Wird ignoriert, sobald fuer dieselbe Kategorie oben mindestens eine Knotenstufe gesetzt ist.">Fokus-Effizienz-Ausnahmen je Kategorie (Freitext-Fallback)</label>
   <div class="hint">Leer heisst: globaler Wert oben gilt. Zeigt zuerst die Kategorien im aktuell berechneten Bauplan.</div>
   <table class="klein-tbl" id="fceAusnahmenTabelle"><thead><tr><th>Kategorie</th><th>FCE-Ausnahme</th></tr></thead><tbody></tbody></table>
   <button id="fceAlleZeigenBtn" class="mini" type="button" style="margin-top:8px">Alle 43 Kategorien anzeigen</button>

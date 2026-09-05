@@ -29,7 +29,16 @@ const UI = (function () {
       qualitaetsIndex: 0,
       qualitaetsChancenpunkte: 0,
       fce: 0, // 0 = volle Rohfokuskosten, die konservative Richtung (zu teuer statt zu billig)
-      fceAusnahmen: {}, // craftingcategory -> FCE
+      fceAusnahmen: {}, // craftingcategory -> FCE (Freitext-Fallback, s. spezialisierung unten)
+      // Spezialisierungsknoten-Panel (05.09.2026, Zyklus "FCE-Ableitung ueber
+      // Schicksalsbrett-Knotenliste je Kategorie"): craftingcategory -> { meisterschaft, knoten }.
+      // knoten ist gruppenSchluessel (REGELN.gruppenSchluesselVonItem) -> Stufe.
+      // meisterschaft gilt nur fuer Kategorien mit getrenntem Meisterschaftsknoten
+      // (REGELN.SPEZ_TYP[...].einFeld === false); bei "uebrige Werkzeuge" (fused)
+      // bleibt es ungenutzt. Ersetzt die fruehere fceAusSchicksalsbrett()-Quick-
+      // Konvertierung (Meisterschaft x 30 + EINE Spezialisierung x 250), die den
+      // Mutual-Anteil anderer Knoten ignorierte, s. regeln.js fuer die Herleitung.
+      spezialisierung: {},
       // Fokuseinsatz steuerbar machen (Feature 05.09.2026): fokusRegelJeKategorie
       // (craftingcategory -> "immer"|"nie") gilt fuer JEDES Vorkommen dieser
       // Kategorie im ganzen Baum, genau wie fceAusnahmen oben.
@@ -80,6 +89,7 @@ const UI = (function () {
       basis.qualitaetsChancenpunkte = daten.qualitaetsChancenpunkte != null ? daten.qualitaetsChancenpunkte : basis.qualitaetsChancenpunkte;
       basis.fce = daten.fce != null ? daten.fce : basis.fce;
       basis.fceAusnahmen = daten.fceAusnahmen || {};
+      basis.spezialisierung = daten.spezialisierung || {};
       basis.fokusRegelJeKategorie = daten.fokusRegelJeKategorie || {};
       basis.fokusUebersteuerungJeKnoten = daten.fokusUebersteuerungJeKnoten || {};
       basis.fokuswert = daten.fokuswert != null ? daten.fokuswert : basis.fokuswert;
@@ -174,9 +184,27 @@ const UI = (function () {
     return liste[1];
   }
 
-  /** FCE aus den Schicksalsbrett-Stufen: Meisterschaft x 30 + Spezialisierung x 250. */
-  function fceAusSchicksalsbrett(meisterschaftsstufe, spezialisierungsstufe) {
-    return (meisterschaftsstufe || 0) * 30 + (spezialisierungsstufe || 0) * 250;
+  /**
+   * Anzeige-Aufbereitung der Spezialisierungsknoten-Gruppen einer Kategorie
+   * (05.09.2026, Zyklus "FCE-Ableitung ueber Schicksalsbrett-Knotenliste je
+   * Kategorie"), fuer das Panel in den Einstellungen: pro Gruppe ein
+   * Anzeigename (aus dem tiefsten verfuegbaren Tier dieser Gruppe, ueber
+   * REZEPTGRAPH.namen) plus der Gruppenschluessel selbst als Tooltip/Fallback.
+   * Reine Funktion (nur Lesezugriffe auf REZEPTGRAPH/REGELN), damit sie ohne
+   * DOM testbar bleibt.
+   * @param {string} cc
+   * @returns {{schluessel:string, name:string, items:string[]}[]}
+   */
+  function spezKnotenAnzeigeGruppen(cc) {
+    return REGELN.spezialisierungsGruppen(cc).map((g) => {
+      const repraesentant = g.items[0];
+      return { schluessel: g.schluessel, name: nameVonExtern(repraesentant, g.schluessel), items: g.items };
+    });
+  }
+
+  /** nameVon()-Aequivalent ohne den geschlossenen boot()-Scope, fuer spezKnotenAnzeigeGruppen() oben. */
+  function nameVonExtern(uniquename, fallback) {
+    return (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.namen && REZEPTGRAPH.namen[uniquename]) || fallback || uniquename;
   }
 
   /** Fokus-Multiplikator einer FCE als Prozentzahl (0..100). */
@@ -312,13 +340,13 @@ const UI = (function () {
     const fceEingabeEl = document.getElementById("fceEingabe");
     const fceProzentAnzeigeEl = document.getElementById("fceProzentAnzeige");
     const fokuswertEl = document.getElementById("fokuswert");
-    const skMeisterEl = document.getElementById("skMeister");
-    const skSpezEl = document.getElementById("skSpez");
-    const skUebernehmenBtn = document.getElementById("skUebernehmen");
     const abgAbgelesenEl = document.getElementById("abgAbgelesen");
     const abgGrundfokusEl = document.getElementById("abgGrundfokus");
     const abgUebernehmenBtn = document.getElementById("abgUebernehmen");
     const fceHerkunftEl = document.getElementById("fceHerkunft");
+
+    const spezKnotenContainerEl = document.getElementById("spezKnotenContainer");
+    const spezKnotenAlleZeigenBtn = document.getElementById("spezKnotenAlleZeigenBtn");
 
     const fceAusnahmenTabelleEl = document.getElementById("fceAusnahmenTabelle");
     const fceAlleZeigenBtn = document.getElementById("fceAlleZeigenBtn");
@@ -367,6 +395,8 @@ const UI = (function () {
       preiseQualitaetRoh: null, // Feature "Qualitaetsstufen": zweiter, quality-spezifischer Preisdatensatz, s. berechnen()
       ergebnis: null,
       fceAlleZeigen: false,
+      spezKnotenAlleZeigen: false,
+      spezKnotenOffen: {}, // craftingcategory -> vom Nutzer explizit gesetzter Aufklapp-Zustand
       fokusRegelAlleZeigen: false,
       tagAlleZeigen: false,
     };
@@ -678,6 +708,32 @@ const UI = (function () {
       return out;
     }
 
+    /**
+     * Fuegt die kategorieweite Freitext-Ausnahme (einstellungen.fceAusnahmen,
+     * "cc" -> FCE) und die aus dem Spezialisierungsknoten-Panel abgeleiteten,
+     * knotenspezifischen Werte ("cc|Gruppe" -> FCE) zu EINER Map zusammen, s.
+     * RECHENKERN.fceFuer() fuer die Vorrangreihenfolge. Eine Kategorie liefert
+     * nur dann Knoten-Werte, wenn der Nutzer dort tatsaechlich etwas
+     * eingetragen hat (Summe aller Stufen inkl. Meisterschaft > 0) - sonst
+     * bliebe ein blosses Oeffnen des Panels (alle Stufen 0) faelschlich eine
+     * Ueberschreibung auf "0 FCE" statt weiterhin den Freitext/globalen Wert
+     * gelten zu lassen.
+     */
+    function fceUeberschreibungenFuerOpts() {
+      const out = Object.assign({}, einstellungen.fceAusnahmen);
+      Object.keys(einstellungen.spezialisierung || {}).forEach((cc) => {
+        if (!REGELN.spezTypVonKategorie(cc)) return;
+        const eintrag = einstellungen.spezialisierung[cc] || {};
+        const knotenStufen = eintrag.knoten || {};
+        const summe = Object.values(knotenStufen).reduce((a, b) => a + (b || 0), 0) + (eintrag.meisterschaft || 0);
+        if (summe <= 0) return;
+        REGELN.spezialisierungsGruppen(cc).forEach((g) => {
+          out[cc + "|" + g.schluessel] = REGELN.fceAusSpezialisierungsknoten(cc, g.schluessel, knotenStufen, eintrag.meisterschaft);
+        });
+      });
+      return out;
+    }
+
     function baueOpts() {
       return {
         preise: preiseZuOptsFormat(zustand.preiseRoh || {}),
@@ -689,7 +745,7 @@ const UI = (function () {
         qualitaetsChancenpunkte: einstellungen.qualitaetsChancenpunkte || 0,
         stationssaetze: einstellungen.stationssaetze,
         fce: einstellungen.fce,
-        fceUeberschreibungen: einstellungen.fceAusnahmen,
+        fceUeberschreibungen: fceUeberschreibungenFuerOpts(),
         fokusRegelJeKategorie: einstellungen.fokusRegelJeKategorie,
         fokusUebersteuerungJeKnoten: einstellungen.fokusUebersteuerungJeKnoten,
         fokuswert: einstellungen.fokuswert,
@@ -714,6 +770,7 @@ const UI = (function () {
       renderUnvollstaendig(r);
       renderBauplan(r);
       renderAlleWege(r);
+      renderSpezialisierungsknoten(r);
       renderFceAusnahmen(r);
       renderFokusRegel(r);
       renderTagesbonus(r);
@@ -1219,6 +1276,142 @@ const UI = (function () {
       });
     }
 
+    /**
+     * Spezialisierungsknoten-Panel (05.09.2026, Zyklus "FCE-Ableitung ueber
+     * Schicksalsbrett-Knotenliste je Kategorie"): fuer jede Kategorie mit
+     * einem abgebildeten Knotentyp (REGELN.spezTypVonKategorie) ein
+     * aufklappbarer Block mit ALLEN aus dem Rezeptgraphen abgeleiteten
+     * Knoten-Gruppen dieser Kategorie, nicht nur den im Bauplan vorkommenden
+     * - der Mutual-Anteil wirkt kategorieweit, s. Kommentar in
+     * Kostenrechner.html. Gleicher Verwendete-zuerst/Alle-anzeigen-Umschalter
+     * wie renderFceAusnahmen()/renderFokusRegel() unten, aber zusaetzlich auf
+     * spezTypVonKategorie() gefiltert (nicht jede Kategorie hat ein Modell).
+     */
+    function renderSpezialisierungsknoten(r) {
+      const verwendete = (r && !r.gesperrt ? sammleVerwendeteKategorien(r.weg) : []).filter((cc) => REGELN.spezTypVonKategorie(cc));
+      const alle = ALLE_KATEGORIEN.filter((cc) => REGELN.spezTypVonKategorie(cc));
+      const liste = (zustand.spezKnotenAlleZeigen ? alle.slice() : verwendete).slice().sort();
+      spezKnotenContainerEl.innerHTML = "";
+      if (!liste.length) {
+        spezKnotenContainerEl.innerHTML = "<div class='hint'>Noch keine Kategorie mit Spezialisierungsknoten im Bauplan.</div>";
+        return;
+      }
+      liste.forEach((cc) => {
+        const typSchluessel = REGELN.spezTypVonKategorie(cc);
+        const typ = REGELN.SPEZ_TYP[typSchluessel];
+        const gruppen = spezKnotenAnzeigeGruppen(cc);
+        if (!gruppen.length) return;
+        const istVerwendet = verwendete.indexOf(cc) !== -1;
+        const eintrag = einstellungen.spezialisierung[cc] || { meisterschaft: 0, knoten: {} };
+        const knotenStufen = eintrag.knoten || {};
+
+        function neuStufeSetzen(mutator) {
+          const e = einstellungen.spezialisierung[cc] || (einstellungen.spezialisierung[cc] = { meisterschaft: 0, knoten: {} });
+          if (!e.knoten) e.knoten = {};
+          mutator(e);
+          persistiereUndRechne();
+          renderSpezialisierungsknoten(zustand.ergebnis);
+        }
+
+        const details = document.createElement("details");
+        details.open = zustand.spezKnotenOffen[cc] != null ? zustand.spezKnotenOffen[cc] : istVerwendet;
+        details.addEventListener("toggle", () => {
+          zustand.spezKnotenOffen[cc] = details.open;
+        });
+        const summary = document.createElement("summary");
+        summary.textContent = cc + (istVerwendet ? " (im Bauplan)" : "") + " - " + gruppen.length + " Knoten";
+        details.appendChild(summary);
+
+        const body = document.createElement("div");
+        body.className = "body";
+
+        if (!typ.einFeld) {
+          const meisterZeile = document.createElement("div");
+          meisterZeile.className = "meister";
+          const feld = document.createElement("div");
+          feld.className = "feld";
+          const label = document.createElement("label");
+          label.textContent = "Meisterschaftsstufe";
+          label.title = "Getrennter Meisterschaftsknoten dieser Kategorie: " + typ.mastery + " FCE je Stufe, wirkt auf alle Knoten der Kategorie.";
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0";
+          input.step = "1";
+          input.value = eintrag.meisterschaft || 0;
+          input.addEventListener("change", () => {
+            const wert = Math.max(0, Number(input.value) || 0);
+            input.value = wert;
+            neuStufeSetzen((e) => {
+              e.meisterschaft = wert;
+            });
+          });
+          feld.appendChild(label);
+          feld.appendChild(input);
+          meisterZeile.appendChild(feld);
+          body.appendChild(meisterZeile);
+        }
+
+        const table = document.createElement("table");
+        table.className = "klein-tbl";
+        const thead = document.createElement("thead");
+        thead.innerHTML =
+          "<tr><th>Knoten</th><th>" +
+          (typ.einFeld ? "Knotenstufe" : "Spezialisierungsstufe") +
+          "</th><th title='Eigener Unique-Anteil + Mutual-Anteil aller anderen Knoten dieser Kategorie + ggf. Meisterschaft'>FCE</th></tr>";
+        table.appendChild(thead);
+        const tbody = document.createElement("tbody");
+        gruppen.forEach((g) => {
+          const tr = document.createElement("tr");
+          const stufe = knotenStufen[g.schluessel] || 0;
+          if (stufe > 0) tr.className = "gesetzt";
+          const tdName = document.createElement("td");
+          tdName.textContent = g.name;
+          tdName.title = g.schluessel + " (" + g.items.length + " Tier-Variante" + (g.items.length === 1 ? "" : "n") + "): " + g.items.join(", ");
+          const tdInput = document.createElement("td");
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0";
+          input.step = "1";
+          input.value = stufe;
+          input.addEventListener("change", () => {
+            const wert = Math.max(0, Number(input.value) || 0);
+            input.value = wert;
+            neuStufeSetzen((e) => {
+              if (wert === 0) delete e.knoten[g.schluessel];
+              else e.knoten[g.schluessel] = wert;
+            });
+          });
+          tdInput.appendChild(input);
+          const tdFce = document.createElement("td");
+          tdFce.textContent = formatFokus(REGELN.fceAusSpezialisierungsknoten(cc, g.schluessel, knotenStufen, eintrag.meisterschaft));
+          tr.appendChild(tdName);
+          tr.appendChild(tdInput);
+          tr.appendChild(tdFce);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        body.appendChild(table);
+
+        const summe = Object.values(knotenStufen).reduce((a, b) => a + (b || 0), 0) + (eintrag.meisterschaft || 0);
+        const hinweis = document.createElement("div");
+        hinweis.className = "summe";
+        hinweis.textContent =
+          summe > 0
+            ? "Wirkt fuer alle Craft-Schritte dieser Kategorie, schlaegt die Fokus-Effizienz-Ausnahme unten."
+            : "Noch keine Stufe eingetragen: die Fokus-Effizienz-Ausnahme unten bzw. der globale Wert oben gilt weiterhin.";
+        body.appendChild(hinweis);
+
+        details.appendChild(body);
+        spezKnotenContainerEl.appendChild(details);
+      });
+    }
+
+    spezKnotenAlleZeigenBtn.addEventListener("click", () => {
+      zustand.spezKnotenAlleZeigen = !zustand.spezKnotenAlleZeigen;
+      spezKnotenAlleZeigenBtn.textContent = zustand.spezKnotenAlleZeigen ? "Nur verwendete Kategorien anzeigen" : "Alle abgebildeten Kategorien anzeigen";
+      renderSpezialisierungsknoten(zustand.ergebnis);
+    });
+
     function renderFceAusnahmen(r) {
       const verwendete = r && !r.gesperrt ? sammleVerwendeteKategorien(r.weg) : [];
       const liste = (zustand.fceAlleZeigen ? ALLE_KATEGORIEN.slice() : verwendete).slice().sort();
@@ -1536,15 +1729,6 @@ const UI = (function () {
       persistiereUndRechne();
     });
 
-    skUebernehmenBtn.addEventListener("click", () => {
-      const fce = Math.max(0, fceAusSchicksalsbrett(Number(skMeisterEl.value) || 0, Number(skSpezEl.value) || 0));
-      fceEingabeEl.value = fce;
-      einstellungen.fce = fce;
-      fceHerkunftEl.textContent = "FCE " + fce.toLocaleString("de-DE") + " aus Schicksalsbrett uebernommen.";
-      aktualisiereFceAnzeige();
-      persistiereUndRechne();
-    });
-
     abgUebernehmenBtn.addEventListener("click", () => {
       const abgelesen = Number(abgAbgelesenEl.value);
       const grundfokus = Number(abgGrundfokusEl.value);
@@ -1562,6 +1746,7 @@ const UI = (function () {
 
     // ---- Start ----
     ladeEinstellungenInFormular();
+    renderSpezialisierungsknoten(null);
     renderFceAusnahmen(null);
     renderFokusRegel(null);
     renderTagesbonus(null);
@@ -1580,7 +1765,7 @@ const UI = (function () {
     sammleVerwendeteKategorien,
     sammleVerwendeteGebaeude,
     naechstbesteAlternative,
-    fceAusSchicksalsbrett,
+    spezKnotenAnzeigeGruppen,
     prozentAusFce,
     eigenpreisKoenntHelfen,
     sammleFehlendePreise,

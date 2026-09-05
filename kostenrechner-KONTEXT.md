@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.4.0 · Feature "Qualitaetsstufen"
+Stand: 2026-09-05 · Version: v1.5.0 · FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,124 +21,139 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Feature "Qualitaetsstufen", 05.09.2026, v1.4.0)
+## Aktueller Stand (FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie, 05.09.2026, v1.5.0)
 
-**Vorheriger Stand (v1.3.1, "Standardwert Stationssaetze auf 400 gesetzt") und
-alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+**Vorheriger Stand (v1.4.0, Feature "Qualitaetsstufen") und alles davor**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
 (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag (Orchestrator-Zyklus, Rückfragen aus einem vorherigen Durchlauf
-bereits beantwortet):** eine global wählbare Zielqualität
-(Normal/Gut/Herausragend/Exzellent/Meisterwerk), die für Kaufen, Craften und
-Verkaufen der ganzen Rechnung gilt. Marktpreise unterscheiden sich stark nach
-Qualität (Beleg: Gelehrtengugel T4.4, Normal 53.043 gegen Exzellent 71.581
-Kauforder-Schnitt), die App rechnete bisher ausschließlich Normal.
+**Auftrag (Orchestrator-Zyklus über zwei Sitzungen, drei Rückfragen aus dem
+ersten Durchlauf im zweiten beantwortet):** der bestätigte strukturelle Fehler
+in der bisherigen `fceAusSchicksalsbrett(Meisterschaftsstufe,
+Spezialisierungsstufe)`-Quick-Konvertierung (`js/ui.js`) sollte behoben
+werden. Der Fehler: die Formel nahm EINEN globalen Spezialisierungswert an und
+ignorierte sowohl den je Knotentyp unterschiedlichen Unique-/Mutual-Anteil
+(`CLAUDE.md`, "FCE je Stufe hängt vom Knotentyp ab") als auch, dass der
+Mutual-Anteil JEDES Spezialisierungsknotens auf ALLE ANDEREN Knoten derselben
+Kategorie wirkt, nicht nur auf sich selbst.
 
-**Rechenmodell, `js/rechenkern.js`:** neue Funktion `kostenBeiQualitaet()`,
-ein qualitätsbewusstes Gegenstück zu `kostenGesamt()`, nur erreicht wenn
-`opts.qualitaetsIndex > 0` (0 = Normal = **exakt der bisherige, unveränderte
-Pfad**, keine Verhaltensänderung). Vier Wegearten je Knoten:
+**Rückfrage 1 (Herkunft der Knotenliste), beantwortet:** automatische
+Ableitung aus dem Rezeptgraphen statt Handpflege. Items derselben
+`craftingcategory` werden nach ihrem Namen ohne Tier-Präfix gruppiert (z. B.
+`T4_MAIN_SWORD` bis `T8_MAIN_SWORD` → ein Knoten `MAIN_SWORD`). Pro im
+Bauplan verwendeter Kategorie zeigt die Oberfläche ein Panel mit ALLEN
+abgeleiteten Knoten dieser Kategorie, nicht nur den im Bauplan vorkommenden,
+weil der Mutual-Anteil kategorieweit wirkt. Das ist eine Näherung (echte
+Schicksalsbrett-Knoten können anders geschnitten sein); als Fallback für
+Fehltreffer bleibt die bereits vorhandene kategorieweite Freitext-Ausnahme
+(`Fokus-Effizienz-Ausnahmen je Kategorie`) erhalten und gewinnt automatisch,
+solange für eine Kategorie im neuen Panel nichts eingetragen ist.
 
-- **KAUFEN-BEI-QUALITAET**: Marktpreis in genau der Zielqualität, aus einem
-  ZWEITEN Preis-Datensatz (`opts.preiseQualitaet`, s. u.), fällt bei fehlendem
-  Preis auf einen hinterlegten Eigenpreis zurück (wie beim Normal-Kauf).
-- **REROLL**: Normal beschaffen (bestehender, unveränderter
-  `kostenGesamt()`-Pfad) + `REGELN.rerollKostenZuQualitaet()`, eine
-  absorbierende Markov-Kette über die belegte Übergangstabelle
-  (`CLAUDE.md`, "Qualitaet rerollen an der Reparaturstation"). Kostet nur
-  Silber, keinen Fokus.
-- **CRAFTEN, preservequality-Zweig**: bei mindestens einer `p:true`-Zutat im
-  Rezept (115 Items im Graph, u. a. alle königlichen Rüstungsteile) wird die
-  Zutat rekursiv **in derselben Zielqualität** beschafft
-  (`kostenBeiQualitaet()`-Rekursion), alle anderen Zutaten bleiben Normal.
-  Deterministisch, kein Wurf, keine Fehlversuche.
-- **CRAFTEN, Wurf-Zweig**: sonst Korns Qualitätswurf-Formel
-  (`REGELN.qualitaetWurfErfolgswahrscheinlichkeit()`), erwartete Kosten =
-  Kosten je Versuch ÷ Erfolgswahrscheinlichkeit (Rückfrage 5, bestätigt).
-  Fehlgeschlagene Versuche werden NICHT gegen einen Wiederverkaufswert
-  gerechnet (Rückfrage 6, bewusste v1-Vereinfachung).
-- **VERZAUBERN-BEI-QUALITAET**: nicht ausdrücklich im Scope gefordert, aber
-  aus der bestätigten Rückfrage 2 ("Verzaubern verändert die Qualität nicht,
-  bleibt erhalten") folgerichtig ergänzt, weil sie oft der GÜNSTIGSTE Weg ist
-  (Vorstufe in Zielqualität + quality-unabhängige Runen/Seelen/Relikte statt
-  eines viel teureren Wurf-Versuchs auf hoher Verzauberungsstufe direkt).
-  Gegenprobe am echten Graphen: Königliche Gugel .3 auf Exzellent nimmt
-  intern für die SET1-Zutat genau diesen Pfad (SET1@0 Exzellent kaufen, dann
-  dreimal mit Runen/Seelen/Relikten hochverzaubern), nicht den Wurf auf der
-  .3-Stufe direkt.
+**Rückfrage 2 (Meisterschafts-Mutual bei Umhängen/Taschen/Werkzeugen),
+beantwortet:** 30 FCE je Meisterschaftsstufe gilt einheitlich für
+Rüstung/Waffen, Veredeln, Umhänge, Taschen (auch Kriegshammer). Echte
+Ausnahme: „übrige Werkzeuge" (`tools`, `gatherergear`) haben KEINEN
+getrennten Meisterschaftsknoten, Meisterschaft und Spezialisierung sind dort
+zu einem „fused" Knoten verschmolzen (Ein-Feld-Modell: nur „Knotenstufe", kein
+separates Meisterschaftsfeld).
 
-**Reroll-Übergangstabelle** (`REGELN.REROLL_UEBERGANG`) korrekt interpretiert:
-Zeilen = Ergebnis, Spalten = aktuelle Qualität, Diagonal-Einträge (Ergebnis ==
-aktuell) sind "bleibt gleich". Bei Normal fehlt dieser Diagonal-Eintrag in der
-Wiki-Tabelle (Summe 100,1 %, Rundungsartefakt), `rerollUebergaenge()` kappt
-"bleibt Normal" dafür auf 0 (Rückfrage 4, wie vorgeschlagen).
+**Rückfrage 3 (Speisen/Tränke), beantwortet:** beide folgen derselben
+250-Unique/30-Mutual-Struktur wie Rüstung/Waffen samt getrenntem
+Meisterschaftsknoten, unterscheiden sich nur in der Zahl der
+Spezialisierungsknoten (Koch 9 → max. 55.000 FCE, Alchemist 8 → max. 52.000
+FCE). `../CLAUDE.md` an der Stelle korrigiert, die fälschlich EINEN
+gemeinsamen Wert (55.000) für beide nannte.
 
-**Qualitäts-Chancenpunkte** (`opts.qualitaetsChancenpunkte`): Rückfrage 7,
-vorläufig 0, echtes Eingabefeld (neuer Einstellungs-Block "Qualität" neben
-"Charakter & Station"), 1:1 als Prozent-Bonus in Korns Formel gelesen
-(dokumentierte, unbelegte Annahme, s. `CLAUDE.md`).
+**Rechenmodell, `js/regeln.js`:** neue Tabellen `SPEZ_TYP` (7 Knotentypen:
+`waffen_ruestung`, `veredeln`, `umhang`, `tasche`, `werkzeug_fused`, `speise`,
+`trank`, je mit Unique-/Mutual-/Meisterschafts-FCE und `einFeld`-Flag) und
+`KATEGORIE_ZU_SPEZTYP` (rund 35 `craftingcategory`-Werte darauf abgebildet;
+`offhand`/`knuckles`/`meat_*` bewusst NICHT abgebildet, s. `../CLAUDE.md`
+„Craft-Kategorie zu Gebäude": keine eindeutige Wiki-Zuordnung, bleiben beim
+Freitext-Fallback). Neue Funktionen `spezTypVonKategorie()`,
+`gruppenSchluesselVonItem()` (Tier-Präfix strippen),
+`spezialisierungsGruppen(cc)` (Ableitung aus `REZEPTGRAPH`) und
+`fceAusSpezialisierungsknoten(cc, gruppenSchluessel, knotenStufen,
+meisterschaftsstufe)` (eigener Unique-Anteil + Mutual-Anteil aller anderen
+Knoten + ggf. Meisterschaft). Gegenprobe am echten Graphen: `cloth_helmet` hat
+9 abgeleitete Knoten (u. a. `HEAD_CLOTH_SET1` = Gelehrtengugel über alle
+Tiers); mit Spezialisierung 50 auf `HEAD_CLOTH_SET1` und Meisterschaft 10
+ergibt sich für `HEAD_CLOTH_SET1` selbst 12.800 FCE (50×250 + 10×30), für
+jeden ANDEREN Knoten derselben Kategorie (z. B. `HEAD_CLOTH_AVALON`, der
+selbst nichts hat) trotzdem 1.800 FCE (0×250 + 50×30 Mutual + 10×30
+Meisterschaft) - genau der vorher fehlende Mutual-Übertrag.
 
-**Preisschicht, `js/preise.js`:** `preiseAbrufen()`/`holeBlock()`/
-`cacheSchluessel()` nehmen jetzt einen `qualitaet`-Parameter (API-Qualität
-1..5, Default 1 = Normal). Neue Funktion `sammleQualitaetsMarktIds()`
-sammelt NUR die kleine Kette (Wurzel + preservequality-/Verzauber-Vorstufen),
-nicht den ganzen Baum. `PREIS_CACHE_SCHEMA_VERSION` auf 3 erhöht
-(Cache-Schlüssel jetzt zusätzlich qualitätsabhängig, alte Cache-Einträge
-werden verworfen statt falsch interpretiert).
+**Rechenkern, `js/rechenkern.js`:** `fceFuer(cc, opts)` zu `fceFuer(item, cc,
+opts)` erweitert, drei Ebenen, jede schlägt die nächst allgemeinere: 1.
+knotenspezifisch (`opts.fceUeberschreibungen["cc|Gruppe"]`, aus dem neuen
+Panel), 2. kategorieweiter Freitext (`opts.fceUeberschreibungen[cc]`, die
+bisherige P5-Ausnahme, jetzt zugleich Fallback), 3. globaler Wert
+(`opts.fce`). Beide Aufrufstellen (`craftKandidat`, `craftBeiQualitaetKandidat`)
+angepasst. Rückwärtskompatibel: ohne knotenspezifische Einträge exakt das
+bisherige Verhalten.
 
-**Oberfläche:** Dropdown "Qualität" in der Suchzeile neben Verzauberung/Stadt
-(Rückfrage 9, alle fünf Stufen, Rückfrage 8), persistiert wie die Stadt. Neuer
-Block "Qualität" mit dem Chancenpunkte-Feld. Bauplan zeigt einen neuen
-`reroll`-Knotentyp (eigenes Badge) und bei `craften`-Knoten zusätzlich ein
-Qualitäts-Badge sowie die Wurf-Erfolgswahrscheinlichkeit/erwartete Versuche
-bzw. den preservequality-Hinweis in der Detailzeile. `berechneGewinn()`
-(Hero-Kennzahl "Gewinn") verkauft jetzt zum Preis der GEWÄHLTEN Qualität
-(`zustand.preiseQualitaetRoh`), nicht mehr immer zum Normal-Preis - das war
-ein während der Umsetzung selbst gefundener Fehler, kein Bestandteil der
-ursprünglichen Rückfragen, aber direkt die im Auftrag genannte Motivation.
+**Oberfläche, `js/ui.js` + `Kostenrechner.html`:** die alte
+„Meisterschaftsstufe + Spezialisierungsstufe → FCE"-Zeile (`skMeister`,
+`skSpez`, `skUebernehmen`) ist entfernt. Neuer Block „Spezialisierungsknoten
+je Kategorie" (`renderSpezialisierungsknoten()`, Container
+`#spezKnotenContainer`): pro Kategorie mit abgebildetem Knotentyp ein
+aufklappbarer Bereich mit (bei getrenntem Meisterschaftsknoten) einem
+Meisterschaftsstufe-Feld plus einer Tabelle aller abgeleiteten Knoten
+(Anzeigename aus `REZEPTGRAPH.namen`, Stufe-Eingabefeld, live berechnete
+FCE-Spalte). Persistiert in `einstellungen.spezialisierung` (`cc` → `{
+meisterschaft, knoten: { gruppenSchluessel: stufe } }`), zusammengeführt mit
+`einstellungen.fceAusnahmen` in `fceUeberschreibungenFuerOpts()`: eine
+Kategorie liefert nur dann Knoten-Overrides, wenn dort tatsächlich etwas
+eingetragen ist (Summe > 0), sonst greift weiterhin der Freitext/globale Wert
+- verhindert, dass ein bloßes Aufklappen des Panels (alle Stufen 0)
+versehentlich eine bestehende Kategorie-Ausnahme auf 0 FCE überschreibt. Die
+„Abgelesener Fokus/Grundfokus"-Quick-Konvertierung (unabhängiger Mechanismus,
+nicht vom Strukturfehler betroffen) bleibt unverändert erhalten.
 
-**Ein echter Fehler während der Umsetzung selbst gefunden und behoben:** der
-`reroll`-Kandidat trug `unvollstaendig`/`fehlendeGebaeude` zunächst nur am
-Kandidaten selbst, nicht im verschachtelten `weg`-Objekt - `js/ui.js`s
-`baueKnoten()` bekommt beim Rendern aber ausschließlich dieses innere Objekt
-zu sehen (wie bei `craften`/`verzaubern` auch), die "unvollständig"-Warnung
-wäre für einen Reroll-Knoten deshalb nie erschienen. Per Regressionstest
-verankert.
+**Getestet:** Testsuite von 191 auf 212 Tests gewachsen (regeln.js: 9
+`spezTypVonKategorie`-Tests, `gruppenSchluesselVonItem`-Tests,
+`fceAusSpezialisierungsknoten`-Arithmetik für alle drei Knotentyp-Varianten
+inkl. „Meisterschaft wird bei fused-Typ ignoriert", zwei Gegenproben gegen den
+echten Rezeptgraphen für `spezialisierungsGruppen`; rechenkern.js: ein neuer
+Testblock für die dreistufige `fceFuer`-Vorrangreihenfolge, direkt gegen
+`RECHENKERN.kosten()` mit erzwungenem Fokuseinsatz geprüft; ui.js: die beiden
+`fceAusSchicksalsbrett`-Tests durch `spezKnotenAnzeigeGruppen`-Tests ersetzt),
+alle 212 grün, per Node cachefrei gegen die Dateien auf der Platte geprüft
+(exakt derselbe Ablauf/dieselbe Testlogik wie `tests/test.html` selbst, per
+Skript aus der Datei extrahiert und mit DOM-Stubs ausgeführt). Zusätzlich ein
+eigenes Rechenskript gegen den ECHTEN Rezeptgraphen (`T4_HEAD_CLOTH_SET1`,
+Kategorie `cloth_helmet`) durchlaufen lassen, s. Gegenprobe oben - keine
+Abstürze, FCE-Werte von Hand nachgerechnet und bestätigt.
 
-**Getestet:** Testsuite von 136 auf 191 Tests gewachsen (49 neue REGELN-Tests
-für Wurf-Formel/Reroll-Kette/preservequality-Erkennung, weitere PREISE-Tests
-für den qualitätsabhängigen Cache-Schlüssel und `sammleQualitaetsMarktIds()`,
-plus ein eigener RECHENKERN-Testblock mit sieben Szenarien inklusive einer
-Gegenprobe am echten Rezeptgraphen der Königlichen Gugel), alle 191 grün, per
-Node cachefrei gegen die Dateien auf der Platte geprüft (der reguläre
-Browser-Weg über `.claude/launch.json` war in dieser Sitzung nicht verfügbar,
-s. Abweichung unten).
-
-**Bewusste Abweichung vom Standardablauf, transparent gemacht:** in dieser
-Sitzung standen weder die `SendMessage`-Funktion für Phasen-Meldungen/
-Subagenten-Anfragen noch ein Browser-Werkzeug zur Verfügung. Die drei
+**Bewusste Abweichung vom Standardablauf, transparent gemacht:** wie schon in
+der v1.4.0-Sitzung standen weder die `SendMessage`-Funktion für
+Phasen-Meldungen/Subagenten-Anfragen noch ein interaktives Browser-Werkzeug
+zur Verfügung (versucht: `msedge --headless=new --dump-dom`, lieferte in
+dieser Umgebung keine Ausgabe, vermutlich Sandbox-Einschränkung). Die drei
 Spezialisten (`rechenkern-pruefer`, `spieldaten-pruefer`,
-`oberflaechen-pruefer`) konnten deshalb NICHT angefordert werden; stattdessen
-wurde die Rechenlogik ausschließlich durch die node-basierte, cachefreie
-Testsuite (191 Assertions, inklusive Gegenproben gegen unabhängig von Hand
-nachgerechnete Werte) sowie durch eigene Code-Durchsicht abgesichert, und die
-Oberfläche durch eine statische HTML/JS-Konsistenzprüfung (alle
+`oberflaechen-pruefer`) konnten deshalb NICHT angefordert werden. Stattdessen:
+node-basierte, cachefreie Testsuite (s. oben), eigene Rechengegenprobe gegen
+den echten Graphen, und eine statische HTML/JS-Konsistenzprüfung (alle 47
 `getElementById`-Aufrufe in `js/ui.js` gegen vorhandene IDs in
-`Kostenrechner.html` abgeglichen, Tag-Balance geprüft), NICHT durch tatsächliches
-Ansehen im Browser. Vor der nächsten inhaltlichen Änderung an der Oberfläche
-sollte das visuell nachgeholt werden, sobald ein Browser-Werkzeug verfügbar ist.
+`Kostenrechner.html` abgeglichen, Tag-Balance für `div`/`details`/`table`/
+`thead`/`tbody`/`tr`/`label` geprüft). Die neue Oberfläche wurde NICHT
+tatsächlich im Browser angesehen. Vor der nächsten inhaltlichen Änderung an
+der Oberfläche sollte das nachgeholt werden, sobald ein Browser-Werkzeug
+verfügbar ist.
 
-Versions-Schnappschuss unter `Versionen/v1.4.0 - Qualitaetsstufen/` angelegt.
-Git-Commit und Push wie im Projekt üblich (s. `../CLAUDE.md`,
-"Versionskontrolle").
+Versions-Schnappschuss unter `Versionen/v1.5.0 - FCE-Ableitung ueber
+Schicksalsbrett-Knotenliste je Kategorie/` angelegt. Git-Commit und Push wie
+im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
 
 ## Dateistruktur
 
 Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0) plus
 Feature "Fokuseinsatz steuerbar machen" (v1.2.0) plus Feature "Bauplan-Ansicht
 ergonomisch ueberarbeitet" (v1.3.0) plus Standardwert Stationssaetze (v1.3.1)
-plus Feature "Qualitaetsstufen" (v1.4.0, alle vier `js/*`-Dateien und
-`Kostenrechner.html` geaendert, `tests/test.html` erweitert, keine neuen Dateien):
+plus Feature "Qualitaetsstufen" (v1.4.0) plus "FCE-Ableitung ueber
+Schicksalsbrett-Knotenliste je Kategorie" (v1.5.0, `js/regeln.js`,
+`js/rechenkern.js`, `js/ui.js` und `Kostenrechner.html` geaendert,
+`tests/test.html` erweitert, `js/preise.js` unveraendert, keine neuen Dateien):
 
 ```
 Kostenrechner/
@@ -146,31 +161,39 @@ Kostenrechner/
   rezepte.js                erzeugt (P1, P2), nicht von Hand bearbeiten
   Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0; Fokus-Regel-
                               Tabelle + Fokus-Schalter im Bauplan v1.2.0; Qualitaet-Dropdown
-                              + Qualitaets-Chancenpunkte-Block v1.4.0): Suche, Hero,
+                              + Qualitaets-Chancenpunkte-Block v1.4.0; Schicksalsbrett-
+                              Meisterschaft/Spezialisierung-Zeile ersetzt durch
+                              #spezKnotenContainer-Panel v1.5.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
     preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
                               Cache-Schluessel + sammleQualitaetsMarktIds() v1.4.0, Schema auf 3):
                               eigenpreisSetzen lehnt Preis<=0 ab, PREIS_CACHE_SCHEMA_VERSION/
-                              EIGENPREIS_SCHEMA_VERSION getrennt seit v1.1.0
+                              EIGENPREIS_SCHEMA_VERSION getrennt seit v1.1.0. Unveraendert seit v1.4.0.
     regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0; Qualitaetswurf/Reroll-Kette
-                              v1.4.0): itemWert, RRR, Stationsgebuehr (mit 0-Floor), Fokus (mit
-                              0-Floor), Steuer, Kategorie-Tabellen, rezepteFuerStufe,
-                              qualitaetWurfErfolgswahrscheinlichkeit()/rerollKostenZuQualitaet()
+                              v1.4.0; SPEZ_TYP/KATEGORIE_ZU_SPEZTYP/spezialisierungsGruppen()/
+                              fceAusSpezialisierungsknoten() v1.5.0): itemWert, RRR, Stationsgebuehr
+                              (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
+                              rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
+                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0)
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
-                              Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0):
+                              Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
+                              fceFuer() um Knoten-Ebene erweitert v1.5.0):
                               kosten(item,stufe,menge,opts), stationssatzFuer() unterscheidet
                               fehlend von ausdruecklich 0, weg.eigenpreis kennzeichnet
                               Kauf-Kandidaten aus einer eigenen Schaetzung (P6), fokusRegelFuer()
                               steuert mit/ohne Fokus je Knoten/Kategorie (v1.2.0),
                               kostenBeiQualitaet()/vier neue Kandidaten-Konstruktoren fuer
                               Kaufen/Reroll/Craften(Wurf oder preservequality)/Verzaubern
-                              in Zielqualitaet (v1.4.0)
+                              in Zielqualitaet (v1.4.0), fceFuer(item,cc,opts) mit drei
+                              Prioritaetsebenen (Knoten > Kategorie-Freitext > global, v1.5.0)
     ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
                               Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0,
                               Bauplan-Knoten als Karten statt Fliesstext v1.3.0; Qualitaet-
-                              Einstellung + reroll-Knotentyp im Bauplan v1.4.0): Suche
-                              mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
+                              Einstellung + reroll-Knotentyp im Bauplan v1.4.0;
+                              fceAusSchicksalsbrett() entfernt, renderSpezialisierungsknoten()/
+                              spezKnotenAnzeigeGruppen()/fceUeberschreibungenFuerOpts() v1.5.0):
+                              Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
   kostenrechner-KONTEXT.md
@@ -188,7 +211,8 @@ Kostenrechner/
   Versionen/v1.3.0 - Bauplan-Ansicht ergonomisch ueberarbeitet/
   Versionen/v1.3.1 - Stationssaetze Standard 400/
   Versionen/v1.4.0 - Qualitaetsstufen/
-  tests/test.html           191 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.5.0 - FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie/
+  tests/test.html           212 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 

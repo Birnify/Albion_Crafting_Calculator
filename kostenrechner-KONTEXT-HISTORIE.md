@@ -7,6 +7,118 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Feature "Qualitaetsstufen", 05.09.2026, v1.4.0)
+
+**Vorheriger Stand (v1.3.1, "Standardwert Stationssaetze auf 400 gesetzt") und
+alles davor** unverkürzt weiter unten in dieser Datei.
+
+**Auftrag (Orchestrator-Zyklus, Rückfragen aus einem vorherigen Durchlauf
+bereits beantwortet):** eine global wählbare Zielqualität
+(Normal/Gut/Herausragend/Exzellent/Meisterwerk), die für Kaufen, Craften und
+Verkaufen der ganzen Rechnung gilt. Marktpreise unterscheiden sich stark nach
+Qualität (Beleg: Gelehrtengugel T4.4, Normal 53.043 gegen Exzellent 71.581
+Kauforder-Schnitt), die App rechnete bisher ausschließlich Normal.
+
+**Rechenmodell, `js/rechenkern.js`:** neue Funktion `kostenBeiQualitaet()`,
+ein qualitätsbewusstes Gegenstück zu `kostenGesamt()`, nur erreicht wenn
+`opts.qualitaetsIndex > 0` (0 = Normal = **exakt der bisherige, unveränderte
+Pfad**, keine Verhaltensänderung). Vier Wegearten je Knoten:
+
+- **KAUFEN-BEI-QUALITAET**: Marktpreis in genau der Zielqualität, aus einem
+  ZWEITEN Preis-Datensatz (`opts.preiseQualitaet`, s. u.), fällt bei fehlendem
+  Preis auf einen hinterlegten Eigenpreis zurück (wie beim Normal-Kauf).
+- **REROLL**: Normal beschaffen (bestehender, unveränderter
+  `kostenGesamt()`-Pfad) + `REGELN.rerollKostenZuQualitaet()`, eine
+  absorbierende Markov-Kette über die belegte Übergangstabelle
+  (`CLAUDE.md`, "Qualitaet rerollen an der Reparaturstation"). Kostet nur
+  Silber, keinen Fokus.
+- **CRAFTEN, preservequality-Zweig**: bei mindestens einer `p:true`-Zutat im
+  Rezept (115 Items im Graph, u. a. alle königlichen Rüstungsteile) wird die
+  Zutat rekursiv **in derselben Zielqualität** beschafft
+  (`kostenBeiQualitaet()`-Rekursion), alle anderen Zutaten bleiben Normal.
+  Deterministisch, kein Wurf, keine Fehlversuche.
+- **CRAFTEN, Wurf-Zweig**: sonst Korns Qualitätswurf-Formel
+  (`REGELN.qualitaetWurfErfolgswahrscheinlichkeit()`), erwartete Kosten =
+  Kosten je Versuch ÷ Erfolgswahrscheinlichkeit (Rückfrage 5, bestätigt).
+  Fehlgeschlagene Versuche werden NICHT gegen einen Wiederverkaufswert
+  gerechnet (Rückfrage 6, bewusste v1-Vereinfachung).
+- **VERZAUBERN-BEI-QUALITAET**: nicht ausdrücklich im Scope gefordert, aber
+  aus der bestätigten Rückfrage 2 ("Verzaubern verändert die Qualität nicht,
+  bleibt erhalten") folgerichtig ergänzt, weil sie oft der GÜNSTIGSTE Weg ist
+  (Vorstufe in Zielqualität + quality-unabhängige Runen/Seelen/Relikte statt
+  eines viel teureren Wurf-Versuchs auf hoher Verzauberungsstufe direkt).
+  Gegenprobe am echten Graphen: Königliche Gugel .3 auf Exzellent nimmt
+  intern für die SET1-Zutat genau diesen Pfad (SET1@0 Exzellent kaufen, dann
+  dreimal mit Runen/Seelen/Relikten hochverzaubern), nicht den Wurf auf der
+  .3-Stufe direkt.
+
+**Reroll-Übergangstabelle** (`REGELN.REROLL_UEBERGANG`) korrekt interpretiert:
+Zeilen = Ergebnis, Spalten = aktuelle Qualität, Diagonal-Einträge (Ergebnis ==
+aktuell) sind "bleibt gleich". Bei Normal fehlt dieser Diagonal-Eintrag in der
+Wiki-Tabelle (Summe 100,1 %, Rundungsartefakt), `rerollUebergaenge()` kappt
+"bleibt Normal" dafür auf 0 (Rückfrage 4, wie vorgeschlagen).
+
+**Qualitäts-Chancenpunkte** (`opts.qualitaetsChancenpunkte`): Rückfrage 7,
+vorläufig 0, echtes Eingabefeld (neuer Einstellungs-Block "Qualität" neben
+"Charakter & Station"), 1:1 als Prozent-Bonus in Korns Formel gelesen
+(dokumentierte, unbelegte Annahme, s. `CLAUDE.md`).
+
+**Preisschicht, `js/preise.js`:** `preiseAbrufen()`/`holeBlock()`/
+`cacheSchluessel()` nehmen jetzt einen `qualitaet`-Parameter (API-Qualität
+1..5, Default 1 = Normal). Neue Funktion `sammleQualitaetsMarktIds()`
+sammelt NUR die kleine Kette (Wurzel + preservequality-/Verzauber-Vorstufen),
+nicht den ganzen Baum. `PREIS_CACHE_SCHEMA_VERSION` auf 3 erhöht
+(Cache-Schlüssel jetzt zusätzlich qualitätsabhängig, alte Cache-Einträge
+werden verworfen statt falsch interpretiert).
+
+**Oberfläche:** Dropdown "Qualität" in der Suchzeile neben Verzauberung/Stadt
+(Rückfrage 9, alle fünf Stufen, Rückfrage 8), persistiert wie die Stadt. Neuer
+Block "Qualität" mit dem Chancenpunkte-Feld. Bauplan zeigt einen neuen
+`reroll`-Knotentyp (eigenes Badge) und bei `craften`-Knoten zusätzlich ein
+Qualitäts-Badge sowie die Wurf-Erfolgswahrscheinlichkeit/erwartete Versuche
+bzw. den preservequality-Hinweis in der Detailzeile. `berechneGewinn()`
+(Hero-Kennzahl "Gewinn") verkauft jetzt zum Preis der GEWÄHLTEN Qualität
+(`zustand.preiseQualitaetRoh`), nicht mehr immer zum Normal-Preis - das war
+ein während der Umsetzung selbst gefundener Fehler, kein Bestandteil der
+ursprünglichen Rückfragen, aber direkt die im Auftrag genannte Motivation.
+
+**Ein echter Fehler während der Umsetzung selbst gefunden und behoben:** der
+`reroll`-Kandidat trug `unvollstaendig`/`fehlendeGebaeude` zunächst nur am
+Kandidaten selbst, nicht im verschachtelten `weg`-Objekt - `js/ui.js`s
+`baueKnoten()` bekommt beim Rendern aber ausschließlich dieses innere Objekt
+zu sehen (wie bei `craften`/`verzaubern` auch), die "unvollständig"-Warnung
+wäre für einen Reroll-Knoten deshalb nie erschienen. Per Regressionstest
+verankert.
+
+**Getestet:** Testsuite von 136 auf 191 Tests gewachsen (49 neue REGELN-Tests
+für Wurf-Formel/Reroll-Kette/preservequality-Erkennung, weitere PREISE-Tests
+für den qualitätsabhängigen Cache-Schlüssel und `sammleQualitaetsMarktIds()`,
+plus ein eigener RECHENKERN-Testblock mit sieben Szenarien inklusive einer
+Gegenprobe am echten Rezeptgraphen der Königlichen Gugel), alle 191 grün, per
+Node cachefrei gegen die Dateien auf der Platte geprüft (der reguläre
+Browser-Weg über `.claude/launch.json` war in dieser Sitzung nicht verfügbar,
+s. Abweichung unten).
+
+**Bewusste Abweichung vom Standardablauf, transparent gemacht:** in dieser
+Sitzung standen weder die `SendMessage`-Funktion für Phasen-Meldungen/
+Subagenten-Anfragen noch ein Browser-Werkzeug zur Verfügung. Die drei
+Spezialisten (`rechenkern-pruefer`, `spieldaten-pruefer`,
+`oberflaechen-pruefer`) konnten deshalb NICHT angefordert werden; stattdessen
+wurde die Rechenlogik ausschließlich durch die node-basierte, cachefreie
+Testsuite (191 Assertions, inklusive Gegenproben gegen unabhängig von Hand
+nachgerechnete Werte) sowie durch eigene Code-Durchsicht abgesichert, und die
+Oberfläche durch eine statische HTML/JS-Konsistenzprüfung (alle
+`getElementById`-Aufrufe in `js/ui.js` gegen vorhandene IDs in
+`Kostenrechner.html` abgeglichen, Tag-Balance geprüft), NICHT durch tatsächliches
+Ansehen im Browser. Vor der nächsten inhaltlichen Änderung an der Oberfläche
+sollte das visuell nachgeholt werden, sobald ein Browser-Werkzeug verfügbar ist.
+
+Versions-Schnappschuss unter `Versionen/v1.4.0 - Qualitaetsstufen/` angelegt.
+Git-Commit und Push wie im Projekt üblich (s. `../CLAUDE.md`,
+"Versionskontrolle").
+
+---
+
 ## Aktueller Stand (Standardwert Stationssaetze, 05.09.2026, v1.3.1)
 
 **Vorheriger Stand (v1.3.0, Feature "Bauplan-Ansicht ergonomisch

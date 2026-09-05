@@ -399,6 +399,55 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     );
   })();
 
+  // ---- rechenkern: fceFuer()-Vorrangreihenfolge (05.09.2026, Zyklus
+  // "FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie"):
+  // Knoten-spezifisch ("cc|Gruppe") schlaegt Kategorie-Freitext (cc)
+  // schlaegt global. js/ui.js befuellt beide Ueberschreibungs-Schluessel in
+  // derselben fceUeberschreibungen-Map (fceUeberschreibungenFuerOpts()),
+  // hier direkt gegen RECHENKERN.kosten() geprueft, ohne DOM. ----
+  (function () {
+    const testGraph = {
+      items: {
+        FCEPRIO_R: { iv: 10, t: 4 },
+        // cc "sword" ist in REGELN.KATEGORIE_ZU_SPEZTYP abgebildet (waffen_ruestung),
+        // Gruppenschluessel per REGELN.gruppenSchluesselVonItem = "FCEPRIO_SCHWERT".
+        T4_FCEPRIO_SCHWERT: { t: 4, cc: "sword", ivd: true, r: [{ f: 1000, i: [{ n: "FCEPRIO_R", c: 1 }] }] },
+      },
+    };
+    function opts(fceUeberschreibungen) {
+      return {
+        graph: testGraph,
+        preise: { FCEPRIO_R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+        stationssaetze: { Kriegerschmiede: 0 },
+        stadt: "Nirgendwo",
+        fce: 0, // global: voller Rohfokus (1.000), s. Handrechnung unten
+        fceUeberschreibungen: fceUeberschreibungen || {},
+        fokusUebersteuerungJeKnoten: { "T4_FCEPRIO_SCHWERT@0": "immer" }, // erzwingt den Fokus-Kandidaten, sonst waehlt die Zielfunktion ggf. "ohne Fokus"
+        fokuswert: 0,
+      };
+    }
+    function fokusVon(fceOverrides) {
+      const r = RECHENKERN.kosten("T4_FCEPRIO_SCHWERT", 0, 1, opts(fceOverrides));
+      return r.fokus;
+    }
+    // Global (fce 0) -> voller Rohfokus 1.000, 0,5^(0/10000) = 1.
+    pruefe("fceFuer-Vorrang: ohne jede Ueberschreibung voller Rohfokus (1.000)", nahe(fokusVon({}), 1000, 0.5), String(fokusVon({})));
+    // Kategorie-Freitext "sword" -> 10.000 FCE -> Faktor 0,5 -> 500 Fokus.
+    pruefe(
+      "fceFuer-Vorrang: Kategorie-Freitext 'sword' (10.000 FCE) schlaegt den globalen Wert -> 500 Fokus",
+      nahe(fokusVon({ sword: 10000 }), 500, 0.5),
+      String(fokusVon({ sword: 10000 }))
+    );
+    // Knoten-spezifisch "sword|FCEPRIO_SCHWERT" -> 20.000 FCE -> Faktor 0,25 -> 250 Fokus,
+    // OBWOHL zugleich eine (schwaechere) Kategorie-Freitext-Ausnahme gesetzt ist - die
+    // Knoten-Ueberschreibung muss gewinnen, nicht die Kategorie.
+    pruefe(
+      "fceFuer-Vorrang: Knoten-spezifisch 'sword|FCEPRIO_SCHWERT' (20.000 FCE) schlaegt die Kategorie-Ausnahme -> 250 Fokus",
+      nahe(fokusVon({ sword: 10000, "sword|FCEPRIO_SCHWERT": 20000 }), 250, 0.5),
+      String(fokusVon({ sword: 10000, "sword|FCEPRIO_SCHWERT": 20000 }))
+    );
+  })();
+
   // ---- rechenkern: von Hand nachgerechneter Vollfall ueber zwei Ebenen ----
   (function () {
     const testGraph = {
@@ -606,16 +655,33 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   (function () {
     pruefe("ui: Modul UI existiert und die DOM-Verdrahtung ist auf dieser Seite ohne App-Markup unschaedlich (kein Wurf)", typeof UI === "object");
 
-    pruefe(
-      "ui: fceAusSchicksalsbrett(34, 0) = 1.020 (Meisterschaft x 30)",
-      UI.fceAusSchicksalsbrett(34, 0) === 1020,
-      String(UI.fceAusSchicksalsbrett(34, 0))
-    );
-    pruefe(
-      "ui: fceAusSchicksalsbrett(0, 4) = 1.000 (Spezialisierung x 250)",
-      UI.fceAusSchicksalsbrett(0, 4) === 1000,
-      String(UI.fceAusSchicksalsbrett(0, 4))
-    );
+    // spezKnotenAnzeigeGruppen (05.09.2026, Zyklus "FCE-Ableitung ueber
+    // Schicksalsbrett-Knotenliste je Kategorie"): loest die fruehere
+    // fceAusSchicksalsbrett(Meisterschaft, EINE Spezialisierung)-Quick-
+    // Konvertierung ab, s. js/regeln.js fuer die Herleitung und die dortigen
+    // fceAusSpezialisierungsknoten()-Tests (Unique/Mutual/Meisterschaft-Arithmetik).
+    (function () {
+      const gruppen = UI.spezKnotenAnzeigeGruppen("sword");
+      const mainSword = gruppen.find((g) => g.schluessel === "MAIN_SWORD");
+      pruefe(
+        "ui: spezKnotenAnzeigeGruppen(sword) findet MAIN_SWORD mit deutschem Anzeigenamen",
+        !!mainSword && typeof mainSword.name === "string" && mainSword.name.length > 0 && mainSword.name !== "MAIN_SWORD",
+        JSON.stringify(mainSword)
+      );
+    })();
+    (function () {
+      // spezKnotenAnzeigeGruppen() selbst gruppiert unabhaengig davon, ob die
+      // Kategorie ein FCE-Modell hat (das filtert erst js/ui.js/boot()s
+      // renderSpezialisierungsknoten() ueber REGELN.spezTypVonKategorie()).
+      // Hier nur die Gruppierung selbst pruefen, an einer Kategorie MIT
+      // abgebildetem "uebrige Werkzeuge"-Typ (fused, s. regeln.js).
+      const gruppen = UI.spezKnotenAnzeigeGruppen("tools");
+      pruefe(
+        "ui: spezKnotenAnzeigeGruppen(tools) liefert mehrere Knoten-Gruppen mit Anzeigename und Tier-Varianten",
+        gruppen.length > 1 && gruppen.every((g) => g.name && g.items.length > 0),
+        String(gruppen.length)
+      );
+    })();
 
     pruefe("ui: prozentAusFce(0) = 100 % (voller Rohfokus)", nahe(UI.prozentAusFce(0), 100, 0.01));
     pruefe(
