@@ -173,91 +173,66 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
 
 ## Backlog / Mögliche nächste Schritte
 
-Die Arbeitspakete stehen in `kostenrechner-PLAN.md`, Abschnitt 6. Hier nur, was
-darüber hinaus aufkommt.
+Die Arbeitspakete stehen in `kostenrechner-PLAN.md`, Abschnitt 6, alle sechs
+(P1-P7) sind abgeschlossen. Hier nur, was darüber hinaus offen ist. Die
+Bau-Handoff-Notizen zwischen den einzelnen Paketen (P1 für P2, P2 für P3 usw.)
+wurden am 05.09.2026 aus dieser Liste entfernt, sie waren nur während des
+Bauens selbst relevant und sind jetzt reine Ablenkung; die fachlichen Details
+dazu stehen weiterhin unverkürzt in `kostenrechner-KONTEXT-HISTORIE.md`.
 
-**Als Nächstes dran:** nichts mehr aus `kostenrechner-PLAN.md` Abschnitt 6 - P7
-war das letzte der sechs Baupakete. Weitere Arbeit an dieser App ist entweder
-ein v2-Punkt aus der Liste unten (neue Rücksprache mit dem Nutzer nötig, welcher
-zuerst) oder eine der beiden unten offen gebliebenen Kleinigkeiten.
+**Zwei echte offene Fäden aus der Sitzung vom 05.09.2026, beide angerissen,
+keiner zu Ende entschieden:**
 
-**Aus P6/P7 mitgenommen, unerledigt (keins davon blockierend für v1.0.0):**
+1. **„Alle Wege"-Tabelle zeigt bei baugleichen Alternativrezepten identische,
+   nichtssagende Zeilen.** Auslöser war die Königliche Gugel: drei
+   Alternativrezepte (Gelehrten-/Kleriker-/Magiergugel) plus mit/ohne Fokus
+   ergaben sechs Zeilen mit demselben Silber- und Fokuswert. Eine
+   Feature-Definition wurde entworfen (Name: „Aussagekraft der Alle-Wege-
+   Tabelle verbessern", Scope: gleichwertige Wege zusammenfassen oder als
+   gleichwertig kennzeichnen), aber **nie an den Orchestrator übergeben** -
+   der Nutzer hinterfragte zurecht, ob die Gugeln wirklich baugleich sind
+   (ihre Marktpreise unterscheiden sich real), was in die Untersuchung unten
+   überging und das ursprüngliche Anliegen verdrängte. Die Rechnung selbst
+   ist nachweislich korrekt (Craften gewinnt bei allen dreien so klar, dass
+   die realen Preisunterschiede die Wahl nicht kippen), das eigentliche
+   Darstellungsproblem besteht aber weiterhin. Bei Bedarf: die entworfene
+   Feature-Definition oben im Chatverlauf des 05.09.2026 wiederverwenden.
+2. **Bekannte Grenze der Preisquelle, dokumentiert, aber ohne Konsequenz für
+   die App gezogen.** Steht ausführlich in `../CLAUDE.md`, Abschnitt „Albion
+   Online Data Project API": `prices/` kann für ein Item dauerhaft leer
+   bleiben, obwohl am Markt echte, sogar seit Wochen stehende Angebote
+   liegen (belegt am Königlichen Siegel, per offiziellem Diagnosewerkzeug
+   nachverfolgt). Dem Nutzer wurden drei Wege vorgeschlagen (eigenes Feature,
+   z. B. Wortlaut „gesperrt" auf „kein bei AODP erfasster Preis" ändern
+   und/oder `history/`-Handelsvolumen als Zusatzsignal nutzen; nur
+   dokumentieren, ohne Code-Änderung; erstmal nur festhalten), er hat die
+   Frage **bewusst offen gelassen** ("dismissed - do not proceed"). Vor einer
+   Umsetzung erneut fragen, nicht selbst entscheiden.
 
-- **Backlog-Idee aus P3 (rechenkern-pruefer, Befund 1), weiterhin offen:** ein
-  Eigenpreis von 0 könnte legitim sein, wenn der Nutzer eine Zutat schon auf
-  Lager hat ("kostet mich nichts mehr"). In P6 bewusst NICHT gelöst (siehe dort
-  die Entscheidung zu Punkt 5) - `eigenpreisSetzen(id, 0)` löscht weiterhin den
-  Eintrag. Falls der Nutzer das noch will: eigene, klar gekennzeichnete
-  Funktion statt eines überladenen Preisfelds.
-- Die 21 von 365 Kandidaten ohne deutschen Namen (`REZEPTGRAPH.namen[id]`
-  fehlt, z. B. `QUESTITEM_TOKEN_ARENA_CRYSTAL`) zeigt die Pflegeliste unter
-  ihrer ID an (gleicher Fallback wie überall sonst in `ui.js`). Nicht
-  nachgebessert, da `build_graph.py`/die Namensquelle selbst betroffen wäre -
-  falls störend, dort ansetzen.
-- Umgebungs-Fund zur Browser-Prüfung (Cache unter `localhost`, Ausweg über
-  `127.0.0.1`) steht oben unter „Aktueller Stand". Bei P7 nicht erneut
-  aufgetreten; bei der nächsten Sitzung mit Browser-Verifikation trotzdem
-  zuerst dort nachsehen, falls eine Änderung nicht ankommt.
+**Kleinere offene Punkte, unverändert seit früheren Paketen:**
 
-**Aus P1 mitgenommen, für spätere Pakete:**
+- Ein Eigenpreis von 0 könnte legitim sein, wenn der Nutzer eine Zutat schon
+  auf Lager hat ("kostet mich nichts mehr"). In P6 bewusst nicht gelöst,
+  `eigenpreisSetzen(id, 0)` löscht weiterhin den Eintrag. Falls gewünscht:
+  eigene, klar gekennzeichnete Funktion statt eines überladenen Preisfelds.
+- 21 von 365 Kandidaten in der Eigenpreis-Pflegeliste haben keinen deutschen
+  Namen (`REZEPTGRAPH.namen[id]` fehlt, z. B. `QUESTITEM_TOKEN_ARENA_CRYSTAL`)
+  und zeigen stattdessen ihre ID. Nicht nachgebessert, da `build_graph.py`/die
+  Namensquelle betroffen wäre.
 
-- Das genaue `rezepte.js`-Schema steht in `kostenrechner-KONTEXT-HISTORIE.md`
-  unter „rezepte.js: Schema" und ist Grundlage für `js/rechenkern.js` (P3).
-  Insbesondere: die Stufe-N-braucht-Stufe-(N-1)-Abhängigkeit beim Verzaubern
-  ist nicht als Kante im JSON codiert, sondern eine Spielregel, die der
-  Rechenkern selbst anwenden muss.
-- 365 Kandidaten für nicht handelbare Zutaten liegen bereits in
-  `rezepte.js.nichtHandelbareKandidaten`, direkt verwendbar für P6
-  (Eigenpreis-Pflege). Heuristik, keine belegte Liste, s. Historie.
-- 584 Items mit uneinheitlichen ItemValues über ihre Alternativrezepte
-  (`ivm`-Feld in `rezepte.js`), überwiegend Artefakt-Ausrüstung und
-  Dungeon-Token. Für P3 relevant: bei solchen Items zeigt die Stationsgebühr
-  je nach gewähltem Rezeptweg unterschiedliche Werte, das ist korrektes
-  Verhalten, kein Fehler.
-- `../.claude/launch.json` existiert jetzt (lokaler Static-Server auf Port 8791
-  für `Kostenrechner/`), direkt wiederverwendbar für die Browser-Prüfung in P5.
-
-**Aus P2 mitgenommen, für spätere Pakete:**
-
-- `js/preise.js` liefert P3 fertige Bausteine: `sammleMarktIds()` für den
-  Bedarf eines Baums, `preiseAbrufen()` für die Preise dazu (mit `sell`/`buy`,
-  `kein`-Flag, Alter), `eigenpreisHolen()` für nicht handelbare Zutaten.
-  `rechenkern.js` sollte **nicht** selbst gegen `fetch` gehen, sondern immer
-  über diese Schicht.
-- Die „gesperrt bei fehlendem/altem Preis"-Logik aus Plan Abschnitt 4.1 ist
-  **nicht** in `preise.js`, sondern in P3 in `kosten()` umgesetzt worden
-  (`preisMitGrund()` in `rechenkern.js`, plus `opts.maxPreisAlterMin`):
-  `preise.js` liefert nur `preis === null` bzw. das Datum, die Entscheidung
-  „damit rechnen oder sperren" trifft `rechenkern.js`.
-- Die Markt-ID-Regel (Vorrang `el` vor Kontextstufe, nicht Addition) ist die
-  wichtigste Einzel-Erkenntnis aus P2 und steht ausführlich in
-  `kostenrechner-KONTEXT-HISTORIE.md` unter „Markt-ID". Für P3/P5 wichtig:
-  beim Aufbau eines Bauplans für die Anzeige IMMER `PREISE.marktId()`
-  verwenden, nie die ID von Hand zusammensetzen.
-
-**Aus P3 mitgenommen, für P5:**
-
-- `RECHENKERN.kosten()` fasst absichtlich NICHT selbst `fetch`/`PREISE` an:
-  der Aufrufer (spaeter `ui.js`) sammelt Markt-IDs ueber
-  `PREISE.sammleMarktIds()`, ruft `PREISE.preiseAbrufen()` ab und uebergibt
-  das Ergebnis direkt als `opts.preise`. So bleibt der Rechenkern rein
-  synchron testbar (s. `tests/test.html`, Abschnitt 3, macht das schon vor).
-- `opts.graph` erlaubt, `RECHENKERN.kosten()` und `REGELN.itemWert()` mit
-  einem eigenen (kleinen) Testgraphen statt dem echten `REZEPTGRAPH`
-  aufzurufen. Fuer P5 ohne Bedeutung (dort immer der echte Graph), aber
-  wichtig, falls spaeter weitere Unittests dazukommen.
-- Die Markt-ID-Bildung ist in `rechenkern.js` bewusst LOKAL nachgebaut
-  (`marktIdVon()`), nicht ueber `PREISE.marktId()` aufgerufen, damit
-  `opts.graph` auch ohne das globale `REZEPTGRAPH`/`PREISE` funktioniert. Für
-  P5 kein Problem: der fertige Bauplan (`weg`) trägt die Markt-ID bei jedem
-  `kaufen`-Knoten bereits fertig im Feld `marktId`, dort nichts neu bauen.
-- Rückgabeform von `kosten()`: `{ silber, fokus, wert, weg, gesperrt, grund,
-  menge, alleWege }`. `weg` ist ein Baum aus `{typ:"kaufen"|"craften"|
-  "verzaubern"|"gesperrt", ...}`-Knoten; Mengenangaben darin sind **je Stück
-  des jeweils übergeordneten Schritts**, nicht auf `menge` hochgerechnet (nur
-  die Summenfelder `silber`/`fokus`/`wert` sind das). `tests/test.html`,
-  Abschnitt 3 (`renderBaum()`), zeigt eine erste rekursive Darstellung, die P5
-  als Ausgangspunkt für den aufklappbaren Bauplan übernehmen kann.
+**Browser-Vorschau, Stand 05.09.2026 (wichtig für die nächste Sitzung):**
+`.claude/launch.json` nutzt seit heute `no_cache_server.py` statt
+`python -m http.server`, weil Letzterer wiederholt veraltete `js`-Dateien
+ausgeliefert hat, auch nach Hard-Reload und in neuen Tabs. Trotzdem in dieser
+Sitzung beobachtet: `127.0.0.1` als Navigationsziel wurde vom Vorschau-Werkzeug
+verweigert ("denied or failed"), während `localhost` auf demselben Server
+anstandslos funktionierte - ein Berechtigungsdetail dieser Sitzung, kein
+Serverfehler. Bei einer neuen Sitzung zuerst `localhost` probieren, falls
+`127.0.0.1` nicht navigiert. Bei Zweifel an einer Testzahl im Browser: dieselbe
+Assertion-Logik aus `tests/test.html` (Zeilen zwischen dem Testrahmen-Start und
+dem DOM-Rendering-Teil) in Node gegen die Dateien auf der Platte laufen lassen,
+das ist cachefrei und war in dieser Sitzung mehrfach die einzig verlässliche
+Probe.
 
 **Ideen für später (v2), bewusst nicht in v1** (aus `kostenrechner-PLAN.md`
 Abschnitt 8, hier vollständig gegen den Plan abgeglichen):
