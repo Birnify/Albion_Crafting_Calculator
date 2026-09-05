@@ -1654,6 +1654,118 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Regressionstest UI.sammleGesperrteKaufMarktIds() (Zyklus "history/-
+  // Handelsvolumen als Zusatzsignal bei gesperrten Preisen", 05.09.2026):
+  // sammelt genau die "kaufen, gesperrt"-Knoten, die im GERENDERTEN
+  // Bauplan-Baum auftreten (dieselbe Traversierung wie baueKnoten() in
+  // js/ui.js: zutaten/vorstufe/materialien/basis), Grundlage fuer den Knopf
+  // "Handelsvolumen laden". Synthetische weg-Fixturen, unabhaengig vom
+  // echten Rezeptgraphen.
+  // -----------------------------------------------------------------------
+  (function () {
+    function gk(marktId, item) {
+      return { typ: "gesperrt", ursprungsTyp: "kaufen", item: item || marktId, stufe: 0, grund: "kein Preis", marktId };
+    }
+    function gc(item) {
+      // Ein gesperrter CRAFTEN-Knoten traegt zwar (wie im echten Rechenkern)
+      // ein eigenes zutaten-Array in extra, baueKnoten() rendert bei
+      // typ==="gesperrt" aber NUR die Gesperrt-Zeile und steigt NICHT mehr
+      // hinab (s. js/ui.js) - sammleGesperrteKaufMarktIds() muss das exakt
+      // spiegeln, sonst wuerden Handelsvolumen-Anfragen fuer Knoten
+      // ausgeloest, die der Nutzer im Baum gar nicht sieht.
+      return { typ: "gesperrt", ursprungsTyp: "craften", item, stufe: 0, grund: "Zutat fehlt", zutaten: [{ weg: gk("SOLLTE_NICHT_AUFTAUCHEN") }] };
+    }
+    function kauf(item, marktId) {
+      return { typ: "kaufen", item, stufe: 0, marktId, preisJeStueck: 10 };
+    }
+    function craft(item, zutaten) {
+      return { typ: "craften", item, stufe: 0, zutaten };
+    }
+    function verz(item, vorstufe, materialien) {
+      return { typ: "verzaubern", item, stufe: 1, vorstufe, materialien };
+    }
+    function reroll(item, basis) {
+      return { typ: "reroll", item, stufe: 0, basis };
+    }
+    function ids(weg) {
+      return Array.from(UI.sammleGesperrteKaufMarktIds(weg)).sort();
+    }
+
+    pruefe("sammleGesperrteKaufMarktIds: null/undefined liefert ein leeres Set", ids(null).length === 0 && ids(undefined).length === 0);
+
+    pruefe(
+      "sammleGesperrteKaufMarktIds: Wurzel selbst ist 'kaufen, gesperrt' -> genau diese Markt-ID",
+      JSON.stringify(ids(gk("X_ID", "X"))) === JSON.stringify(["X_ID"])
+    );
+
+    pruefe(
+      "sammleGesperrteKaufMarktIds: erfolgreicher Kaufen-Knoten liefert nichts (nicht gesperrt)",
+      ids(kauf("X", "X_ID")).length === 0
+    );
+
+    pruefe(
+      "sammleGesperrteKaufMarktIds: ein gesperrter CRAFTEN-Knoten liefert selbst KEINE Markt-ID und steigt NICHT in sein zutaten-Array hinab (baueKnoten() rendert dort auch nichts weiter)",
+      ids(gc("Y")).length === 0
+    );
+
+    (function () {
+      const baum = craft("Root", [
+        { menge: 1, weg: kauf("A", "A_ID") }, // erfolgreich, nicht gesperrt
+        { menge: 1, weg: gk("B_ID", "B") }, // direkt gesperrt
+        { menge: 1, weg: craft("C", [{ menge: 1, weg: gk("D_ID", "D") }]) }, // verschachtelt: erfolgreiches Craften mit gesperrter Zutat
+      ]);
+      pruefe(
+        "sammleGesperrteKaufMarktIds: Craften-Baum sammelt gesperrte Kaufen-Knoten ueber mehrere Ebenen (B_ID, D_ID), nicht die erfolgreiche Zutat A_ID",
+        JSON.stringify(ids(baum)) === JSON.stringify(["B_ID", "D_ID"]),
+        JSON.stringify(ids(baum))
+      );
+    })();
+
+    (function () {
+      const baum = verz(
+        "E",
+        gk("E0_ID", "E0"), // Vorstufe gesperrt
+        [
+          { menge: 96, weg: kauf("F", "F_ID") }, // Material erfolgreich
+          { menge: 96, weg: gk("G_ID", "G") }, // Material gesperrt
+        ]
+      );
+      pruefe(
+        "sammleGesperrteKaufMarktIds: Verzaubern-Knoten sammelt aus Vorstufe UND Materialien (E0_ID, G_ID), nicht F_ID",
+        JSON.stringify(ids(baum)) === JSON.stringify(["E0_ID", "G_ID"]),
+        JSON.stringify(ids(baum))
+      );
+    })();
+
+    pruefe(
+      "sammleGesperrteKaufMarktIds: Reroll-Knoten steigt in seine Normal-Basis ab",
+      JSON.stringify(ids(reroll("H", gk("H_ID", "H")))) === JSON.stringify(["H_ID"])
+    );
+
+    (function () {
+      const baum = craft("Root", [
+        { menge: 1, weg: gk("DUP_ID", "X") },
+        { menge: 1, weg: craft("Y", [{ menge: 1, weg: gk("DUP_ID", "X") }]) },
+      ]);
+      pruefe(
+        "sammleGesperrteKaufMarktIds: dieselbe Markt-ID an zwei Stellen im Baum wird nur EINMAL gesammelt (Set-Dedup)",
+        JSON.stringify(ids(baum)) === JSON.stringify(["DUP_ID"]),
+        JSON.stringify(ids(baum))
+      );
+    })();
+
+    pruefe(
+      "sammleGesperrteKaufMarktIds: ein gesperrter Knoten mit ursprungsTyp 'verzaubern' zaehlt NICHT als 'kaufen, gesperrt', selbst wenn zufaellig marktId gesetzt waere",
+      ids({ typ: "gesperrt", ursprungsTyp: "verzaubern", item: "Z", stufe: 1, grund: "x", marktId: "SOLLTE_NICHT_ZAEHLEN" }).length === 0
+    );
+
+    pruefe(
+      "sammleGesperrteKaufMarktIds: ein gesperrter Kaufen-Knoten OHNE marktId (defensiv, sollte im echten Rechenkern nicht vorkommen) wird nicht aufgenommen",
+      ids({ typ: "gesperrt", ursprungsTyp: "kaufen", item: "Z", stufe: 0, grund: "x" }).length === 0
+    );
+  })();
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {

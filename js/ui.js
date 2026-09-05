@@ -412,6 +412,44 @@ const UI = (function () {
     return basis + " (" + anzahl + " gleichwertige Wege)";
   }
 
+  /**
+   * Sammelt die Markt-IDs aller "kaufen, gesperrt"-Knoten, die im
+   * TATSAECHLICH GERENDERTEN Bauplan-Baum auftreten (nicht im gesamten
+   * waehrend der Rekursion durchlaufenen Rezeptgraphen inkl. verworfener
+   * Alternativrezepte, s. sammleFehlendePreise() oben fuer den bewusst
+   * breiteren Fall der Eigenpreis-Pflegeliste). Traversiert dieselbe
+   * weg-Struktur wie baueKnoten() in boot() (zutaten/vorstufe/materialien/
+   * basis), reine Funktion ohne DOM.
+   *
+   * Grundlage fuer den Knopf "Handelsvolumen laden" (Zyklus "history/-
+   * Handelsvolumen als Zusatzsignal bei gesperrten Preisen", 05.09.2026):
+   * der Nutzer hat sich ausdruecklich fuer diesen engeren Scope entschieden
+   * (nur im Bauplan-Baum sichtbare gesperrte Kaufen-Knoten, kein Abruf fuer
+   * den ganzen Rezeptgraphen).
+   *
+   * @param {?object} weg ein weg-Objekt aus RECHENKERN.kosten() (r.weg, oder
+   *   ein verschachtelter Kindknoten wie z.weg/m.weg/weg.vorstufe/weg.basis)
+   * @param {Set<string>} [ids] zum Akkumulieren bei rekursiven Aufrufen
+   * @returns {Set<string>} eindeutige Markt-IDs
+   */
+  function sammleGesperrteKaufMarktIds(weg, ids) {
+    ids = ids || new Set();
+    if (!weg) return ids;
+    if (weg.typ === "gesperrt") {
+      if (weg.ursprungsTyp === "kaufen" && weg.marktId) ids.add(weg.marktId);
+      return ids;
+    }
+    if (weg.typ === "craften") {
+      (weg.zutaten || []).forEach((z) => sammleGesperrteKaufMarktIds(z.weg, ids));
+    } else if (weg.typ === "verzaubern") {
+      sammleGesperrteKaufMarktIds(weg.vorstufe, ids);
+      (weg.materialien || []).forEach((m) => sammleGesperrteKaufMarktIds(m.weg, ids));
+    } else if (weg.typ === "reroll") {
+      sammleGesperrteKaufMarktIds(weg.basis, ids);
+    }
+    return ids;
+  }
+
   // -----------------------------------------------------------------------
   // DOM-Verdrahtung. Bricht sofort ab, wenn das App-Markup fehlt (z.B. auf
   // tests/test.html, das ui.js nur wegen der Hilfsfunktionen oben mitlaedt).
@@ -442,6 +480,7 @@ const UI = (function () {
     const bauplanEl = document.getElementById("bauplan");
     const alleAufBtn = document.getElementById("alleAufBtn");
     const alleZuBtn = document.getElementById("alleZuBtn");
+    const volumenBtn = document.getElementById("volumenBtn");
 
     const alleWegeTabelleEl = document.getElementById("alleWegeTabelle");
 
@@ -480,6 +519,7 @@ const UI = (function () {
 
     let einstellungen = einstellungenLesen();
     let anfrageZaehler = 0; // Token gegen veraltete Preisabrufe, s. berechnen()
+    let volumenAnfrageZaehler = 0; // dasselbe Muster fuer den Handelsvolumen-Abruf, s. volumenBtn-Listener
 
     const ALLE_KATEGORIEN = Array.from(
       new Set(
@@ -507,6 +547,13 @@ const UI = (function () {
       spezKnotenOffen: {}, // craftingcategory -> vom Nutzer explizit gesetzter Aufklapp-Zustand
       fokusRegelAlleZeigen: false,
       tagAlleZeigen: false,
+      // Handelsvolumen-Zusatzsignal (Zyklus "history/-Handelsvolumen als
+      // Zusatzsignal bei gesperrten Preisen", 05.09.2026): marktId ->
+      // {umsatz7Tage, mengengewichteterPreis} | null (abgerufen, aber ohne
+      // Daten). Bewusst NUR im Seitenspeicher (Nutzer-Entscheidung: kein
+      // localStorage-Cache), bleibt ueber mehrere Suchen hinweg erhalten,
+      // solange die Seite offen ist, s. PREISE.volumenAbrufen().
+      handelsvolumen: {},
     };
 
     function nameVon(uniquename) {
@@ -1090,14 +1137,47 @@ const UI = (function () {
      * erreichter Mengenobergrenze je Material - das bleibt als eigenes
      * Warn-Badge erhalten, alles Weitere waere reine Wiederholung gewesen.
      */
-    function baueGesperrtZeile(item, stufe, grund, kante) {
+    /**
+     * Handelsvolumen-Zusatzsignal fuer einen gesperrten Kaufen-Knoten
+     * (Zyklus "history/-Handelsvolumen als Zusatzsignal bei gesperrten
+     * Preisen", 05.09.2026): CLAUDE.md dokumentiert, dass prices/ fuer ein
+     * Item dauerhaft leer bleiben kann, obwohl am Markt tatsaechlich Angebote
+     * liegen. Das history/-Handelsvolumen kann die Sperre nicht aufheben
+     * (kein Preis heisst weiterhin nicht verfuegbar, s. Plan 4.1) und wird
+     * auch nicht dafuer verwendet, zeigt aber zusaetzlich, ob am Markt
+     * ueberhaupt gehandelt wird. Rendert nur fuer echte "kaufen, gesperrt"-
+     * Knoten (ursprungsTyp+marktId gesetzt) und erst NACHDEM der Knopf
+     * "Handelsvolumen laden" tatsaechlich geklickt wurde (zustand.
+     * handelsvolumen ist bis dahin leer).
+     */
+    function wegVolumenHtml(weg) {
+      if (!weg || weg.ursprungsTyp !== "kaufen" || !weg.marktId) return "";
+      const info = zustand.handelsvolumen[weg.marktId];
+      if (info === undefined) return "";
+      if (info === null) {
+        return "<span class='kn-volumen' title='Handelsvolumen (history/) abgerufen, aber keine Daten fuer diese Markt-ID.'>Handelsvolumen: keine Daten</span>";
+      }
+      const text =
+        info.umsatz7Tage > 0
+          ? formatSilber(info.umsatz7Tage) + " Stk / 7 Tage" + (info.mengengewichteterPreis != null ? ", " + formatSilber(info.mengengewichteterPreis) + " Silber im Schnitt" : "")
+          : "kein Umsatz in den letzten 7 Tagen";
+      return (
+        "<span class='kn-volumen' title='7-Tage-Handelsvolumen (history/-Endpunkt) mit mengengewichtetem Durchschnittspreis. Zusatzsignal, ob am Markt ueberhaupt gehandelt wird - ersetzt keinen Preis und hebt die Sperre nicht auf.'>" +
+        escapeHtml(text) +
+        "</span>"
+      );
+    }
+
+    function baueGesperrtZeile(weg, kante) {
+      weg = weg || {};
       const div = document.createElement("div");
       div.className = "kn-zeile kn-zeile-gesperrt";
       div.innerHTML =
         "<span class='kn-badge kn-badge-gesperrt'>Gesperrt</span>" +
         (kante ? "<span class='kn-menge'>" + escapeHtml(kante.label) + "</span>" : "") +
-        "<span class='kn-name'>" + escapeHtml(nameVon(item)) + (stufe ? "." + stufe : "") + "</span>" +
-        "<span class='kn-grund'>" + escapeHtml(grund || "") + "</span>";
+        "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>" +
+        "<span class='kn-grund'>" + escapeHtml(weg.grund || "") + "</span>" +
+        wegVolumenHtml(weg);
       return div;
     }
 
@@ -1112,7 +1192,7 @@ const UI = (function () {
       if (!weg) return wrap;
 
       if (weg.typ === "gesperrt") {
-        wrap.appendChild(baueGesperrtZeile(weg.item, weg.stufe, weg.grund, kante));
+        wrap.appendChild(baueGesperrtZeile(weg, kante));
         return wrap;
       }
 
@@ -1331,7 +1411,7 @@ const UI = (function () {
     function renderBauplan(r) {
       bauplanEl.innerHTML = "";
       if (r.gesperrt) {
-        bauplanEl.appendChild(baueGesperrtZeile(r.weg && r.weg.item, r.weg && r.weg.stufe, r.grund, null));
+        bauplanEl.appendChild(baueGesperrtZeile(r.weg, null));
         return;
       }
       bauplanEl.appendChild(baueKnoten(r.weg, r, 0));
@@ -1339,6 +1419,48 @@ const UI = (function () {
 
     alleAufBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = true)));
     alleZuBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = false)));
+
+    /**
+     * Handelsvolumen-Zusatzsignal (Zyklus "history/-Handelsvolumen als
+     * Zusatzsignal bei gesperrten Preisen", 05.09.2026): laedt per Knopfdruck
+     * das 7-Tage-Handelsvolumen fuer alle aktuell im Bauplan-Baum sichtbaren
+     * "kaufen, gesperrt"-Knoten nach (sammleGesperrteKaufMarktIds(), s. dort).
+     * Kein automatischer Abruf bei jeder Berechnung - der Nutzer entscheidet,
+     * wann sich der zusaetzliche Netzzugriff lohnt. Ergebnis landet in
+     * zustand.handelsvolumen (nur Seitenspeicher, kein localStorage-Cache,
+     * bleibt ueber mehrere Suchen hinweg erhalten) und wird anschliessend
+     * durch einen erneuten renderBauplan()-Aufruf sichtbar (baueGesperrtZeile()/
+     * wegVolumenHtml() lesen daraus). anfrageZaehler-Muster wie bei
+     * berechnen(): eine ueberholte Antwort (Item inzwischen gewechselt) wird
+     * still verworfen.
+     */
+    volumenBtn.addEventListener("click", async () => {
+      if (!zustand.ergebnis) return;
+      const ids = Array.from(sammleGesperrteKaufMarktIds(zustand.ergebnis.weg));
+      if (!ids.length) {
+        setStatus("Keine gesperrten Kaufen-Knoten im aktuellen Bauplan.", "ok");
+        return;
+      }
+      const meinToken = ++volumenAnfrageZaehler;
+      volumenBtn.disabled = true;
+      setStatus("0 / " + ids.length + " Handelsvolumen abgerufen (" + einstellungen.stadt + ") ...");
+      try {
+        const ergebnis = await PREISE.volumenAbrufen(ids, {
+          stadt: einstellungen.stadt,
+          aufFortschritt: (erledigt, gesamt) => {
+            if (meinToken === volumenAnfrageZaehler) setStatus(erledigt + " / " + gesamt + " Handelsvolumen abgerufen (" + einstellungen.stadt + ") ...");
+          },
+        });
+        if (meinToken !== volumenAnfrageZaehler) return; // inzwischen ueberholt (neue Suche/neuer Abruf)
+        Object.assign(zustand.handelsvolumen, ergebnis);
+        if (zustand.ergebnis) renderBauplan(zustand.ergebnis);
+        setStatus(ids.length + " Handelsvolumen fuer " + einstellungen.stadt + " geladen.", "ok");
+      } catch (err) {
+        if (meinToken === volumenAnfrageZaehler) setStatus("Fehler beim Handelsvolumen-Abruf: " + err.message, "err");
+      } finally {
+        if (meinToken === volumenAnfrageZaehler) volumenBtn.disabled = false;
+      }
+    });
 
     // wegLabelKurz(), statusInfoFuerWeg(), gruppiereAlleWege() und
     // wegGruppenLabel() stehen auf Modul-Ebene oben (testbar ohne DOM, s.
@@ -1919,5 +2041,6 @@ const UI = (function () {
     wegLabelKurz,
     gruppiereAlleWege,
     wegGruppenLabel,
+    sammleGesperrteKaufMarktIds,
   };
 })();

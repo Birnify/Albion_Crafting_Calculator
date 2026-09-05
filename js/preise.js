@@ -418,6 +418,120 @@ const PREISE = (function () {
   }
 
   // ---------------------------------------------------------------------
+  // Handelsvolumen (history/-Endpunkt) als Zusatzsignal bei gesperrten
+  // Kaufen-Knoten (Zyklus "history/-Handelsvolumen als Zusatzsignal bei
+  // gesperrten Preisen", 05.09.2026, s. CLAUDE.md "Bekannte Grenze:
+  // prices/ kann fuer echte, aktuelle Marktangebote leer bleiben"):
+  // prices/ kann fuer ein Item dauerhaft leer bleiben, obwohl am Markt
+  // echte Angebote liegen. history/ behebt das nicht (der Preis bleibt
+  // gesperrt, das ist beabsichtigt, s. Plan 4.1 "Kein Preis heisst nicht
+  // verfuegbar, niemals kostenlos"), zeigt aber zusaetzlich, ob ueberhaupt
+  // gehandelt wird. Nutzer-Entscheidung 05.09.2026: nur per Knopfdruck
+  // (kein automatischer Abruf), 7-Tage-Summe von item_count plus
+  // mengengewichteter Durchschnittspreis (wie eintopf_update.py
+  // volumen_holen(), Kennzahlen d7/avg dort), nur fuer die Sitzung im
+  // Speicher gehalten (kein localStorage-Cache, kein Schema noetig).
+  // ---------------------------------------------------------------------
+
+  async function holeHistorieBlock(ids, stadt) {
+    const url = `${API_BASE}/history/${ids.join(",")}.json?locations=${stadt}&time-scale=24`;
+    let letzterFehler = null;
+    for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
+      try {
+        const antwort = await fetch(url);
+        if (antwort.status === 429) {
+          await warte(PAUSE_MS * Math.pow(2, versuch + 1));
+          continue;
+        }
+        if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
+        return await antwort.json();
+      } catch (e) {
+        letzterFehler = e;
+        if (versuch < MAX_VERSUCHE - 1) await warte(PAUSE_MS * Math.pow(2, versuch + 1));
+      }
+    }
+    throw new Error(`Handelsvolumen-Abruf fehlgeschlagen nach ${MAX_VERSUCHE} Versuchen: ${letzterFehler}`);
+  }
+
+  /**
+   * Wertet eine einzelne history/-Antwortzeile aus: 7-Tage-Summe von
+   * item_count (tatsaechlich gehandelte Stueckzahl, NICHT die Angebotsmenge,
+   * s. CLAUDE.md "Albion Online Data Project API") und mengengewichteter
+   * Durchschnittspreis ueber denselben Zeitraum. Identische Rechnung wie
+   * eintopf_update.py volumen_holen() (dort "d7"/"avg"), reine Funktion ohne
+   * Netzzugriff, deshalb offline testbar.
+   *
+   * history/ liefert das Feld "location", NICHT "city" wie prices/ - s.
+   * Modulkommentar oben und CLAUDE.md.
+   *
+   * @param {object} zeile ein Eintrag der history/-Antwort ({item_id, location, data:[{item_count, avg_price}, ...]})
+   * @param {number} tageFenster wie viele der (chronologisch letzten) Tageswerte zaehlen
+   * @returns {?{id:string, stadt:string, umsatz7Tage:number, mengengewichteterPreis:?number}} null bei ungueltiger Zeile
+   */
+  function normalisiereHistorieZeile(zeile, tageFenster) {
+    if (!zeile || !zeile.item_id) return null;
+    const daten = zeile.data || [];
+    const letzte = daten.slice(-tageFenster);
+    const summe = letzte.reduce((a, x) => a + (x.item_count || 0), 0);
+    const gewichteteSumme = letzte.reduce((a, x) => a + (x.avg_price || 0) * (x.item_count || 0), 0);
+    return {
+      id: zeile.item_id,
+      stadt: zeile.location,
+      umsatz7Tage: summe,
+      mengengewichteterPreis: summe > 0 ? Math.round(gewichteteSumme / summe) : null,
+    };
+  }
+
+  /**
+   * Ruft das 7-Tage-Handelsvolumen fuer die gegebenen Markt-IDs ab. Bewusst
+   * OHNE localStorage-Cache (Nutzer-Entscheidung 05.09.2026, "nur laufende
+   * Sitzung"): der Aufrufer (ui.js) haelt das Ergebnis selbst im
+   * Seitenspeicher, solange die Seite offen ist. Sequenziell in 50er-
+   * Bloecken mit Pause, bei HTTP 429 mit wachsender Wartezeit wiederholt -
+   * dieselbe Drossel-Disziplin wie preiseAbrufen().
+   *
+   * @param {string[]} ids Markt-IDs, typischerweise die aktuell gesperrten Kaufen-Knoten im Bauplan-Baum
+   * @param {object} [opts]
+   * @param {string} [opts.stadt=STADT_DEFAULT]
+   * @param {number} [opts.tageFenster=7]
+   * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
+   * @returns {Promise<Object<string, {umsatz7Tage:number, mengengewichteterPreis:?number}|null>>}
+   *   null = history/ lieferte fuer diese ID keine (oder keine auswertbare) Zeile.
+   */
+  async function volumenAbrufen(ids, opts) {
+    opts = opts || {};
+    const stadt = opts.stadt || STADT_DEFAULT;
+    const tageFenster = opts.tageFenster || 7;
+    const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
+
+    const eindeutigeIds = Array.from(new Set(ids));
+    const ergebnis = {};
+    const gesamt = eindeutigeIds.length;
+    let erledigt = 0;
+    aufFortschritt(erledigt, gesamt);
+    if (!gesamt) return ergebnis;
+
+    for (const block of bloecke(eindeutigeIds, BLOCKGROESSE)) {
+      const zeilen = await holeHistorieBlock(block, stadt);
+      const gesehen = new Set();
+      (zeilen || []).forEach((zeile) => {
+        const eintrag = normalisiereHistorieZeile(zeile, tageFenster);
+        if (eintrag) {
+          ergebnis[eintrag.id] = eintrag;
+          gesehen.add(eintrag.id);
+        }
+      });
+      block.forEach((id) => {
+        if (!gesehen.has(id)) ergebnis[id] = null;
+      });
+      erledigt += block.length;
+      aufFortschritt(erledigt, gesamt);
+      await warte(PAUSE_MS);
+    }
+    return ergebnis;
+  }
+
+  // ---------------------------------------------------------------------
   // Eigenpreise (nicht handelbare Zutaten). Volle Pflegeoberflaeche ist P6,
   // hier nur Speicherung und Zugriff.
   // ---------------------------------------------------------------------
@@ -644,6 +758,58 @@ const PREISE = (function () {
       pruefe("sammleQualitaetsMarktIds-Tests uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
     }
 
+    // Handelsvolumen-Zusatzsignal (05.09.2026): normalisiereHistorieZeile()
+    // rechnet identisch zu eintopf_update.py volumen_holen() (d7/avg dort),
+    // hier gegen synthetische Zeilen offline nachgerechnet.
+    const histZeile = {
+      item_id: "T4_HEAD_CLOTH_ROYAL@3",
+      location: "Lymhurst",
+      // 10 Tageswerte, nur die letzten 7 zaehlen (tageFenster=7): 4,5,6,7,8,9,10 -> Summe 49
+      data: [
+        { item_count: 1, avg_price: 999 },
+        { item_count: 2, avg_price: 999 },
+        { item_count: 3, avg_price: 999 },
+        { item_count: 4, avg_price: 100 },
+        { item_count: 5, avg_price: 110 },
+        { item_count: 6, avg_price: 120 },
+        { item_count: 7, avg_price: 130 },
+        { item_count: 8, avg_price: 140 },
+        { item_count: 9, avg_price: 150 },
+        { item_count: 10, avg_price: 160 },
+      ],
+    };
+    const histAusgewertet = normalisiereHistorieZeile(histZeile, 7);
+    pruefe(
+      "normalisiereHistorieZeile: history/ liefert 'location', wird auf 'stadt' normalisiert",
+      histAusgewertet && histAusgewertet.stadt === "Lymhurst" && histAusgewertet.id === "T4_HEAD_CLOTH_ROYAL@3",
+      JSON.stringify(histAusgewertet)
+    );
+    pruefe(
+      "normalisiereHistorieZeile: 7-Tage-Fenster nimmt nur die LETZTEN 7 Werte, nicht alle 10 (Summe 4+5+6+7+8+9+10=49)",
+      histAusgewertet && histAusgewertet.umsatz7Tage === 49,
+      histAusgewertet && histAusgewertet.umsatz7Tage
+    );
+    // Mengengewichteter Durchschnitt der letzten 7 Tage:
+    // (4*100+5*110+6*120+7*130+8*140+9*150+10*160) / 49 = 6650/49 = 135,71... -> gerundet 136.
+    // Das einfache (ungewichtete) Mittel der sieben Preise waere 130 - die
+    // Abweichung zeigt genau den Sinn der Gewichtung: an Tagen mit mehr
+    // Umsatz (hier zufaellig auch die teureren) zaehlt der Preis staerker.
+    pruefe(
+      "normalisiereHistorieZeile: mengengewichteter Durchschnittspreis ueber die letzten 7 Tage, nicht das einfache Mittel (136 statt 130)",
+      histAusgewertet && histAusgewertet.mengengewichteterPreis === 136,
+      histAusgewertet && histAusgewertet.mengengewichteterPreis
+    );
+    const histLeer = normalisiereHistorieZeile({ item_id: "X", location: "Lymhurst", data: [] }, 7);
+    pruefe(
+      "normalisiereHistorieZeile: kein Umsatz (leere data) -> umsatz7Tage 0, Preis null statt NaN/Infinity",
+      histLeer && histLeer.umsatz7Tage === 0 && histLeer.mengengewichteterPreis === null,
+      JSON.stringify(histLeer)
+    );
+    pruefe(
+      "normalisiereHistorieZeile: ungueltige Zeile ohne item_id liefert null statt zu werfen",
+      normalisiereHistorieZeile(null, 7) === null && normalisiereHistorieZeile({}, 7) === null
+    );
+
     return ergebnisse;
   }
 
@@ -665,6 +831,8 @@ const PREISE = (function () {
     eigenpreisHolen,
     eigenpreisEntfernen,
     eigenpreiseAlle,
+    normalisiereHistorieZeile,
+    volumenAbrufen,
     selbsttest,
   };
 })();

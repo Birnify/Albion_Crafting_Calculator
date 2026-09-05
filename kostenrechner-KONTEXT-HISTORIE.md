@@ -7,6 +7,94 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Alle-Wege-Tabelle gruppiert gleichwertige Wege, 05.09.2026, v1.6.0)
+
+**Auftrag:** Backlog-Punkt "'Alle Wege'-Tabelle zeigt bei baugleichen
+Alternativrezepten identische, nichtssagende Zeilen" (Auslöser: Königliche
+Gugel, drei Alternativrezepte plus mit/ohne Fokus ergaben sechs Zeilen mit
+demselben Silber- und Fokuswert). Drei Rückfragen aus der Brainstorming-Phase,
+alle vom Nutzer wie empfohlen beantwortet: (1) zusammenfassen mit Aufklappen,
+nicht nur kennzeichnen; (2) Gleichwertigkeit = **exakt gleich bei der
+angezeigten Rundung** (die tatsächlich per `formatSilber()`/`formatFokus()`
+gerundeten Anzeigewerte, keine Toleranzschwelle auf den Rohwerten); (3)
+Gruppierung **nur innerhalb desselben Wegtyps** (kaufen/craften/verzaubern/
+reroll bleiben fachlich getrennt).
+
+**Umgesetzt in `js/ui.js`:** drei neue, reine (DOM-freie) Funktionen auf
+Modul-Ebene, testbar wie `spezKnotenAnzeigeGruppen()`:
+
+- `statusInfoFuerWeg(w)`: Pille (good/warn/bad) + Text + Grundtext eines Weges,
+  wie in der Tabelle sichtbar.
+- `gruppiereAlleWege(alleWege)`: fasst Wege zu Gruppen zusammen, deren
+  Schlüssel `typ + formatSilber(silber) + formatFokus(fokus) + statusPille +
+  Grundtext` ist - also exakt die Definition aus Rückfrage (2)/(3). Reihenfolge
+  bleibt stabil (erstes Vorkommen entscheidet die Position), auch bei nicht
+  benachbarten Duplikaten.
+- `wegGruppenLabel(gruppe)`: bei einem Mitglied unverändert `wegLabelKurz()`
+  (keine Regression im Normalfall); bei mehreren ein zusammenfassendes Label
+  mit Anzahl, bei `craften` nur dann mit "mit/ohne Fokus" präzisiert, wenn
+  ALLE Mitglieder denselben Fokuseinsatz haben.
+
+`renderAlleWege()` gruppiert jetzt vor dem Rendern; eine Gruppe mit mehreren
+Mitgliedern wird als anfangs eingeklappte Kopfzeile (Klick toggelt, Pfeil
+"▸"/rotiert wie beim bestehenden `<details>`-Muster) plus darunterliegenden,
+ursprünglichen Einzelzeilen gerendert. `wegLabelKurz()` von `boot()` auf
+Modul-Ebene verschoben (wird jetzt auch von `wegGruppenLabel()` gebraucht).
+CSS-Ergänzung in `Kostenrechner.html` (`.wg-gruppe-kopf`, `.wg-pfeil`,
+`.wg-gruppe-detail`), keine belegten Werte/Formeln berührt.
+
+**Wichtiger Befund beim Bauen, der die im Auftrag skizzierte Erwartung
+korrigiert:** die Vorhersage "sechs Craften-Zeilen der Königlichen Gugel
+werden zu zwei Gruppen (mit/ohne Fokus, Fokus-Spannen 287,4 bzw. 514,4)" war
+als Hypothese formuliert ("oder je nachdem wie die tatsächlichen Werte
+aussehen") und wurde vor dem Bauen per Node-Nachrechnung gegen den ECHTEN
+Rezeptgraphen geprüft, nicht ungeprüft übernommen. Ergebnis: `mitFokus` ist am
+Wurzelknoten der Königlichen Gugel **folgenlos**, weil das Item keine
+`craftingcategory` hat (kein Fokus, keine Rückgewinnung, s. `../CLAUDE.md`
+"Königliche Items sind reine Umwandlungen") - mit/ohne Fokus liefern für JEDES
+der drei Alternativrezepte identische Zahlen. Bei gleich teuren
+Alternativrezepten (Testfixtur: SET1=SET2=SET3=100.000, Siegel=59.945) sind
+deshalb tatsächlich **alle sechs** Kandidaten exakt gleich (Silber 219.890,
+Fokus 0) und werden zu EINER Gruppe "Craften (6 gleichwertige Wege)"
+zusammengefasst - nicht zu zwei Gruppen zu je drei. Das entspricht sogar
+genauer dem ursprünglichen Bug-Bericht ("sechs Zeilen mit demselben Silber-
+und Fokuswert"). Bei unterschiedlich teuren Alternativrezepten (Gegenprobe:
+SET2 teurer) entstehen dagegen korrekt zwei Gruppen (4 + 2 Mitglieder), die
+NICHT fälschlich zu einer verschmelzen.
+
+**Getestet:** Testsuite von 228 auf **246 Tests** gewachsen (18 neue, Abschnitt
+"Regressionstest Alle-Wege-Gruppierung"): 10 synthetische Kontrollfälle direkt
+gegen `UI.gruppiereAlleWege()`/`UI.wegGruppenLabel()` (u. a. unterschiedlicher
+Wegtyp trotz gleicher Zahlen bleibt getrennt, unterschiedlicher Status/
+Grundtext bleibt getrennt, Rundungsgleichheit bei unterschiedlichen Rohwerten
+wird zusammengefasst, Rundungsungleichheit bleibt getrennt, nicht benachbarte
+Duplikate werden trotzdem gefunden), plus die reale Königliche-Gugel-
+Gegenprobe oben (genau 1 Gruppe bei Gleichstand, genau 2 Gruppen bei
+Preisunterschied, Kaufen/Verzaubern bleiben trotz je 1 Mitglied als eigene
+Wegtypen getrennt). Alle 246 grün, per Node cachefrei gegen die Dateien auf
+der Platte geprüft (`vm.runInContext`, `document`/`localStorage`/
+`performance`-Stub sowie ein zweiter Lauf mit vollständigerem DOM-Stub, der
+`boot()` fehlerfrei durchlaufen lässt).
+
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.5.2:** weder
+`SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug
+(`mcp__claude-in-chrome__*`/`mcp__computer-use__*`) standen in dieser Sitzung
+zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
+`spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht angefordert
+werden, obwohl `oberflaechen-pruefer` hier fachlich angebracht gewesen wäre
+(Oberfläche geändert: `Kostenrechner.html`/`js/ui.js`). Ersatzweise: `boot()`
+mit einem vollständigeren DOM-Stub fehlerfrei durchlaufen lassen (fängt
+Syntax-/Referenzfehler im neuen Code ab), aber **kein echter Klick-Test der
+neuen Aufklapp-Interaktion im Browser** - das steht noch aus. Empfehlung an
+den Nutzer: die App einmal öffnen, eine Suche mit bekannten Gleichstand-Fällen
+(z. B. Königliche Gugel) durchführen und die neue Gruppenzeile antippen.
+
+Versions-Schnappschuss unter `Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert
+gleichwertige Wege/` angelegt. Git-Commit und Push wie im Projekt üblich
+(s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
 ## Aktueller Stand (Fokus-Monotonie-Regressionstest, Diagnose ohne Codefehler, 05.09.2026, v1.5.2)
 
 **Gemeldeter kritischer Bug (Hauptgespräch, Live-Browser-Test):** Königliche

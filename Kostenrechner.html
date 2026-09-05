@@ -157,6 +157,8 @@ details>.body{padding:0 20px 20px}
 .baum .kn-fokus{color:var(--dim);font-size:12px;white-space:nowrap}
 .baum .kn-alter{color:var(--dim);font-size:11px;white-space:nowrap}
 .baum .kn-alter.stale{color:var(--warn);font-weight:600}
+.baum .kn-volumen{color:var(--dim);font-size:11px;white-space:nowrap;cursor:help;
+                  text-decoration:underline dotted var(--dim);text-underline-offset:2px}
 .baum .kn-detail{color:var(--dim);font-size:11.5px;margin-top:3px;padding-left:1px}
 .baum .kn-alt{cursor:help;text-decoration:underline dotted var(--dim);text-underline-offset:2px}
 .baum .fokus-schalter{border:1px solid var(--line);border-radius:4px;background:var(--bg);
@@ -271,6 +273,7 @@ details>.body{padding:0 20px 20px}
   <div class="bar" style="margin-bottom:10px">
     <button id="alleAufBtn" class="mini">Alles aufklappen</button>
     <button id="alleZuBtn" class="mini">Alles zuklappen</button>
+    <button id="volumenBtn" class="mini" title="Laedt fuer alle aktuell im Bauplan sichtbaren gesperrten Kaufen-Knoten das 7-Tage-Handelsvolumen (history/-Endpunkt) nach. Zusatzsignal, ob am Markt ueberhaupt gehandelt wird - ersetzt keinen Preis und hebt die Sperre nicht auf.">Handelsvolumen laden</button>
   </div>
   <div id="bauplan" class="baum"></div>
 </div>

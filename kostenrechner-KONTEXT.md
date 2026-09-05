@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.6.0 · Alle-Wege-Tabelle gruppiert gleichwertige Wege
+Stand: 2026-09-05 · Version: v1.7.0 · Handelsvolumen als Zusatzsignal bei gesperrten Preisen
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,97 +21,109 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Alle-Wege-Tabelle gruppiert gleichwertige Wege, 05.09.2026, v1.6.0)
+## Aktueller Stand (Handelsvolumen als Zusatzsignal bei gesperrten Preisen, 05.09.2026, v1.7.0)
 
-**Auftrag:** Backlog-Punkt "'Alle Wege'-Tabelle zeigt bei baugleichen
-Alternativrezepten identische, nichtssagende Zeilen" (Auslöser: Königliche
-Gugel, drei Alternativrezepte plus mit/ohne Fokus ergaben sechs Zeilen mit
-demselben Silber- und Fokuswert). Drei Rückfragen aus der Brainstorming-Phase,
-alle vom Nutzer wie empfohlen beantwortet: (1) zusammenfassen mit Aufklappen,
-nicht nur kennzeichnen; (2) Gleichwertigkeit = **exakt gleich bei der
-angezeigten Rundung** (die tatsächlich per `formatSilber()`/`formatFokus()`
-gerundeten Anzeigewerte, keine Toleranzschwelle auf den Rohwerten); (3)
-Gruppierung **nur innerhalb desselben Wegtyps** (kaufen/craften/verzaubern/
-reroll bleiben fachlich getrennt).
+**Auftrag:** Backlog-Punkt 1 ("Bekannte Grenze der Preisquelle") aus der
+vorherigen Fassung dieser Liste, den der Nutzer beim letzten Mal bewusst
+offen gelassen hatte. Vier Rückfragen aus der Brainstorming-Phase, alle vom
+Nutzer wie empfohlen beantwortet: (1) Zeitraum/Kennzahl = **7-Tage-Summe**
+von `item_count` plus mengengewichteter Durchschnittspreis, wie im
+Eintopf-Rechner (`volumen_holen()`); (2) Abruf-Auslöser = **Knopfdruck, ein
+globaler Knopf** fürs ganze Ergebnis, kein automatischer Abruf je Berechnung;
+(3) Caching = **nur laufende Sitzung**, kein neues `localStorage`-Schema;
+(4) Anzeigeort = **nur im Bauplan-Baum**, nicht in der "Alle Wege"-Tabelle.
 
-**Umgesetzt in `js/ui.js`:** drei neue, reine (DOM-freie) Funktionen auf
-Modul-Ebene, testbar wie `spezKnotenAnzeigeGruppen()`:
+**Umgesetzt:**
 
-- `statusInfoFuerWeg(w)`: Pille (good/warn/bad) + Text + Grundtext eines Weges,
-  wie in der Tabelle sichtbar.
-- `gruppiereAlleWege(alleWege)`: fasst Wege zu Gruppen zusammen, deren
-  Schlüssel `typ + formatSilber(silber) + formatFokus(fokus) + statusPille +
-  Grundtext` ist - also exakt die Definition aus Rückfrage (2)/(3). Reihenfolge
-  bleibt stabil (erstes Vorkommen entscheidet die Position), auch bei nicht
-  benachbarten Duplikaten.
-- `wegGruppenLabel(gruppe)`: bei einem Mitglied unverändert `wegLabelKurz()`
-  (keine Regression im Normalfall); bei mehreren ein zusammenfassendes Label
-  mit Anzahl, bei `craften` nur dann mit "mit/ohne Fokus" präzisiert, wenn
-  ALLE Mitglieder denselben Fokuseinsatz haben.
+- `js/preise.js`: `volumenAbrufen(ids, opts)` gegen den `history/`-Endpunkt
+  (`time-scale=24`), dieselbe Drossel-Disziplin wie `preiseAbrufen()`
+  (50er-Blöcke, 1,5 s Pause, Backoff bei 429), aber bewusst OHNE
+  `localStorage`-Cache. `normalisiereHistorieZeile(zeile, tageFenster)` als
+  reine Hilfsfunktion (Summe `item_count` der letzten 7 Tage,
+  mengengewichteter Durchschnittspreis), rechnet identisch zu
+  `eintopf_update.py` `volumen_holen()` (dort `d7`/`avg`). `history/` liefert
+  `location`, nicht `city` wie `prices/` - einmal mehr beachtet.
+- `js/ui.js`: `sammleGesperrteKaufMarktIds(weg)` (Modul-Ebene, reine
+  Funktion) traversiert dieselbe `weg`-Struktur wie `baueKnoten()`
+  (`zutaten`/`vorstufe`/`materialien`/`basis`) und sammelt alle Markt-IDs
+  von Knoten mit `typ:"gesperrt", ursprungsTyp:"kaufen"`. Neuer Knopf
+  "Handelsvolumen laden" neben "Alles auf-/zuklappen" ruft
+  `PREISE.volumenAbrufen()` für genau diese IDs auf, Ergebnis landet in
+  `zustand.handelsvolumen` (Session-Speicher, bleibt über mehrere Suchen
+  erhalten). `baueGesperrtZeile()` nimmt jetzt das ganze `weg`-Objekt
+  entgegen (vorher drei Einzelfelder) und hängt bei einem echten
+  "kaufen, gesperrt"-Knoten die neue `wegVolumenHtml()`-Anzeige an ("X Stk /
+  7 Tage, Y Silber im Schnitt", oder "keine Daten"/nichts, solange der Knopf
+  noch nicht geklickt wurde).
+- `Kostenrechner.html`: Knopf `#volumenBtn` plus CSS `.kn-volumen` (Stil wie
+  `.kn-alter`, gepunktet unterstrichen mit Tooltip). Keine belegten
+  Werte/Formeln berührt.
 
-`renderAlleWege()` gruppiert jetzt vor dem Rendern; eine Gruppe mit mehreren
-Mitgliedern wird als anfangs eingeklappte Kopfzeile (Klick toggelt, Pfeil
-"▸"/rotiert wie beim bestehenden `<details>`-Muster) plus darunterliegenden,
-ursprünglichen Einzelzeilen gerendert. `wegLabelKurz()` von `boot()` auf
-Modul-Ebene verschoben (wird jetzt auch von `wegGruppenLabel()` gebraucht).
-CSS-Ergänzung in `Kostenrechner.html` (`.wg-gruppe-kopf`, `.wg-pfeil`,
-`.wg-gruppe-detail`), keine belegten Werte/Formeln berührt.
+**Wichtiger Befund beim Bauen, den der Auftrag nicht vorwegnahm:** die
+Handelsvolumen-Anzeige greift nach genauer Prüfung der Sperrlogik in
+`js/rechenkern.js` in der Praxis fast ausschließlich am **Wurzelknoten**
+des Bauplans, nicht tief verschachtelt. Grund: `craftKandidat()`/
+`verzaubernKandidat()` setzen `gesperrt=true` an sich selbst, sobald
+IRGENDEINE Zutat/Vorstufe/Material gesperrt ist (s. `js/rechenkern.js`
+Zeile ~366 ff.), und diese Sperre kaskadiert konsequent nach oben bis zum
+nächsten Knoten mit einem tatsächlich funktionierenden Alternativweg, oder
+bis zur Wurzel. Ein GEWONNENER (nicht gesperrter) Teilbaum kann deshalb per
+Induktion nie einen gesperrten Kindknoten enthalten - der vorhandene
+`weg.typ === "gesperrt"`-Zweig in `baueKnoten()` (verschachtelter Fall) ist
+nach aktuellem Kaskadenverhalten praktisch nicht erreichbar, nur der
+Sonderfall in `renderBauplan()` (ganzer `r.weg` gesperrt) tritt real auf -
+genau der in `../CLAUDE.md` dokumentierte Fall (z. B.
+`T4_HEAD_CLOTH_ROYAL@3` komplett unbepreisbar). `sammleGesperrteKaufMarktIds()`
+spiegelt trotzdem bewusst die VOLLE Traversierung (craften/verzaubern/reroll),
+robust gegenüber diesem Kaskadenverhalten und zukunftssicher, falls sich das
+je ändert; die Tests decken beide Fälle (Wurzel und - synthetisch - auch
+verschachtelt) ab. Live gegenübergestellt: `T4_HEAD_CLOTH_ROYAL@3` ist über
+`prices/` in Lymhurst nicht bepreisbar, `history/` zeigt trotzdem 198
+tatsächlich gehandelte Stück in den letzten 7 Tagen zu durchschnittlich
+222.430 Silber - exakt das Zusatzsignal, das der Auftrag wollte.
 
-**Wichtiger Befund beim Bauen, der die im Auftrag skizzierte Erwartung
-korrigiert:** die Vorhersage "sechs Craften-Zeilen der Königlichen Gugel
-werden zu zwei Gruppen (mit/ohne Fokus, Fokus-Spannen 287,4 bzw. 514,4)" war
-als Hypothese formuliert ("oder je nachdem wie die tatsächlichen Werte
-aussehen") und wurde vor dem Bauen per Node-Nachrechnung gegen den ECHTEN
-Rezeptgraphen geprüft, nicht ungeprüft übernommen. Ergebnis: `mitFokus` ist am
-Wurzelknoten der Königlichen Gugel **folgenlos**, weil das Item keine
-`craftingcategory` hat (kein Fokus, keine Rückgewinnung, s. `../CLAUDE.md`
-"Königliche Items sind reine Umwandlungen") - mit/ohne Fokus liefern für JEDES
-der drei Alternativrezepte identische Zahlen. Bei gleich teuren
-Alternativrezepten (Testfixtur: SET1=SET2=SET3=100.000, Siegel=59.945) sind
-deshalb tatsächlich **alle sechs** Kandidaten exakt gleich (Silber 219.890,
-Fokus 0) und werden zu EINER Gruppe "Craften (6 gleichwertige Wege)"
-zusammengefasst - nicht zu zwei Gruppen zu je drei. Das entspricht sogar
-genauer dem ursprünglichen Bug-Bericht ("sechs Zeilen mit demselben Silber-
-und Fokuswert"). Bei unterschiedlich teuren Alternativrezepten (Gegenprobe:
-SET2 teurer) entstehen dagegen korrekt zwei Gruppen (4 + 2 Mitglieder), die
-NICHT fälschlich zu einer verschmelzen.
+**Getestet:** Testsuite von 246 auf **261 Tests** gewachsen (15 neue): 5 in
+`PREISE.selbsttest()` für `normalisiereHistorieZeile()` (7-Tage-Fenster
+schneidet ältere Tage ab, mengengewichteter ≠ einfacher Durchschnitt, leere
+`data` ergibt 0/`null` statt `NaN`, `location`→`stadt`-Normalisierung,
+ungültige Zeile liefert `null` statt zu werfen), 10 im neuen Abschnitt
+"Regressionstest `UI.sammleGesperrteKaufMarktIds()`" (Wurzel/verschachtelt/
+Verzaubern/Reroll/Dedup/Negativfälle mit `ursprungsTyp !== "kaufen"` bzw.
+fehlender `marktId`). Alle 261 grün, per Node cachefrei gegen die Dateien
+auf der Platte geprüft (`vm.runInContext`, `document`/`localStorage`/`fetch`-
+Stub). **Zusätzlich live gegen die echte API geprüft** (kein Raten): drei
+echte `fetch`-Aufrufe gegen `europe.albion-online-data.com/.../history/`
+(einmal roh zur Feldnamen-Kontrolle, einmal durch `PREISE.volumenAbrufen()`
+mit zwei IDs inkl. `T4_HEAD_CLOTH_ROYAL@3`, einmal mit einer erfundenen ID
+zur Kontrolle des `null`-Falls) sowie eine volle Rechenkern-Integrationsprobe
+(`RECHENKERN.kosten()` + `UI.sammleGesperrteKaufMarktIds()` gegen den echten
+Rezeptgraphen ohne jeden hinterlegten Preis) bestätigen Feldnamen, Antwort-
+form und Zusammenspiel.
 
-**Getestet:** Testsuite von 228 auf **246 Tests** gewachsen (18 neue, Abschnitt
-"Regressionstest Alle-Wege-Gruppierung"): 10 synthetische Kontrollfälle direkt
-gegen `UI.gruppiereAlleWege()`/`UI.wegGruppenLabel()` (u. a. unterschiedlicher
-Wegtyp trotz gleicher Zahlen bleibt getrennt, unterschiedlicher Status/
-Grundtext bleibt getrennt, Rundungsgleichheit bei unterschiedlichen Rohwerten
-wird zusammengefasst, Rundungsungleichheit bleibt getrennt, nicht benachbarte
-Duplikate werden trotzdem gefunden), plus die reale Königliche-Gugel-
-Gegenprobe oben (genau 1 Gruppe bei Gleichstand, genau 2 Gruppen bei
-Preisunterschied, Kaufen/Verzaubern bleiben trotz je 1 Mitglied als eigene
-Wegtypen getrennt). Alle 246 grün, per Node cachefrei gegen die Dateien auf
-der Platte geprüft (`vm.runInContext`, `document`/`localStorage`/
-`performance`-Stub sowie ein zweiter Lauf mit vollständigerem DOM-Stub, der
-`boot()` fehlerfrei durchlaufen lässt).
-
-**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.5.2:** weder
-`SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug
-(`mcp__claude-in-chrome__*`/`mcp__computer-use__*`) standen in dieser Sitzung
-zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.6.0:** weder
+`SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug standen in
+dieser Sitzung zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
 `spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht angefordert
-werden, obwohl `oberflaechen-pruefer` hier fachlich angebracht gewesen wäre
-(Oberfläche geändert: `Kostenrechner.html`/`js/ui.js`). Ersatzweise: `boot()`
-mit einem vollständigeren DOM-Stub fehlerfrei durchlaufen lassen (fängt
-Syntax-/Referenzfehler im neuen Code ab), aber **kein echter Klick-Test der
-neuen Aufklapp-Interaktion im Browser** - das steht noch aus. Empfehlung an
-den Nutzer: die App einmal öffnen, eine Suche mit bekannten Gleichstand-Fällen
-(z. B. Königliche Gugel) durchführen und die neue Gruppenzeile antippen.
+werden, obwohl `spieldaten-pruefer` (neuer API-Endpunkt) und
+`oberflaechen-pruefer` (neuer Knopf, neue Anzeige im Bauplan) hier fachlich
+angebracht gewesen wären. Ersatzweise: die oben beschriebenen echten
+Live-`fetch`-Aufrufe gegen die Produktions-API als Ersatz für
+`spieldaten-pruefer`, und eine sorgfältige Zeilen-für-Zeile-Prüfung von
+`baueGesperrtZeile()`/`wegVolumenHtml()` als Ersatz für
+`oberflaechen-pruefer` - aber **kein echter Klick-Test des neuen Knopfs im
+gerenderten Browser**. Empfehlung an den Nutzer: die App öffnen, ein Item
+ohne Marktpreis suchen (z. B. eine hohe Verzauberungsstufe), "Handelsvolumen
+laden" klicken und die neue Anzeige an der Gesperrt-Zeile prüfen.
 
-Versions-Schnappschuss unter `Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert
-gleichwertige Wege/` angelegt. Git-Commit und Push wie im Projekt üblich
-(s. `../CLAUDE.md`, "Versionskontrolle").
+Versions-Schnappschuss unter `Versionen/v1.7.0 - Handelsvolumen als
+Zusatzsignal bei gesperrten Preisen/` angelegt. Git-Commit und Push wie im
+Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
 
 ---
 
-**Vorheriger Stand (v1.5.2, Diagnose "Fokus-Monotonie-Regressionstest") und
-alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
-(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v1.6.0, "Alle-Wege-Tabelle gruppiert gleichwertige
+Wege") und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
+ausgelagert (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
 
@@ -125,6 +137,9 @@ Spezialisierungsknoten nach Tier gruppiert" (v1.5.1) plus Diagnose
 kein Rechenkern-/Regeln-/UI-Code geaendert) plus Feature "Alle-Wege-Tabelle
 gruppiert gleichwertige Wege" (v1.6.0, nur `Kostenrechner.html`/`js/ui.js`/
 `tests/test.html`, kein Rechenkern-/Regeln-Code geaendert, keine neuen
+Dateien) plus Feature "Handelsvolumen als Zusatzsignal bei gesperrten
+Preisen" (v1.7.0, `js/preise.js`/`js/ui.js`/`Kostenrechner.html`/
+`tests/test.html`, kein Rechenkern-/Regeln-Code geaendert, keine neuen
 Dateien):
 
 ```
@@ -135,20 +150,24 @@ Kostenrechner/
                               Tabelle + Fokus-Schalter im Bauplan v1.2.0; Qualitaet-Dropdown
                               + Qualitaets-Chancenpunkte-Block v1.4.0; Schicksalsbrett-
                               Meisterschaft/Spezialisierung-Zeile ersetzt durch
-                              #spezKnotenContainer-Panel v1.5.0): Suche, Hero,
+                              #spezKnotenContainer-Panel v1.5.0; #volumenBtn +
+                              .kn-volumen v1.7.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
     preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
-                              Cache-Schluessel + sammleQualitaetsMarktIds() v1.4.0, Schema auf 3):
+                              Cache-Schluessel + sammleQualitaetsMarktIds() v1.4.0, Schema auf 3);
+                              volumenAbrufen()/normalisiereHistorieZeile() gegen history/,
+                              bewusst OHNE localStorage-Cache v1.7.0):
                               eigenpreisSetzen lehnt Preis<=0 ab, PREIS_CACHE_SCHEMA_VERSION/
-                              EIGENPREIS_SCHEMA_VERSION getrennt seit v1.1.0. Unveraendert seit v1.4.0.
+                              EIGENPREIS_SCHEMA_VERSION getrennt seit v1.1.0. Unveraendert v1.4.0-v1.6.0.
     regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0; Qualitaetswurf/Reroll-Kette
                               v1.4.0; SPEZ_TYP/KATEGORIE_ZU_SPEZTYP/spezialisierungsGruppen()/
                               fceAusSpezialisierungsknoten() v1.5.0; gruppenSchluesselVonItem(item,cc)
                               Bugfix v1.5.1, s. "Aktueller Stand"): itemWert, RRR, Stationsgebuehr
                               (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
                               rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
-                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1)
+                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1).
+                              Unveraendert seit v1.5.1.
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
                               Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
                               fceFuer() um Knoten-Ebene erweitert v1.5.0, reicht cc an
@@ -160,7 +179,8 @@ Kostenrechner/
                               kostenBeiQualitaet()/vier neue Kandidaten-Konstruktoren fuer
                               Kaufen/Reroll/Craften(Wurf oder preservequality)/Verzaubern
                               in Zielqualitaet (v1.4.0), fceFuer(item,cc,opts) mit drei
-                              Prioritaetsebenen (Knoten > Kategorie-Freitext > global, v1.5.0)
+                              Prioritaetsebenen (Knoten > Kategorie-Freitext > global, v1.5.0).
+                              Unveraendert seit v1.5.1.
     ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
                               Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0,
                               Bauplan-Knoten als Karten statt Fliesstext v1.3.0; Qualitaet-
@@ -169,7 +189,11 @@ Kostenrechner/
                               spezKnotenAnzeigeGruppen()/fceUeberschreibungenFuerOpts() v1.5.0;
                               wegLabelKurz() auf Modul-Ebene verschoben, neu:
                               statusInfoFuerWeg()/gruppiereAlleWege()/wegGruppenLabel(),
-                              renderAlleWege() gruppiert+aufklappbar v1.6.0):
+                              renderAlleWege() gruppiert+aufklappbar v1.6.0;
+                              sammleGesperrteKaufMarktIds() (Modul-Ebene), volumenBtn-Listener,
+                              wegVolumenHtml(), baueGesperrtZeile() nimmt jetzt das ganze
+                              weg-Objekt statt Einzelfeldern entgegen, zustand.handelsvolumen
+                              v1.7.0):
                               Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
@@ -192,7 +216,8 @@ Kostenrechner/
   Versionen/v1.5.1 - Veredeln-Spezialisierungsknoten nach Tier gruppiert/
   Versionen/v1.5.2 - Fokus-Monotonie-Regressionstest (Diagnose ohne Codefehler)/
   Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert gleichwertige Wege/
-  tests/test.html           246 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.7.0 - Handelsvolumen als Zusatzsignal bei gesperrten Preisen/
+  tests/test.html           261 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -253,19 +278,20 @@ dazu stehen weiterhin unverkürzt in `kostenrechner-KONTEXT-HISTORIE.md`.
 Fassung dieser Liste („Alle Wege"-Tabelle zeigt bei baugleichen
 Alternativrezepten identische, nichtssagende Zeilen") wurde im Zyklus
 „Aussagekraft der Alle-Wege-Tabelle verbessern" (v1.6.0, 05.09.2026)
-umgesetzt und ist deshalb hier entfernt, s. "Aktueller Stand" oben.
+umgesetzt und ist deshalb hier entfernt, s. "Aktueller Stand" oben. Der
+zweite Punkt („Bekannte Grenze der Preisquelle") wurde im Zyklus
+„history/-Handelsvolumen als Zusatzsignal bei gesperrten Preisen" (v1.7.0,
+05.09.2026) zur Hälfte umgesetzt (s. "Aktueller Stand" oben) und ist deshalb
+hier ebenfalls entfernt.
 
-1. **Bekannte Grenze der Preisquelle, dokumentiert, aber ohne Konsequenz für
-   die App gezogen.** Steht ausführlich in `../CLAUDE.md`, Abschnitt „Albion
-   Online Data Project API": `prices/` kann für ein Item dauerhaft leer
-   bleiben, obwohl am Markt echte, sogar seit Wochen stehende Angebote
-   liegen (belegt am Königlichen Siegel, per offiziellem Diagnosewerkzeug
-   nachverfolgt). Dem Nutzer wurden drei Wege vorgeschlagen (eigenes Feature,
-   z. B. Wortlaut „gesperrt" auf „kein bei AODP erfasster Preis" ändern
-   und/oder `history/`-Handelsvolumen als Zusatzsignal nutzen; nur
-   dokumentieren, ohne Code-Änderung; erstmal nur festhalten), er hat die
-   Frage **bewusst offen gelassen** ("dismissed - do not proceed"). Vor einer
-   Umsetzung erneut fragen, nicht selbst entscheiden.
+1. **Noch offener Rest aus dem v1.7.0-Zyklus: Wortlaut-Alternative nicht
+   umgesetzt.** Die ursprüngliche Backlog-Notiz nannte zwei Ideen: (a) den
+   Wortlaut „gesperrt" auf etwas wie „kein bei AODP erfasster Preis" ändern,
+   (b) `history/`-Handelsvolumen als Zusatzsignal nutzen. Die vier
+   Rückfragen des v1.7.0-Zyklus deckten nur (b) ab; (a) wurde nicht gefragt
+   und nicht umgesetzt. Falls weiterhin gewünscht: eigene Rückfrage, ob/wie
+   der Wortlaut angepasst werden soll (z. B. nur bei `ursprungsTyp==="kaufen"`
+   ohne jeden Preisdatensatz, oder generell).
 
 2. **Fokuswert-Verdacht aus der v1.5.2-Diagnose, noch nicht durch den Nutzer
    bestätigt.** Der gemeldete Fokus-Anstieg (754,9 → 1.233,5) ließ sich mit
