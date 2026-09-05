@@ -7,6 +7,93 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Fokus-Monotonie-Regressionstest, Diagnose ohne Codefehler, 05.09.2026, v1.5.2)
+
+**Gemeldeter kritischer Bug (Hauptgespräch, Live-Browser-Test):** Königliche
+Gugel des Adepten .3, Qualität Exzellent, Lymhurst, FCE-Feld 0, Fokuswert 0.
+Vor Eintragen der Spezialisierungsknoten zeigte der Bauplan-Schritt "Craften
+Normal beschaffen Gelehrtengugel des Adepten.3 mit Fokus" 754,9 Fokus; nach
+Eintragen echter Werte (`cloth_helmet` → Gelehrtengugel-Knoten 60,
+`fiber` → Guter Stoff 75 + Kunstvoller/Qualitäts-/Luxusstoff je 1) zeigte
+derselbe Schritt 1.233,5 Fokus, obwohl die FCE für beide Kategorien massiv
+gestiegen war (0 → 15.000 bzw. 18.840). Das widerspräche der belegten Formel
+`Fokus = Grundfokus × 0,5^(FCE/10.000)` (streng monoton fallend in FCE).
+Silber blieb bei beiden Zuständen identisch (165.856).
+
+**Systematische Diagnose (kein Raten), Ergebnis: kein Fehler in
+`js/regeln.js`/`js/rechenkern.js` gefunden.** Vorgehen:
+
+1. Isolierte Node-Reproduktion gegen den ECHTEN Rezeptgraphen (`rezepte.js`),
+   mit `fceUeberschreibungenFuerOpts()` (aus `js/ui.js`) 1:1 nachgebaut. Mit
+   passend gewählten Preisen (Basisrohstoffe billig und bepreist, alle
+   Zwischen-/Endprodukte ohne Marktpreis → craften/reroll ist die einzige
+   Option) trifft der berechnete NACH-Wert **exakt** 1.233,5021946275801 -
+   die gemeldete Reproduktion ist damit nachvollzogen. Der VOR-Wert der
+   gleichen Rechnung ergab aber 3.677,02, nicht 754,9 - also ein Rückgang
+   (3.677 → 1.234), keine Erhöhung.
+2. **Mathematischer Beweis, warum bei `fokuswert:0` keine Erhöhung möglich
+   ist:** `RRR` hängt in `regeln.js`/`rrr()` ausschließlich vom `mitFokus`-Flag
+   ab, nie von der FCE. `wert = silber + fokus × fokuswert` ist bei
+   `fokuswert:0` identisch mit `silber`, und `silber` referenziert die FCE an
+   keiner Stelle (`craftKandidat()`/`craftBeiQualitaetKandidat()`). Der
+   gewählte Bauplan (welcher Knoten kauft/craftet/verzaubert/rerollt) kann sich
+   durch eine reine FCE-Änderung bei `fokuswert:0` also gar nicht verschieben -
+   nur der Fokus-Anteil eines bereits feststehenden Pfads sinkt mit steigender
+   FCE, niemals steigt er.
+3. **Property-Test (kein Einzelfall):** über 1.500 zufällige Kombinationen aus
+   Kategorien, Qualitätsstufen (Normal bis Meisterwerk), Qualitäts-
+   Chancenpunkten und Marktpreisen gegen mehrere echte Items unterschiedlicher
+   `SPEZ_TYP`-Klassen (Waffen/Rüstung, Umhang, Tasche, Werkzeug/fused, Tränke)
+   durchprobiert, dabei die Spezialisierungsstufen monoton erhöht: **keine
+   einzige Verletzung** der Monotonie gefunden.
+
+**Wahrscheinlichste Erklärung, NICHT bestätigt (dafür fehlt der Zugriff auf
+die tatsächliche Sitzung/den localStorage-Stand):** ein von 0 abweichender
+Fokuswert, der aus einer früheren Sitzung noch in `localStorage` stand (die
+App persistiert Einstellungen dauerhaft, s. `einstellungenLesen()`/
+`einstellungenSchreiben()` in `js/ui.js`; die eigenen Testfixturen dieses
+Projekts verwenden z. B. `fokuswert: 5`). Bei `fokuswert > 0` KANN sich der
+günstigste Weg mit steigender FCE tatsächlich von einem 0-Fokus-Weg (kaufen/
+verzaubern) zu einem fokusnutzenden Weg verschieben, sobald der sinkende
+Fokus-Malus den Silbervorteil des Craftens überwiegt - das ist kein
+Formelfehler, sondern die gewollte Abwägung der Zielfunktion selbst, kann aber
+den Gesamtfokus des gewählten Pfads erhöhen, wenn vorher ein 0-Fokus-Weg
+gewonnen hatte. Per `AskUserQuestion`/Rückfrage zu klären: den Fokuswert im
+Einstellungen-Panel vor einem erneuten Test ausdrücklich auf 0 prüfen.
+
+**Umgesetzt statt eines Codefixes:** ein permanenter Regressionstest in
+`tests/test.html` (Abschnitt "Regressionstest Fokus-Monotonie", gegen den
+ECHTEN Rezeptgraphen, 5 Stufen aufsteigender Spezialisierung inklusive exakt
+der gemeldeten Nutzerwerte als einer der Stufen), der genau diese Invariante
+dauerhaft absichert: Fokus darf über keine zwei aufeinanderfolgenden Stufen
+steigen, Silber muss bei `fokuswert:0` über alle Stufen identisch bleiben, und
+der gemeldete NACH-Wert wird als Fixpunkt exakt nachgerechnet. **Kein
+`regeln.js`/`rechenkern.js` geändert** - die Diagnose fand dort keinen Fehler.
+
+**Getestet:** Testsuite von 220 auf 228 Tests gewachsen (8 neue, alle in
+Abschnitt "Regressionstest Fokus-Monotonie"). Alle 228 grün, per Node
+cachefrei gegen die Dateien auf der Platte geprüft (`vm.runInContext` mit
+`document`/`localStorage`/`performance`-Stub, identische Logik wie im
+Browser, kein Modul-Cache möglich, da frisch aus der Datei geladen).
+
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.5.1:** weder
+`SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug
+(`mcp__claude-in-chrome__*`/`mcp__computer-use__*`) standen in dieser Sitzung
+zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
+`spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht
+angefordert werden. Da diese Runde ausschließlich `tests/test.html` erweitert
+(kein `regeln.js`/`rechenkern.js`/`ui.js`/`Kostenrechner.html` geändert), ist
+weder ein Browser-Rundgang noch ein Rechenkern-/Oberflächen-Review inhaltlich
+zwingend nötig; nachzuholen ist trotzdem eine echte Bestätigung durch den
+Nutzer im Spiel/in der laufenden App, sobald der Fokuswert-Verdacht geklärt
+ist.
+
+Versions-Schnappschuss unter `Versionen/v1.5.2 - Fokus-Monotonie-
+Regressionstest (Diagnose ohne Codefehler)/` angelegt. Git-Commit und Push wie
+im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
 ## Aktueller Stand (Veredeln-Spezialisierungsknoten nach Tier gruppiert, Bugfix, 05.09.2026, v1.5.1)
 
 **Bug, im Hauptgespräch per Browser-Test gefunden** (an v1.5.0 direkt im

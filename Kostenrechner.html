@@ -57,6 +57,16 @@ td.l{white-space:normal}
 tbody tr:hover{background:var(--accent-soft)}
 tr.best{background:var(--good-bg)!important}
 tr.gesperrt-zeile{opacity:.75}
+/* "Alle Wege"-Gruppierung gleichwertiger Wege (Zyklus 05.09.2026):
+   Kopfzeile klickbar/aufklappbar, Detailzeilen anfangs eingeklappt. */
+tr.wg-gruppe-kopf{cursor:pointer}
+tr.wg-gruppe-kopf td:first-child{font-weight:600}
+.wg-pfeil{display:inline-block;margin-right:7px;font-size:11px;color:var(--dim);
+          transition:transform .15s}
+tr.wg-gruppe-kopf.offen .wg-pfeil{transform:rotate(90deg)}
+tr.wg-gruppe-detail{display:none}
+tr.wg-gruppe-detail.zeige{display:table-row}
+tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 .num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .pill{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;font-weight:700;
       white-space:nowrap}

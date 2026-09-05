@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.5.2 · Fokus-Monotonie-Regressionstest (Diagnose, kein Codefehler gefunden)
+Stand: 2026-09-05 · Version: v1.6.0 · Alle-Wege-Tabelle gruppiert gleichwertige Wege
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,96 +21,97 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Fokus-Monotonie-Regressionstest, Diagnose ohne Codefehler, 05.09.2026, v1.5.2)
+## Aktueller Stand (Alle-Wege-Tabelle gruppiert gleichwertige Wege, 05.09.2026, v1.6.0)
 
-**Gemeldeter kritischer Bug (Hauptgespräch, Live-Browser-Test):** Königliche
-Gugel des Adepten .3, Qualität Exzellent, Lymhurst, FCE-Feld 0, Fokuswert 0.
-Vor Eintragen der Spezialisierungsknoten zeigte der Bauplan-Schritt "Craften
-Normal beschaffen Gelehrtengugel des Adepten.3 mit Fokus" 754,9 Fokus; nach
-Eintragen echter Werte (`cloth_helmet` → Gelehrtengugel-Knoten 60,
-`fiber` → Guter Stoff 75 + Kunstvoller/Qualitäts-/Luxusstoff je 1) zeigte
-derselbe Schritt 1.233,5 Fokus, obwohl die FCE für beide Kategorien massiv
-gestiegen war (0 → 15.000 bzw. 18.840). Das widerspräche der belegten Formel
-`Fokus = Grundfokus × 0,5^(FCE/10.000)` (streng monoton fallend in FCE).
-Silber blieb bei beiden Zuständen identisch (165.856).
+**Auftrag:** Backlog-Punkt "'Alle Wege'-Tabelle zeigt bei baugleichen
+Alternativrezepten identische, nichtssagende Zeilen" (Auslöser: Königliche
+Gugel, drei Alternativrezepte plus mit/ohne Fokus ergaben sechs Zeilen mit
+demselben Silber- und Fokuswert). Drei Rückfragen aus der Brainstorming-Phase,
+alle vom Nutzer wie empfohlen beantwortet: (1) zusammenfassen mit Aufklappen,
+nicht nur kennzeichnen; (2) Gleichwertigkeit = **exakt gleich bei der
+angezeigten Rundung** (die tatsächlich per `formatSilber()`/`formatFokus()`
+gerundeten Anzeigewerte, keine Toleranzschwelle auf den Rohwerten); (3)
+Gruppierung **nur innerhalb desselben Wegtyps** (kaufen/craften/verzaubern/
+reroll bleiben fachlich getrennt).
 
-**Systematische Diagnose (kein Raten), Ergebnis: kein Fehler in
-`js/regeln.js`/`js/rechenkern.js` gefunden.** Vorgehen:
+**Umgesetzt in `js/ui.js`:** drei neue, reine (DOM-freie) Funktionen auf
+Modul-Ebene, testbar wie `spezKnotenAnzeigeGruppen()`:
 
-1. Isolierte Node-Reproduktion gegen den ECHTEN Rezeptgraphen (`rezepte.js`),
-   mit `fceUeberschreibungenFuerOpts()` (aus `js/ui.js`) 1:1 nachgebaut. Mit
-   passend gewählten Preisen (Basisrohstoffe billig und bepreist, alle
-   Zwischen-/Endprodukte ohne Marktpreis → craften/reroll ist die einzige
-   Option) trifft der berechnete NACH-Wert **exakt** 1.233,5021946275801 -
-   die gemeldete Reproduktion ist damit nachvollzogen. Der VOR-Wert der
-   gleichen Rechnung ergab aber 3.677,02, nicht 754,9 - also ein Rückgang
-   (3.677 → 1.234), keine Erhöhung.
-2. **Mathematischer Beweis, warum bei `fokuswert:0` keine Erhöhung möglich
-   ist:** `RRR` hängt in `regeln.js`/`rrr()` ausschließlich vom `mitFokus`-Flag
-   ab, nie von der FCE. `wert = silber + fokus × fokuswert` ist bei
-   `fokuswert:0` identisch mit `silber`, und `silber` referenziert die FCE an
-   keiner Stelle (`craftKandidat()`/`craftBeiQualitaetKandidat()`). Der
-   gewählte Bauplan (welcher Knoten kauft/craftet/verzaubert/rerollt) kann sich
-   durch eine reine FCE-Änderung bei `fokuswert:0` also gar nicht verschieben -
-   nur der Fokus-Anteil eines bereits feststehenden Pfads sinkt mit steigender
-   FCE, niemals steigt er.
-3. **Property-Test (kein Einzelfall):** über 1.500 zufällige Kombinationen aus
-   Kategorien, Qualitätsstufen (Normal bis Meisterwerk), Qualitäts-
-   Chancenpunkten und Marktpreisen gegen mehrere echte Items unterschiedlicher
-   `SPEZ_TYP`-Klassen (Waffen/Rüstung, Umhang, Tasche, Werkzeug/fused, Tränke)
-   durchprobiert, dabei die Spezialisierungsstufen monoton erhöht: **keine
-   einzige Verletzung** der Monotonie gefunden.
+- `statusInfoFuerWeg(w)`: Pille (good/warn/bad) + Text + Grundtext eines Weges,
+  wie in der Tabelle sichtbar.
+- `gruppiereAlleWege(alleWege)`: fasst Wege zu Gruppen zusammen, deren
+  Schlüssel `typ + formatSilber(silber) + formatFokus(fokus) + statusPille +
+  Grundtext` ist - also exakt die Definition aus Rückfrage (2)/(3). Reihenfolge
+  bleibt stabil (erstes Vorkommen entscheidet die Position), auch bei nicht
+  benachbarten Duplikaten.
+- `wegGruppenLabel(gruppe)`: bei einem Mitglied unverändert `wegLabelKurz()`
+  (keine Regression im Normalfall); bei mehreren ein zusammenfassendes Label
+  mit Anzahl, bei `craften` nur dann mit "mit/ohne Fokus" präzisiert, wenn
+  ALLE Mitglieder denselben Fokuseinsatz haben.
 
-**Wahrscheinlichste Erklärung, NICHT bestätigt (dafür fehlt der Zugriff auf
-die tatsächliche Sitzung/den localStorage-Stand):** ein von 0 abweichender
-Fokuswert, der aus einer früheren Sitzung noch in `localStorage` stand (die
-App persistiert Einstellungen dauerhaft, s. `einstellungenLesen()`/
-`einstellungenSchreiben()` in `js/ui.js`; die eigenen Testfixturen dieses
-Projekts verwenden z. B. `fokuswert: 5`). Bei `fokuswert > 0` KANN sich der
-günstigste Weg mit steigender FCE tatsächlich von einem 0-Fokus-Weg (kaufen/
-verzaubern) zu einem fokusnutzenden Weg verschieben, sobald der sinkende
-Fokus-Malus den Silbervorteil des Craftens überwiegt - das ist kein
-Formelfehler, sondern die gewollte Abwägung der Zielfunktion selbst, kann aber
-den Gesamtfokus des gewählten Pfads erhöhen, wenn vorher ein 0-Fokus-Weg
-gewonnen hatte. Per `AskUserQuestion`/Rückfrage zu klären: den Fokuswert im
-Einstellungen-Panel vor einem erneuten Test ausdrücklich auf 0 prüfen.
+`renderAlleWege()` gruppiert jetzt vor dem Rendern; eine Gruppe mit mehreren
+Mitgliedern wird als anfangs eingeklappte Kopfzeile (Klick toggelt, Pfeil
+"▸"/rotiert wie beim bestehenden `<details>`-Muster) plus darunterliegenden,
+ursprünglichen Einzelzeilen gerendert. `wegLabelKurz()` von `boot()` auf
+Modul-Ebene verschoben (wird jetzt auch von `wegGruppenLabel()` gebraucht).
+CSS-Ergänzung in `Kostenrechner.html` (`.wg-gruppe-kopf`, `.wg-pfeil`,
+`.wg-gruppe-detail`), keine belegten Werte/Formeln berührt.
 
-**Umgesetzt statt eines Codefixes:** ein permanenter Regressionstest in
-`tests/test.html` (Abschnitt "Regressionstest Fokus-Monotonie", gegen den
-ECHTEN Rezeptgraphen, 5 Stufen aufsteigender Spezialisierung inklusive exakt
-der gemeldeten Nutzerwerte als einer der Stufen), der genau diese Invariante
-dauerhaft absichert: Fokus darf über keine zwei aufeinanderfolgenden Stufen
-steigen, Silber muss bei `fokuswert:0` über alle Stufen identisch bleiben, und
-der gemeldete NACH-Wert wird als Fixpunkt exakt nachgerechnet. **Kein
-`regeln.js`/`rechenkern.js` geändert** - die Diagnose fand dort keinen Fehler.
+**Wichtiger Befund beim Bauen, der die im Auftrag skizzierte Erwartung
+korrigiert:** die Vorhersage "sechs Craften-Zeilen der Königlichen Gugel
+werden zu zwei Gruppen (mit/ohne Fokus, Fokus-Spannen 287,4 bzw. 514,4)" war
+als Hypothese formuliert ("oder je nachdem wie die tatsächlichen Werte
+aussehen") und wurde vor dem Bauen per Node-Nachrechnung gegen den ECHTEN
+Rezeptgraphen geprüft, nicht ungeprüft übernommen. Ergebnis: `mitFokus` ist am
+Wurzelknoten der Königlichen Gugel **folgenlos**, weil das Item keine
+`craftingcategory` hat (kein Fokus, keine Rückgewinnung, s. `../CLAUDE.md`
+"Königliche Items sind reine Umwandlungen") - mit/ohne Fokus liefern für JEDES
+der drei Alternativrezepte identische Zahlen. Bei gleich teuren
+Alternativrezepten (Testfixtur: SET1=SET2=SET3=100.000, Siegel=59.945) sind
+deshalb tatsächlich **alle sechs** Kandidaten exakt gleich (Silber 219.890,
+Fokus 0) und werden zu EINER Gruppe "Craften (6 gleichwertige Wege)"
+zusammengefasst - nicht zu zwei Gruppen zu je drei. Das entspricht sogar
+genauer dem ursprünglichen Bug-Bericht ("sechs Zeilen mit demselben Silber-
+und Fokuswert"). Bei unterschiedlich teuren Alternativrezepten (Gegenprobe:
+SET2 teurer) entstehen dagegen korrekt zwei Gruppen (4 + 2 Mitglieder), die
+NICHT fälschlich zu einer verschmelzen.
 
-**Getestet:** Testsuite von 220 auf 228 Tests gewachsen (8 neue, alle in
-Abschnitt "Regressionstest Fokus-Monotonie"). Alle 228 grün, per Node
-cachefrei gegen die Dateien auf der Platte geprüft (`vm.runInContext` mit
-`document`/`localStorage`/`performance`-Stub, identische Logik wie im
-Browser, kein Modul-Cache möglich, da frisch aus der Datei geladen).
+**Getestet:** Testsuite von 228 auf **246 Tests** gewachsen (18 neue, Abschnitt
+"Regressionstest Alle-Wege-Gruppierung"): 10 synthetische Kontrollfälle direkt
+gegen `UI.gruppiereAlleWege()`/`UI.wegGruppenLabel()` (u. a. unterschiedlicher
+Wegtyp trotz gleicher Zahlen bleibt getrennt, unterschiedlicher Status/
+Grundtext bleibt getrennt, Rundungsgleichheit bei unterschiedlichen Rohwerten
+wird zusammengefasst, Rundungsungleichheit bleibt getrennt, nicht benachbarte
+Duplikate werden trotzdem gefunden), plus die reale Königliche-Gugel-
+Gegenprobe oben (genau 1 Gruppe bei Gleichstand, genau 2 Gruppen bei
+Preisunterschied, Kaufen/Verzaubern bleiben trotz je 1 Mitglied als eigene
+Wegtypen getrennt). Alle 246 grün, per Node cachefrei gegen die Dateien auf
+der Platte geprüft (`vm.runInContext`, `document`/`localStorage`/
+`performance`-Stub sowie ein zweiter Lauf mit vollständigerem DOM-Stub, der
+`boot()` fehlerfrei durchlaufen lässt).
 
-**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.5.1:** weder
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.5.2:** weder
 `SendMessage` noch `Agent` noch ein interaktives Browser-Werkzeug
 (`mcp__claude-in-chrome__*`/`mcp__computer-use__*`) standen in dieser Sitzung
 zur Verfügung. Die drei Spezialisten (`rechenkern-pruefer`,
-`spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht
-angefordert werden. Da diese Runde ausschließlich `tests/test.html` erweitert
-(kein `regeln.js`/`rechenkern.js`/`ui.js`/`Kostenrechner.html` geändert), ist
-weder ein Browser-Rundgang noch ein Rechenkern-/Oberflächen-Review inhaltlich
-zwingend nötig; nachzuholen ist trotzdem eine echte Bestätigung durch den
-Nutzer im Spiel/in der laufenden App, sobald der Fokuswert-Verdacht geklärt
-ist.
+`spieldaten-pruefer`, `oberflaechen-pruefer`) konnten deshalb nicht angefordert
+werden, obwohl `oberflaechen-pruefer` hier fachlich angebracht gewesen wäre
+(Oberfläche geändert: `Kostenrechner.html`/`js/ui.js`). Ersatzweise: `boot()`
+mit einem vollständigeren DOM-Stub fehlerfrei durchlaufen lassen (fängt
+Syntax-/Referenzfehler im neuen Code ab), aber **kein echter Klick-Test der
+neuen Aufklapp-Interaktion im Browser** - das steht noch aus. Empfehlung an
+den Nutzer: die App einmal öffnen, eine Suche mit bekannten Gleichstand-Fällen
+(z. B. Königliche Gugel) durchführen und die neue Gruppenzeile antippen.
 
-Versions-Schnappschuss unter `Versionen/v1.5.2 - Fokus-Monotonie-
-Regressionstest (Diagnose ohne Codefehler)/` angelegt. Git-Commit und Push wie
-im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+Versions-Schnappschuss unter `Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert
+gleichwertige Wege/` angelegt. Git-Commit und Push wie im Projekt üblich
+(s. `../CLAUDE.md`, "Versionskontrolle").
 
 ---
 
-**Vorheriger Stand (v1.5.1, Bugfix "Veredeln-Spezialisierungsknoten nach Tier
-gruppiert") und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
-ausgelagert (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v1.5.2, Diagnose "Fokus-Monotonie-Regressionstest") und
+alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
 
@@ -121,7 +122,10 @@ plus Feature "Qualitaetsstufen" (v1.4.0) plus "FCE-Ableitung ueber
 Schicksalsbrett-Knotenliste je Kategorie" (v1.5.0) plus Bugfix "Veredeln-
 Spezialisierungsknoten nach Tier gruppiert" (v1.5.1) plus Diagnose
 "Fokus-Monotonie-Regressionstest" (v1.5.2, nur `tests/test.html` erweitert,
-kein Rechenkern-/Regeln-/UI-Code geaendert, keine neuen Dateien):
+kein Rechenkern-/Regeln-/UI-Code geaendert) plus Feature "Alle-Wege-Tabelle
+gruppiert gleichwertige Wege" (v1.6.0, nur `Kostenrechner.html`/`js/ui.js`/
+`tests/test.html`, kein Rechenkern-/Regeln-Code geaendert, keine neuen
+Dateien):
 
 ```
 Kostenrechner/
@@ -162,7 +166,10 @@ Kostenrechner/
                               Bauplan-Knoten als Karten statt Fliesstext v1.3.0; Qualitaet-
                               Einstellung + reroll-Knotentyp im Bauplan v1.4.0;
                               fceAusSchicksalsbrett() entfernt, renderSpezialisierungsknoten()/
-                              spezKnotenAnzeigeGruppen()/fceUeberschreibungenFuerOpts() v1.5.0):
+                              spezKnotenAnzeigeGruppen()/fceUeberschreibungenFuerOpts() v1.5.0;
+                              wegLabelKurz() auf Modul-Ebene verschoben, neu:
+                              statusInfoFuerWeg()/gruppiereAlleWege()/wegGruppenLabel(),
+                              renderAlleWege() gruppiert+aufklappbar v1.6.0):
                               Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
@@ -184,7 +191,8 @@ Kostenrechner/
   Versionen/v1.5.0 - FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie/
   Versionen/v1.5.1 - Veredeln-Spezialisierungsknoten nach Tier gruppiert/
   Versionen/v1.5.2 - Fokus-Monotonie-Regressionstest (Diagnose ohne Codefehler)/
-  tests/test.html           228 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert gleichwertige Wege/
+  tests/test.html           246 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -241,24 +249,13 @@ wurden am 05.09.2026 aus dieser Liste entfernt, sie waren nur während des
 Bauens selbst relevant und sind jetzt reine Ablenkung; die fachlichen Details
 dazu stehen weiterhin unverkürzt in `kostenrechner-KONTEXT-HISTORIE.md`.
 
-**Zwei echte offene Fäden aus der Sitzung vom 05.09.2026, beide angerissen,
-keiner zu Ende entschieden:**
+**Offene Fäden, keiner zu Ende entschieden.** Punkt 1 aus der vorherigen
+Fassung dieser Liste („Alle Wege"-Tabelle zeigt bei baugleichen
+Alternativrezepten identische, nichtssagende Zeilen") wurde im Zyklus
+„Aussagekraft der Alle-Wege-Tabelle verbessern" (v1.6.0, 05.09.2026)
+umgesetzt und ist deshalb hier entfernt, s. "Aktueller Stand" oben.
 
-1. **„Alle Wege"-Tabelle zeigt bei baugleichen Alternativrezepten identische,
-   nichtssagende Zeilen.** Auslöser war die Königliche Gugel: drei
-   Alternativrezepte (Gelehrten-/Kleriker-/Magiergugel) plus mit/ohne Fokus
-   ergaben sechs Zeilen mit demselben Silber- und Fokuswert. Eine
-   Feature-Definition wurde entworfen (Name: „Aussagekraft der Alle-Wege-
-   Tabelle verbessern", Scope: gleichwertige Wege zusammenfassen oder als
-   gleichwertig kennzeichnen), aber **nie an den Orchestrator übergeben** -
-   der Nutzer hinterfragte zurecht, ob die Gugeln wirklich baugleich sind
-   (ihre Marktpreise unterscheiden sich real), was in die Untersuchung unten
-   überging und das ursprüngliche Anliegen verdrängte. Die Rechnung selbst
-   ist nachweislich korrekt (Craften gewinnt bei allen dreien so klar, dass
-   die realen Preisunterschiede die Wahl nicht kippen), das eigentliche
-   Darstellungsproblem besteht aber weiterhin. Bei Bedarf: die entworfene
-   Feature-Definition oben im Chatverlauf des 05.09.2026 wiederverwenden.
-2. **Bekannte Grenze der Preisquelle, dokumentiert, aber ohne Konsequenz für
+1. **Bekannte Grenze der Preisquelle, dokumentiert, aber ohne Konsequenz für
    die App gezogen.** Steht ausführlich in `../CLAUDE.md`, Abschnitt „Albion
    Online Data Project API": `prices/` kann für ein Item dauerhaft leer
    bleiben, obwohl am Markt echte, sogar seit Wochen stehende Angebote
@@ -270,9 +267,10 @@ keiner zu Ende entschieden:**
    Frage **bewusst offen gelassen** ("dismissed - do not proceed"). Vor einer
    Umsetzung erneut fragen, nicht selbst entscheiden.
 
-3. **Fokuswert-Verdacht aus der v1.5.2-Diagnose, noch nicht durch den Nutzer
+2. **Fokuswert-Verdacht aus der v1.5.2-Diagnose, noch nicht durch den Nutzer
    bestätigt.** Der gemeldete Fokus-Anstieg (754,9 → 1.233,5) ließ sich mit
-   `fokuswert:0` rechnerisch nicht reproduzieren (s. "Aktueller Stand"), wohl
+   `fokuswert:0` rechnerisch nicht reproduzieren (s. `kostenrechner-KONTEXT-HISTORIE.md`,
+   Abschnitt "Aktueller Stand (Fokus-Monotonie-Regressionstest ..., v1.5.2)"), wohl
    aber die Erklärung, dass ein aus einer früheren Sitzung noch in
    `localStorage` stehender Fokuswert > 0 einen legitimen Pfadwechsel ausgelöst
    haben könnte (kein Formelfehler). **Vor der nächsten Sitzung zu diesem

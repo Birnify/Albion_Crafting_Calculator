@@ -304,6 +304,114 @@ const UI = (function () {
     });
   }
 
+  /**
+   * Kurzes Label eines EINZELNEN Weges fuer die "Alle Wege"-Tabelle, inklusive
+   * der Details, die einen von mehreren gleichartigen Wegen unterscheiden
+   * (Rezept-Index, Kaufweg). Modul-Ebene (nicht in boot()), damit
+   * wegGruppenLabel() und die Tests darauf zugreifen koennen.
+   */
+  function wegLabelKurz(w) {
+    if (w.typ === "kaufen")
+      return (
+        "Kaufen (" +
+        (w.weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") +
+        (w.weg.eigenpreis ? ", Eigenpreis" : "") +
+        ")"
+      );
+    if (w.typ === "craften")
+      return "Craften #" + (w.weg.rezeptIndex != null ? w.weg.rezeptIndex + 1 : "?") + ", " + (w.weg.mitFokus ? "mit Fokus" : "ohne Fokus");
+    if (w.typ === "verzaubern") return "Verzaubern";
+    if (w.typ === "reroll") return "Craften + Reroll";
+    return w.typ;
+  }
+
+  /**
+   * Status-Info eines Weges (Pille + Text + Grund), wie in der "Alle Wege"-
+   * Tabelle angezeigt. Modul-Ebene, weil sowohl renderAlleWege() als auch
+   * die Gleichwertigkeits-Gruppierung darauf angewiesen sind: zwei Wege
+   * gelten status-technisch nur dann als gleich, wenn Pille UND (bei
+   * gesperrt) der angezeigte Grundtext uebereinstimmen.
+   */
+  function statusInfoFuerWeg(w) {
+    if (w.gesperrt) return { pill: "bad", text: "gesperrt", grund: w.grund || "" };
+    if (w.unvollstaendig) return { pill: "warn", text: "unvollstaendig", grund: "" };
+    return { pill: "good", text: "ok", grund: "" };
+  }
+
+  /**
+   * Aussagekraft der "Alle Wege"-Tabelle (Zyklus 05.09.2026):
+   * fasst Wege zusammen, die beim aktuellen Rundungsstand NICHT
+   * unterscheidbar sind, damit z.B. drei baugleiche Alternativrezepte der
+   * Koeniglichen Gugel nicht als drei nichtssagend identische Zeilen
+   * erscheinen. Gleichwertigkeits-Definition (Nutzer-Entscheidung
+   * 05.09.2026): EXAKT gleich bei der ANGEZEIGTEN Rundung, siehe
+   * formatSilber()/formatFokus() oben, nicht bei den Rohwerten - und nur
+   * innerhalb desselben Wegtyps (kaufen/craften/verzaubern/reroll bleiben
+   * fachlich getrennt, auch bei zufaellig gleichem Preis). Status (gesperrt
+   * inkl. Grundtext, unvollstaendig, ok) ist Teil der Gleichheit, weil er in
+   * der Tabelle sichtbar ist.
+   *
+   * Reine Funktion, keine DOM-Abhaengigkeit: Reihenfolge bleibt stabil
+   * (erstes Vorkommen entscheidet die Position), r.alleWege kommt bereits
+   * nach Zielwert sortiert herein, siehe rechenkern.js.
+   *
+   * @param {object[]} alleWege wie von RECHENKERN.kosten() geliefert
+   * @returns {{key:string, typ:string, mitglieder:object[], silberAnzeige:string,
+   *   fokusAnzeige:string, statusPill:string, statusText:string, grund:?string}[]}
+   */
+  function gruppiereAlleWege(alleWege) {
+    const gruppenNachSchluessel = new Map();
+    const reihenfolge = [];
+    (alleWege || []).forEach((w) => {
+      const status = statusInfoFuerWeg(w);
+      const silberAnzeige = formatSilber(w.silber);
+      const fokusAnzeige = formatFokus(w.fokus);
+      const schluessel = [w.typ, silberAnzeige, fokusAnzeige, status.pill, status.grund].join("|");
+      let gruppe = gruppenNachSchluessel.get(schluessel);
+      if (!gruppe) {
+        gruppe = {
+          key: schluessel,
+          typ: w.typ,
+          mitglieder: [],
+          silberAnzeige,
+          fokusAnzeige,
+          statusPill: status.pill,
+          statusText: status.text,
+          grund: status.grund || null,
+        };
+        gruppenNachSchluessel.set(schluessel, gruppe);
+        reihenfolge.push(gruppe);
+      }
+      gruppe.mitglieder.push(w);
+    });
+    return reihenfolge;
+  }
+
+  /**
+   * Anzeigetext einer Gruppe aus gruppiereAlleWege(). Bei genau einem
+   * Mitglied unveraendert wegLabelKurz() (bisheriges Verhalten, keine
+   * Regression fuer den Normalfall ohne Gleichstand). Bei mehreren
+   * Mitgliedern ein zusammenfassendes Label mit Anzahl; bei "craften" nur
+   * dann mit "mit/ohne Fokus" praezisiert, wenn ALLE Mitglieder denselben
+   * Fokuseinsatz haben (bei der Koeniglichen Gugel z.B. nicht der Fall -
+   * dort ist der Fokuseinsatz am Wurzelknoten selbst folgenlos, weil das
+   * Item keine craftingcategory hat, s. CLAUDE.md).
+   */
+  function wegGruppenLabel(gruppe) {
+    if (gruppe.mitglieder.length === 1) return wegLabelKurz(gruppe.mitglieder[0]);
+    const anzahl = gruppe.mitglieder.length;
+    let basis;
+    if (gruppe.typ === "kaufen") basis = "Kaufen";
+    else if (gruppe.typ === "craften") {
+      const ersterFokuswert = gruppe.mitglieder[0].weg && gruppe.mitglieder[0].weg.mitFokus;
+      const alleGleich = gruppe.mitglieder.every((w) => w.weg && w.weg.mitFokus === ersterFokuswert);
+      basis = "Craften" + (alleGleich ? (ersterFokuswert ? " mit Fokus" : " ohne Fokus") : "");
+    } else if (gruppe.typ === "verzaubern") basis = "Verzaubern";
+    else if (gruppe.typ === "reroll") basis = "Craften + Reroll";
+    else basis = gruppe.typ;
+    return basis + " (" + anzahl + " gleichwertige Wege)";
+  }
+
   // -----------------------------------------------------------------------
   // DOM-Verdrahtung. Bricht sofort ab, wenn das App-Markup fehlt (z.B. auf
   // tests/test.html, das ui.js nur wegen der Hilfsfunktionen oben mitlaedt).
@@ -1232,47 +1340,80 @@ const UI = (function () {
     alleAufBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = true)));
     alleZuBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = false)));
 
-    function wegLabelKurz(w) {
-      if (w.typ === "kaufen")
-        return (
-          "Kaufen (" +
-          (w.weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") +
-          (w.weg.eigenpreis ? ", Eigenpreis" : "") +
-          ")"
-        );
-      if (w.typ === "craften")
-        return "Craften #" + (w.weg.rezeptIndex != null ? w.weg.rezeptIndex + 1 : "?") + ", " + (w.weg.mitFokus ? "mit Fokus" : "ohne Fokus");
-      if (w.typ === "verzaubern") return "Verzaubern";
-      if (w.typ === "reroll") return "Craften + Reroll";
-      return w.typ;
+    // wegLabelKurz(), statusInfoFuerWeg(), gruppiereAlleWege() und
+    // wegGruppenLabel() stehen auf Modul-Ebene oben (testbar ohne DOM, s.
+    // tests/test.html).
+
+    function statusHtmlFuer(pill, text, grund) {
+      return "<span class='pill " + pill + "'>" + text + "</span>" + (grund ? " " + escapeHtml(grund) : "");
     }
 
+    /**
+     * "Alle Wege"-Tabelle, seit dem Zyklus "Aussagekraft der Alle-Wege-
+     * Tabelle verbessern" (05.09.2026) nach Gleichwertigkeit gruppiert
+     * (s. gruppiereAlleWege() oben): eine Gruppe mit nur einem Mitglied
+     * rendert exakt wie zuvor eine einzelne Zeile. Eine Gruppe mit mehreren
+     * Mitgliedern rendert eine aufklappbare Kopfzeile (Klick toggelt), darunter
+     * die urspruenglichen Einzelzeilen, anfangs eingeklappt.
+     */
     function renderAlleWege(r) {
       const tbody = alleWegeTabelleEl.querySelector("tbody");
       tbody.innerHTML = "";
-      r.alleWege.forEach((w, idx) => {
-        const tr = document.createElement("tr");
+      const gruppen = gruppiereAlleWege(r.alleWege);
+      gruppen.forEach((gruppe, gIdx) => {
+        const bestesMitglied = gruppe.mitglieder[0];
+        const istBest = gIdx === 0 && !bestesMitglied.gesperrt;
+        const mehrfach = gruppe.mitglieder.length > 1;
+
+        const kopf = document.createElement("tr");
         const klassen = [];
-        if (idx === 0 && !w.gesperrt) klassen.push("best");
-        if (w.gesperrt) klassen.push("gesperrt-zeile");
-        tr.className = klassen.join(" ");
-        let statusHtml;
-        if (w.gesperrt) statusHtml = "<span class='pill bad'>gesperrt</span> " + escapeHtml(w.grund || "");
-        else if (w.unvollstaendig) statusHtml = "<span class='pill warn'>unvollstaendig</span>";
-        else statusHtml = "<span class='pill good'>ok</span>";
-        tr.innerHTML =
+        if (istBest) klassen.push("best");
+        if (gruppe.statusPill === "bad") klassen.push("gesperrt-zeile");
+        if (mehrfach) klassen.push("wg-gruppe-kopf");
+        kopf.className = klassen.join(" ");
+        const wegLabel = mehrfach
+          ? "<span class='wg-pfeil'>&#9656;</span>" + escapeHtml(wegGruppenLabel(gruppe))
+          : escapeHtml(wegGruppenLabel(gruppe));
+        kopf.innerHTML =
           "<td class='l'>" +
-          escapeHtml(wegLabelKurz(w)) +
+          wegLabel +
           "</td><td class='num'>" +
-          formatSilber(w.silber) +
+          gruppe.silberAnzeige +
           "</td><td class='num'>" +
-          formatFokus(w.fokus) +
+          gruppe.fokusAnzeige +
           "</td><td class='num'>" +
-          (w.gesperrt ? "-" : formatSilber(w.wert)) +
+          (bestesMitglied.gesperrt ? "-" : formatSilber(bestesMitglied.wert)) +
           "</td><td class='l'>" +
-          statusHtml +
+          statusHtmlFuer(gruppe.statusPill, gruppe.statusText, gruppe.grund) +
           "</td>";
-        tbody.appendChild(tr);
+        tbody.appendChild(kopf);
+
+        if (!mehrfach) return;
+
+        const detailZeilen = gruppe.mitglieder.map((w) => {
+          const tr = document.createElement("tr");
+          tr.className = "wg-gruppe-detail";
+          if (gruppe.statusPill === "bad") tr.classList.add("gesperrt-zeile");
+          tr.innerHTML =
+            "<td class='l'>" +
+            escapeHtml(wegLabelKurz(w)) +
+            "</td><td class='num'>" +
+            formatSilber(w.silber) +
+            "</td><td class='num'>" +
+            formatFokus(w.fokus) +
+            "</td><td class='num'>" +
+            (w.gesperrt ? "-" : formatSilber(w.wert)) +
+            "</td><td class='l'>" +
+            statusHtmlFuer(gruppe.statusPill, gruppe.statusText, gruppe.grund) +
+            "</td>";
+          tbody.appendChild(tr);
+          return tr;
+        });
+
+        kopf.addEventListener("click", () => {
+          const offen = kopf.classList.toggle("offen");
+          detailZeilen.forEach((tr) => tr.classList.toggle("zeige", offen));
+        });
       });
     }
 
@@ -1775,5 +1916,8 @@ const UI = (function () {
     formatFokus,
     formatProzent,
     formatAlter,
+    wegLabelKurz,
+    gruppiereAlleWege,
+    wegGruppenLabel,
   };
 })();

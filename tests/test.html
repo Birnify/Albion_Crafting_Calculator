@@ -1393,6 +1393,267 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Regressionstest "Alle Wege"-Gruppierung (Zyklus "Aussagekraft der
+  // Alle-Wege-Tabelle verbessern", 05.09.2026): gleichwertige Wege
+  // (exakt gleich bei der ANGEZEIGTEN Rundung von Silber, Fokus UND Status,
+  // nur innerhalb desselben Wegtyps) werden zu einer aufklappbaren
+  // Gruppenzeile zusammengefasst, s. js/ui.js gruppiereAlleWege()/
+  // wegGruppenLabel(). Zuerst synthetische Kontrollfaelle (unabhaengig vom
+  // echten Rezeptgraphen), danach die reale Koenigliche-Gugel-Gegenprobe.
+  // -----------------------------------------------------------------------
+  (function () {
+    function wFixture(props) {
+      return Object.assign(
+        { typ: "kaufen", gesperrt: false, unvollstaendig: false, grund: null, silber: 0, fokus: 0, wert: 0, weg: {} },
+        props
+      );
+    }
+
+    // a) Kontrollfall: gleiche Zahlen, gleicher Typ, gleicher Status -> 1 Gruppe.
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "kaufen", silber: 100, fokus: 0, wert: 100, weg: { kaufweg: "sofort" } }),
+        wFixture({ typ: "kaufen", silber: 100, fokus: 0, wert: 100, weg: { kaufweg: "sofort" } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: identische Kaufen-Wege werden zu einer Gruppe mit 2 Mitgliedern",
+        g.length === 1 && g[0].mitglieder.length === 2,
+        JSON.stringify(g.map((x) => x.mitglieder.length))
+      );
+    })();
+
+    // b) Kernanforderung: gleiche Zahlen, aber unterschiedlicher Wegtyp -> NICHT zusammenfassen.
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "kaufen", silber: 100, fokus: 0, wert: 100 }),
+        wFixture({ typ: "craften", silber: 100, fokus: 0, wert: 100, weg: { rezeptIndex: 0, mitFokus: false } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: gleicher Preis, aber Kaufen und Craften bleiben getrennte Wegtypen (keine Vermischung)",
+        g.length === 2,
+        JSON.stringify(g.map((x) => x.typ))
+      );
+    })();
+
+    // c) Unterschiedlicher ANGEZEIGTER Fokus trennt trotz gleichem Silber.
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100, fokus: 5.06, wert: 100, weg: { rezeptIndex: 0, mitFokus: true } }),
+        wFixture({ typ: "craften", silber: 100, fokus: 5.9, wert: 100, weg: { rezeptIndex: 1, mitFokus: true } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: unterschiedlicher angezeigter Fokus verhindert die Zusammenfassung",
+        g.length === 2,
+        JSON.stringify(g.map((x) => x.fokusAnzeige))
+      );
+    })();
+
+    // d) Zwei gesperrte Wege mit unterschiedlichem Grundtext -> NICHT zusammenfassen
+    //    (Status inkl. Grund ist Teil der Gleichheit, sonst wuerden zwei ganz
+    //    verschiedene Sperrgruende unter einer Zeile verschwinden).
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", gesperrt: true, silber: null, fokus: null, wert: Infinity, grund: "Grund A", weg: { rezeptIndex: 0 } }),
+        wFixture({ typ: "craften", gesperrt: true, silber: null, fokus: null, wert: Infinity, grund: "Grund B", weg: { rezeptIndex: 1 } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: gesperrte Wege mit unterschiedlichem Grundtext bleiben getrennt",
+        g.length === 2,
+        JSON.stringify(g.map((x) => x.grund))
+      );
+    })();
+
+    // e) Gleicher Grundtext bei gesperrten Wegen -> zusammenfassen.
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", gesperrt: true, silber: null, fokus: null, wert: Infinity, grund: "Gleicher Grund", weg: { rezeptIndex: 0 } }),
+        wFixture({ typ: "craften", gesperrt: true, silber: null, fokus: null, wert: Infinity, grund: "Gleicher Grund", weg: { rezeptIndex: 1 } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: gesperrte Wege mit identischem Grundtext werden zu einer Gruppe zusammengefasst",
+        g.length === 1 && g[0].mitglieder.length === 2,
+        JSON.stringify(g.map((x) => x.mitglieder.length))
+      );
+    })();
+
+    // f) "ok" vs "unvollstaendig" bei sonst identischen Zahlen -> NICHT zusammenfassen.
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100, fokus: 0, wert: 100, unvollstaendig: false, weg: { rezeptIndex: 0, mitFokus: false } }),
+        wFixture({ typ: "craften", silber: 100, fokus: 0, wert: 100, unvollstaendig: true, weg: { rezeptIndex: 1, mitFokus: false } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: 'ok' und 'unvollstaendig' bleiben trotz gleicher Zahlen getrennt (Status ist Teil der Gleichheit)",
+        g.length === 2,
+        JSON.stringify(g.map((x) => x.statusText))
+      );
+    })();
+
+    // g) Gleichwertigkeits-Definition ist die ANGEZEIGTE Rundung, nicht der Rohwert:
+    //    zwei Rohwerte, die unterschiedlich, aber gleich gerundet sind, gehoeren zusammen.
+    (function () {
+      const silberA = 100.2, silberB = 100.4; // beide runden (Math.round) auf 100
+      const fokusA = 5.001, fokusB = 5.004; // beide runden (1 Nachkommastelle) auf denselben Anzeigewert
+      pruefe(
+        "Alle-Wege-Gruppierung, Voraussetzung: die gewaehlten Testwerte runden tatsaechlich gleich (formatSilber/formatFokus)",
+        UI.formatSilber(silberA) === UI.formatSilber(silberB) && UI.formatFokus(fokusA) === UI.formatFokus(fokusB),
+        UI.formatSilber(silberA) + "/" + UI.formatSilber(silberB) + " " + UI.formatFokus(fokusA) + "/" + UI.formatFokus(fokusB)
+      );
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: silberA, fokus: fokusA, wert: silberA, weg: { rezeptIndex: 0, mitFokus: true } }),
+        wFixture({ typ: "craften", silber: silberB, fokus: fokusB, wert: silberB, weg: { rezeptIndex: 1, mitFokus: true } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: unterschiedliche Rohwerte, die gleich runden, werden zusammengefasst",
+        g.length === 1 && g[0].mitglieder.length === 2,
+        JSON.stringify(g.map((x) => x.mitglieder.length))
+      );
+    })();
+
+    // h) Gegenprobe zu g): Rohwerte, die auch UNTERSCHIEDLICH runden, bleiben getrennt.
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100.2, fokus: 0, wert: 100.2, weg: { rezeptIndex: 0, mitFokus: true } }),
+        wFixture({ typ: "craften", silber: 101.2, fokus: 0, wert: 101.2, weg: { rezeptIndex: 1, mitFokus: true } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: Rohwerte, die unterschiedlich runden, bleiben getrennt",
+        g.length === 2,
+        JSON.stringify(g.map((x) => x.silberAnzeige))
+      );
+    })();
+
+    // i) Reihenfolge/Stabilitaet: auch NICHT benachbarte gleichwertige Wege
+    //    werden gefunden, die Gruppenreihenfolge richtet sich nach dem ersten
+    //    Vorkommen (r.alleWege kommt bereits sortiert herein).
+    (function () {
+      const g = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100, fokus: 0, wert: 100, weg: { rezeptIndex: 0, mitFokus: true } }),
+        wFixture({ typ: "craften", silber: 200, fokus: 0, wert: 200, weg: { rezeptIndex: 1, mitFokus: true } }),
+        wFixture({ typ: "craften", silber: 100, fokus: 0, wert: 100, weg: { rezeptIndex: 2, mitFokus: true } }),
+      ]);
+      pruefe(
+        "Alle-Wege-Gruppierung: auch nicht benachbarte gleichwertige Wege werden zusammengefasst, Reihenfolge folgt dem ersten Vorkommen",
+        g.length === 2 && g[0].mitglieder.length === 2 && g[1].mitglieder.length === 1 && g[0].silberAnzeige === UI.formatSilber(100),
+        JSON.stringify(g.map((x) => ({ silber: x.silberAnzeige, n: x.mitglieder.length })))
+      );
+    })();
+
+    // j) Label-Funktion: Einzelmitglied unveraendert wegLabelKurz(), mehrere
+    //    Mitglieder mit einheitlichem Fokuseinsatz nennen "mit/ohne Fokus",
+    //    gemischter Fokuseinsatz (wie am Wurzelknoten der Koeniglichen Gugel,
+    //    s. Fall unten) laesst den Zusatz weg statt ihn falsch anzuzeigen.
+    (function () {
+      const einzel = UI.gruppiereAlleWege([wFixture({ typ: "kaufen", silber: 50, fokus: 0, wert: 50, weg: { kaufweg: "order", eigenpreis: false } })])[0];
+      pruefe(
+        "Alle-Wege-Gruppierung: Label bei genau einem Mitglied bleibt exakt wegLabelKurz() (keine Regression im Normalfall)",
+        UI.wegGruppenLabel(einzel) === UI.wegLabelKurz(einzel.mitglieder[0]),
+        UI.wegGruppenLabel(einzel)
+      );
+
+      const mitFokusGruppe = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100, fokus: 5, wert: 100, weg: { rezeptIndex: 0, mitFokus: true } }),
+        wFixture({ typ: "craften", silber: 100, fokus: 5, wert: 100, weg: { rezeptIndex: 1, mitFokus: true } }),
+      ])[0];
+      pruefe(
+        "Alle-Wege-Gruppierung: Label mehrerer gleichwertiger 'mit Fokus'-Craften-Wege nennt 'mit Fokus' und die Anzahl",
+        UI.wegGruppenLabel(mitFokusGruppe) === "Craften mit Fokus (2 gleichwertige Wege)",
+        UI.wegGruppenLabel(mitFokusGruppe)
+      );
+
+      const gemischtGruppe = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100, fokus: 0, wert: 100, weg: { rezeptIndex: 0, mitFokus: true } }),
+        wFixture({ typ: "craften", silber: 100, fokus: 0, wert: 100, weg: { rezeptIndex: 1, mitFokus: false } }),
+      ])[0];
+      pruefe(
+        "Alle-Wege-Gruppierung: Label bei gemischtem Fokuseinsatz laesst 'mit/ohne Fokus' weg statt es falsch zu behaupten",
+        UI.wegGruppenLabel(gemischtGruppe) === "Craften (2 gleichwertige Wege)",
+        UI.wegGruppenLabel(gemischtGruppe)
+      );
+    })();
+  })();
+
+  // Reale Gegenprobe: Koenigliche Gugel .3, der Beispielfall aus dem Auftrag
+  // (kostenrechner-PLAN.md/kostenrechner-KONTEXT.md, Backlog-Punkt "Alle
+  // Wege"-Tabelle). Preise so gewaehlt, dass ausser den drei
+  // Alternativrezepten (Gelehrten/Kleriker/Magiergugel SET1-3) plus 2x
+  // Koenigliches Siegel alles bewusst ohne Preis bleibt, damit Kaufen/
+  // Verzaubern der Royal-Stufe gesperrt bleiben und nur die drei
+  // Alternativrezepte je mit/ohne Fokus verglichen werden - genau der im
+  // Bug-Bericht beschriebene Fall. Nachgerechnet am 05.09.2026 per Node
+  // gegen den echten Rezeptgraphen (s. kostenrechner-KONTEXT.md): weil
+  // T4_HEAD_CLOTH_ROYAL keine craftingcategory hat (kein Fokus, keine
+  // Rueckgewinnung, s. CLAUDE.md "Koenigliche Items sind reine
+  // Umwandlungen"), sind mit/ohne Fokus am WURZELKNOTEN selbst folgenlos -
+  // bei gleich teuren Alternativrezepten sind daher tatsaechlich alle 6
+  // craften-Kandidaten exakt identisch (nicht zwei Gruppen zu je drei).
+  (function () {
+    if (typeof REZEPTGRAPH === "undefined" || !REZEPTGRAPH.items["T4_HEAD_CLOTH_ROYAL"]) {
+      pruefe("Alle-Wege-Gruppierung (Koenigliche Gugel .3) uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+
+    const preiseGleich = {
+      "T4_HEAD_CLOTH_SET1@3": { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+      "T4_HEAD_CLOTH_SET2@3": { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+      "T4_HEAD_CLOTH_SET3@3": { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+      QUESTITEM_TOKEN_ROYAL_T4: { sell: { preis: 59945, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const rGleich = RECHENKERN.kosten("T4_HEAD_CLOTH_ROYAL", 3, 1, { preise: preiseGleich, stationssaetze: { Magierturm: 380, Weber: 380 }, fokuswert: 10 });
+    const gruppenGleich = UI.gruppiereAlleWege(rGleich.alleWege);
+    const craftGruppenGleich = gruppenGleich.filter((g) => g.typ === "craften");
+    pruefe(
+      "Alle-Wege-Gruppierung: Koenigliche Gugel .3 mit gleich teuren Alternativrezepten fasst alle 6 craften-Wege (3 Rezepte x mit/ohne Fokus) zu EINER Gruppe zusammen",
+      craftGruppenGleich.length === 1 && craftGruppenGleich[0].mitglieder.length === 6,
+      JSON.stringify(craftGruppenGleich.map((g) => ({ silber: g.silberAnzeige, fokus: g.fokusAnzeige, n: g.mitglieder.length })))
+    );
+    pruefe(
+      "Alle-Wege-Gruppierung: die zusammengefasste Gruppe zeigt den erwarteten Silberwert 219.890 bei 0 Fokus",
+      craftGruppenGleich.length === 1 &&
+        craftGruppenGleich[0].silberAnzeige === UI.formatSilber(219890) &&
+        craftGruppenGleich[0].fokusAnzeige === UI.formatFokus(0),
+      JSON.stringify(craftGruppenGleich[0] && { silber: craftGruppenGleich[0].silberAnzeige, fokus: craftGruppenGleich[0].fokusAnzeige })
+    );
+    pruefe(
+      "Alle-Wege-Gruppierung: Label der zusammengefassten Gruppe nennt 'Craften' und die Anzahl 6 (kein 'mit/ohne Fokus', da am Wurzelknoten folgenlos)",
+      craftGruppenGleich.length === 1 && UI.wegGruppenLabel(craftGruppenGleich[0]) === "Craften (6 gleichwertige Wege)",
+      craftGruppenGleich[0] && UI.wegGruppenLabel(craftGruppenGleich[0])
+    );
+
+    // Gegenprobe: ein teureres Alternativrezept darf die Gruppierung NICHT
+    // ueberdecken (kein Zusammenfassen um jeden Preis).
+    const preiseUnterschiedlich = {
+      "T4_HEAD_CLOTH_SET1@3": { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+      "T4_HEAD_CLOTH_SET2@3": { sell: { preis: 150000, kein: false }, buy: { preis: 0, kein: true } },
+      "T4_HEAD_CLOTH_SET3@3": { sell: { preis: 100000, kein: false }, buy: { preis: 0, kein: true } },
+      QUESTITEM_TOKEN_ROYAL_T4: { sell: { preis: 59945, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const rUnterschiedlich = RECHENKERN.kosten("T4_HEAD_CLOTH_ROYAL", 3, 1, {
+      preise: preiseUnterschiedlich,
+      stationssaetze: { Magierturm: 380, Weber: 380 },
+      fokuswert: 10,
+    });
+    const craftGruppenUnterschiedlich = UI.gruppiereAlleWege(rUnterschiedlich.alleWege).filter((g) => g.typ === "craften");
+    pruefe(
+      "Alle-Wege-Gruppierung: bei einem teureren Alternativrezept entstehen GENAU 2 craften-Gruppen (4 guenstige + 2 teure), keine falsche Vollzusammenfassung",
+      craftGruppenUnterschiedlich.length === 2 &&
+        craftGruppenUnterschiedlich.reduce((s, g) => s + g.mitglieder.length, 0) === 6 &&
+        craftGruppenUnterschiedlich[0].mitglieder.length === 4 &&
+        craftGruppenUnterschiedlich[1].mitglieder.length === 2,
+      JSON.stringify(craftGruppenUnterschiedlich.map((g) => ({ silber: g.silberAnzeige, n: g.mitglieder.length })))
+    );
+
+    // Kaufen und Verzaubern bleiben trotz je 1 Mitglied und beide "gesperrt"
+    // eigene Wegtypen, nicht mit Craften oder miteinander vermengt.
+    const andereGruppen = UI.gruppiereAlleWege(rGleich.alleWege).filter((g) => g.typ !== "craften");
+    pruefe(
+      "Alle-Wege-Gruppierung: Kaufen und Verzaubern bleiben als eigene Wegtypen getrennt, nicht mit Craften vermischt",
+      andereGruppen.length === 2 && andereGruppen.every((g) => g.mitglieder.length === 1) && new Set(andereGruppen.map((g) => g.typ)).size === 2,
+      JSON.stringify(andereGruppen.map((g) => ({ typ: g.typ, grund: g.grund })))
+    );
+  })();
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {
