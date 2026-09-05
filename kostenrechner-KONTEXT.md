@@ -1,7 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.3.1 · Standardwert Stationssaetze auf 400 gesetzt
-(kein Paket aus dem Plan, kleine Nutzer-Vorgabe)
+Stand: 2026-09-05 · Version: v1.4.0 · Feature "Qualitaetsstufen"
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -14,99 +13,163 @@ Stand: 2026-09-05 · Version: v1.3.1 · Standardwert Stationssaetze auf 400 gese
 ## Was ist das?
 
 Eine Web-App, die für ein beliebiges craftbares Albion-Item auf einer beliebigen
-Verzauberungsstufe den **günstigsten Beschaffungsweg** ermittelt: kaufen, craften,
-aus einer niedrigeren Stufe hochverzaubern, oder eine Mischung daraus über den
-ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
+Verzauberungsstufe **und Qualitätsstufe** den **günstigsten Beschaffungsweg**
+ermittelt: kaufen, craften, aus einer niedrigeren Stufe hochverzaubern, per Reroll
+an der Reparaturstation hochqualifizieren, oder eine Mischung daraus über den
+ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
+(seit v1.4.0).
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Standardwert Stationssaetze, 05.09.2026, v1.3.1)
+## Aktueller Stand (Feature "Qualitaetsstufen", 05.09.2026, v1.4.0)
 
-**Vorheriger Stand (v1.3.0, Feature "Bauplan-Ansicht ergonomisch
-ueberarbeitet") und alles davor** unverkürzt nach
-`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
-"Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v1.3.1, "Standardwert Stationssaetze auf 400 gesetzt") und
+alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag, direkt vom Nutzer, ohne Orchestrator-Zyklus (kleine, klar
-umrissene Aenderung):** die Stationssaetze-Tabelle in den Einstellungen war
-vorher fuer jedes Gebaeude leer, jede Berechnung startete deshalb als
-"unvollstaendig", bis der Nutzer alle 14 Gebaeude von Hand ausfuellte. Der
-Nutzer hatte das bereits fuer sich selbst auf 400 gesetzt und wollte das als
-Standardwert, statt es nach jedem Zuruecksetzen erneut einzutragen.
+**Auftrag (Orchestrator-Zyklus, Rückfragen aus einem vorherigen Durchlauf
+bereits beantwortet):** eine global wählbare Zielqualität
+(Normal/Gut/Herausragend/Exzellent/Meisterwerk), die für Kaufen, Craften und
+Verkaufen der ganzen Rechnung gilt. Marktpreise unterscheiden sich stark nach
+Qualität (Beleg: Gelehrtengugel T4.4, Normal 53.043 gegen Exzellent 71.581
+Kauforder-Schnitt), die App rechnete bisher ausschließlich Normal.
 
-**Umsetzung, zwei Stellen in `js/ui.js`:**
+**Rechenmodell, `js/rechenkern.js`:** neue Funktion `kostenBeiQualitaet()`,
+ein qualitätsbewusstes Gegenstück zu `kostenGesamt()`, nur erreicht wenn
+`opts.qualitaetsIndex > 0` (0 = Normal = **exakt der bisherige, unveränderte
+Pfad**, keine Verhaltensänderung). Vier Wegearten je Knoten:
 
-- `defaultEinstellungen()`: `stationssaetze` startet jetzt mit 400 fuer jedes
-  Gebaeude aus `REGELN.KATEGORIE_ZU_GEBAEUDE` (alle 14 Eintraege, inklusive
-  der drei Sonderfaelle Nebenhand/Kampfhandschuhe/Tierhaltung), statt einem
-  leeren Objekt.
-- `einstellungenLesen()`: die gespeicherten Saetze werden jetzt mit den
-  Standardwerten zusammengefuehrt (`Object.assign`) statt sie komplett zu
-  ersetzen. Ein Gebaeude, das der Nutzer ausdruecklich auf einen anderen Wert
-  gesetzt hat, bleibt dabei erhalten; ein Gebaeude, das noch nie gesetzt
-  wurde (auch ein erst spaeter hinzugekommenes), bekommt den 400er-Standard
-  statt leer zu bleiben.
+- **KAUFEN-BEI-QUALITAET**: Marktpreis in genau der Zielqualität, aus einem
+  ZWEITEN Preis-Datensatz (`opts.preiseQualitaet`, s. u.), fällt bei fehlendem
+  Preis auf einen hinterlegten Eigenpreis zurück (wie beim Normal-Kauf).
+- **REROLL**: Normal beschaffen (bestehender, unveränderter
+  `kostenGesamt()`-Pfad) + `REGELN.rerollKostenZuQualitaet()`, eine
+  absorbierende Markov-Kette über die belegte Übergangstabelle
+  (`CLAUDE.md`, "Qualitaet rerollen an der Reparaturstation"). Kostet nur
+  Silber, keinen Fokus.
+- **CRAFTEN, preservequality-Zweig**: bei mindestens einer `p:true`-Zutat im
+  Rezept (115 Items im Graph, u. a. alle königlichen Rüstungsteile) wird die
+  Zutat rekursiv **in derselben Zielqualität** beschafft
+  (`kostenBeiQualitaet()`-Rekursion), alle anderen Zutaten bleiben Normal.
+  Deterministisch, kein Wurf, keine Fehlversuche.
+- **CRAFTEN, Wurf-Zweig**: sonst Korns Qualitätswurf-Formel
+  (`REGELN.qualitaetWurfErfolgswahrscheinlichkeit()`), erwartete Kosten =
+  Kosten je Versuch ÷ Erfolgswahrscheinlichkeit (Rückfrage 5, bestätigt).
+  Fehlgeschlagene Versuche werden NICHT gegen einen Wiederverkaufswert
+  gerechnet (Rückfrage 6, bewusste v1-Vereinfachung).
+- **VERZAUBERN-BEI-QUALITAET**: nicht ausdrücklich im Scope gefordert, aber
+  aus der bestätigten Rückfrage 2 ("Verzaubern verändert die Qualität nicht,
+  bleibt erhalten") folgerichtig ergänzt, weil sie oft der GÜNSTIGSTE Weg ist
+  (Vorstufe in Zielqualität + quality-unabhängige Runen/Seelen/Relikte statt
+  eines viel teureren Wurf-Versuchs auf hoher Verzauberungsstufe direkt).
+  Gegenprobe am echten Graphen: Königliche Gugel .3 auf Exzellent nimmt
+  intern für die SET1-Zutat genau diesen Pfad (SET1@0 Exzellent kaufen, dann
+  dreimal mit Runen/Seelen/Relikten hochverzaubern), nicht den Wurf auf der
+  .3-Stufe direkt.
 
-**Bleibt ein echtes Eingabefeld, keine Konstante im Code.** `CLAUDE.md`,
-Abschnitt "Spielerprofil", verlangt ausdruecklich: die Nutzungsgebuehr ist
-Eigentuemer-gesetzt, unterscheidet sich je Gebaeude und aendert sich laufend,
-gehoert deshalb als Eingabefeld, nie als Konstante in die Rechenlogik. 400
-ist hier nur der VORBELEGTE Wert dieses Feldes (in `js/ui.js`), nicht in
-`rechenkern.js`/`regeln.js` verankert; jedes Gebaeude bleibt frei editierbar.
+**Reroll-Übergangstabelle** (`REGELN.REROLL_UEBERGANG`) korrekt interpretiert:
+Zeilen = Ergebnis, Spalten = aktuelle Qualität, Diagonal-Einträge (Ergebnis ==
+aktuell) sind "bleibt gleich". Bei Normal fehlt dieser Diagonal-Eintrag in der
+Wiki-Tabelle (Summe 100,1 %, Rundungsartefakt), `rerollUebergaenge()` kappt
+"bleibt Normal" dafür auf 0 (Rückfrage 4, wie vorgeschlagen).
 
-**Bewusste Nebenwirkung:** ein Gebaeude, das der Nutzer ueber das Eingabefeld
-wieder leert, bekommt beim naechsten Laden erneut 400 statt in den Zustand
-"nicht gepflegt" zurueckzufallen. Der Nutzer hat mit "pauschal 400 im
-Standard" explizit diesen Ersatz fuer die bisherige Vorsichts-Warnung
-gewaehlt, das ist keine versehentliche Regression.
+**Qualitäts-Chancenpunkte** (`opts.qualitaetsChancenpunkte`): Rückfrage 7,
+vorläufig 0, echtes Eingabefeld (neuer Einstellungs-Block "Qualität" neben
+"Charakter & Station"), 1:1 als Prozent-Bonus in Korns Formel gelesen
+(dokumentierte, unbelegte Annahme, s. `CLAUDE.md`).
 
-**Stadt-unabhaengig, wie vorgesehen:** Stationssaetze sind seit jeher nicht
-nach Stadt getrennt (eine reale, vom Nutzer selbst betriebene oder genutzte
-Station, keine Eigenschaft der Stadt-Auswahl), 400 gilt deshalb automatisch
-"in jeder Stadt", ohne dass die Stadt-Umschaltung angefasst werden musste.
+**Preisschicht, `js/preise.js`:** `preiseAbrufen()`/`holeBlock()`/
+`cacheSchluessel()` nehmen jetzt einen `qualitaet`-Parameter (API-Qualität
+1..5, Default 1 = Normal). Neue Funktion `sammleQualitaetsMarktIds()`
+sammelt NUR die kleine Kette (Wurzel + preservequality-/Verzauber-Vorstufen),
+nicht den ganzen Baum. `PREIS_CACHE_SCHEMA_VERSION` auf 3 erhöht
+(Cache-Schlüssel jetzt zusätzlich qualitätsabhängig, alte Cache-Einträge
+werden verworfen statt falsch interpretiert).
 
-**Getestet:** Testsuite (keine der 136 Tests beruehrt `defaultEinstellungen()`
-oder `einstellungenLesen()` direkt) unveraendert 136/136 gruen, per Node
-cachefrei gegen die Dateien auf der Platte geprueft. Im Browser mit
-komplett geleertem `localStorage` bestaetigt: alle 14 Gebaeude zeigen 400,
-die "unvollstaendig"-Warnung erscheint bei einer frischen Rechnung nicht
-mehr, echte Stationsgebuehren (z.B. 7.373 fuer den Magierturm) erscheinen
-sofort im Bauplan statt 0.
+**Oberfläche:** Dropdown "Qualität" in der Suchzeile neben Verzauberung/Stadt
+(Rückfrage 9, alle fünf Stufen, Rückfrage 8), persistiert wie die Stadt. Neuer
+Block "Qualität" mit dem Chancenpunkte-Feld. Bauplan zeigt einen neuen
+`reroll`-Knotentyp (eigenes Badge) und bei `craften`-Knoten zusätzlich ein
+Qualitäts-Badge sowie die Wurf-Erfolgswahrscheinlichkeit/erwartete Versuche
+bzw. den preservequality-Hinweis in der Detailzeile. `berechneGewinn()`
+(Hero-Kennzahl "Gewinn") verkauft jetzt zum Preis der GEWÄHLTEN Qualität
+(`zustand.preiseQualitaetRoh`), nicht mehr immer zum Normal-Preis - das war
+ein während der Umsetzung selbst gefundener Fehler, kein Bestandteil der
+ursprünglichen Rückfragen, aber direkt die im Auftrag genannte Motivation.
 
-Versions-Schnappschuss unter `Versionen/v1.3.1 - Stationssaetze Standard 400/`
-angelegt, wie bei jeder abgeschlossenen Aenderung, unabhaengig davon, ob sie
-ueber einen Orchestrator-Zyklus oder inline erfolgte.
+**Ein echter Fehler während der Umsetzung selbst gefunden und behoben:** der
+`reroll`-Kandidat trug `unvollstaendig`/`fehlendeGebaeude` zunächst nur am
+Kandidaten selbst, nicht im verschachtelten `weg`-Objekt - `js/ui.js`s
+`baueKnoten()` bekommt beim Rendern aber ausschließlich dieses innere Objekt
+zu sehen (wie bei `craften`/`verzaubern` auch), die "unvollständig"-Warnung
+wäre für einen Reroll-Knoten deshalb nie erschienen. Per Regressionstest
+verankert.
+
+**Getestet:** Testsuite von 136 auf 191 Tests gewachsen (49 neue REGELN-Tests
+für Wurf-Formel/Reroll-Kette/preservequality-Erkennung, weitere PREISE-Tests
+für den qualitätsabhängigen Cache-Schlüssel und `sammleQualitaetsMarktIds()`,
+plus ein eigener RECHENKERN-Testblock mit sieben Szenarien inklusive einer
+Gegenprobe am echten Rezeptgraphen der Königlichen Gugel), alle 191 grün, per
+Node cachefrei gegen die Dateien auf der Platte geprüft (der reguläre
+Browser-Weg über `.claude/launch.json` war in dieser Sitzung nicht verfügbar,
+s. Abweichung unten).
+
+**Bewusste Abweichung vom Standardablauf, transparent gemacht:** in dieser
+Sitzung standen weder die `SendMessage`-Funktion für Phasen-Meldungen/
+Subagenten-Anfragen noch ein Browser-Werkzeug zur Verfügung. Die drei
+Spezialisten (`rechenkern-pruefer`, `spieldaten-pruefer`,
+`oberflaechen-pruefer`) konnten deshalb NICHT angefordert werden; stattdessen
+wurde die Rechenlogik ausschließlich durch die node-basierte, cachefreie
+Testsuite (191 Assertions, inklusive Gegenproben gegen unabhängig von Hand
+nachgerechnete Werte) sowie durch eigene Code-Durchsicht abgesichert, und die
+Oberfläche durch eine statische HTML/JS-Konsistenzprüfung (alle
+`getElementById`-Aufrufe in `js/ui.js` gegen vorhandene IDs in
+`Kostenrechner.html` abgeglichen, Tag-Balance geprüft), NICHT durch tatsächliches
+Ansehen im Browser. Vor der nächsten inhaltlichen Änderung an der Oberfläche
+sollte das visuell nachgeholt werden, sobald ein Browser-Werkzeug verfügbar ist.
+
+Versions-Schnappschuss unter `Versionen/v1.4.0 - Qualitaetsstufen/` angelegt.
+Git-Commit und Push wie im Projekt üblich (s. `../CLAUDE.md`,
+"Versionskontrolle").
 
 ## Dateistruktur
 
 Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0) plus
 Feature "Fokuseinsatz steuerbar machen" (v1.2.0) plus Feature "Bauplan-Ansicht
-ergonomisch ueberarbeitet" (v1.3.0, nur `Kostenrechner.html`/`js/ui.js`
-geaendert, keine Dateien neu hinzugekommen):
+ergonomisch ueberarbeitet" (v1.3.0) plus Standardwert Stationssaetze (v1.3.1)
+plus Feature "Qualitaetsstufen" (v1.4.0, alle vier `js/*`-Dateien und
+`Kostenrechner.html` geaendert, `tests/test.html` erweitert, keine neuen Dateien):
 
 ```
 Kostenrechner/
   build_graph.py            fertig (P1, P2: el-Feld ergaenzt), seither unveraendert
   rezepte.js                erzeugt (P1, P2), nicht von Hand bearbeiten
   Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0; Fokus-Regel-
-                              Tabelle + Fokus-Schalter im Bauplan v1.2.0): Suche, Hero,
+                              Tabelle + Fokus-Schalter im Bauplan v1.2.0; Qualitaet-Dropdown
+                              + Qualitaets-Chancenpunkte-Block v1.4.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
-    preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0): eigenpreisSetzen
-                              lehnt Preis<=0 ab, PREIS_CACHE_SCHEMA_VERSION/EIGENPREIS_SCHEMA_VERSION
-                              getrennt seit v1.1.0
-    regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0): itemWert, RRR,
-                              Stationsgebuehr (mit 0-Floor), Fokus (mit 0-Floor), Steuer,
-                              Kategorie-Tabellen, rezepteFuerStufe
+    preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
+                              Cache-Schluessel + sammleQualitaetsMarktIds() v1.4.0, Schema auf 3):
+                              eigenpreisSetzen lehnt Preis<=0 ab, PREIS_CACHE_SCHEMA_VERSION/
+                              EIGENPREIS_SCHEMA_VERSION getrennt seit v1.1.0
+    regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0; Qualitaetswurf/Reroll-Kette
+                              v1.4.0): itemWert, RRR, Stationsgebuehr (mit 0-Floor), Fokus (mit
+                              0-Floor), Steuer, Kategorie-Tabellen, rezepteFuerStufe,
+                              qualitaetWurfErfolgswahrscheinlichkeit()/rerollKostenZuQualitaet()
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
-                              Fokusregel-Ebenen v1.2.0): kosten(item,stufe,menge,opts),
-                              stationssatzFuer() unterscheidet fehlend von ausdruecklich 0,
-                              weg.eigenpreis kennzeichnet Kauf-Kandidaten aus einer eigenen
-                              Schaetzung (P6), fokusRegelFuer() steuert mit/ohne Fokus je
-                              Knoten/Kategorie (v1.2.0)
+                              Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0):
+                              kosten(item,stufe,menge,opts), stationssatzFuer() unterscheidet
+                              fehlend von ausdruecklich 0, weg.eigenpreis kennzeichnet
+                              Kauf-Kandidaten aus einer eigenen Schaetzung (P6), fokusRegelFuer()
+                              steuert mit/ohne Fokus je Knoten/Kategorie (v1.2.0),
+                              kostenBeiQualitaet()/vier neue Kandidaten-Konstruktoren fuer
+                              Kaufen/Reroll/Craften(Wurf oder preservequality)/Verzaubern
+                              in Zielqualitaet (v1.4.0)
     ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
                               Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0,
-                              Bauplan-Knoten als Karten statt Fliesstext v1.3.0): Suche
+                              Bauplan-Knoten als Karten statt Fliesstext v1.3.0; Qualitaet-
+                              Einstellung + reroll-Knotentyp im Bauplan v1.4.0): Suche
                               mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
@@ -123,7 +186,9 @@ Kostenrechner/
   Versionen/v1.1.0 - Craft-Stadt waehlbar/
   Versionen/v1.2.0 - Fokuseinsatz steuerbar machen/
   Versionen/v1.3.0 - Bauplan-Ansicht ergonomisch ueberarbeitet/
-  tests/test.html           136 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.3.1 - Stationssaetze Standard 400/
+  Versionen/v1.4.0 - Qualitaetsstufen/
+  tests/test.html           191 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -241,7 +306,6 @@ Abschnitt 8, hier vollständig gegen den Plan abgeglichen):
   Einkaufen/Craften/Verkaufen (wie beim Eintopf-Rechner), Transportkosten und
   Schwarzzonen-Risiko. Eine einzelne, frei waehlbare Stadt fuer die ganze
   Rechnung ist seit v1.1.0 umgesetzt (05.09.2026), s. "Aktueller Stand" oben.
-- Qualitätsstufen über Normal hinaus, und die Craft-Qualitätschance
 - Markttiefe über `history` statt nur Bestpreis (Mischkalkulation bei Massenbedarf)
 - Einkaufsliste über mehrere Items hinweg („ich brauche ein komplettes Set")
 - Wartezeit und Ausfallrisiko eigener Kauf-/Verkaufsorders

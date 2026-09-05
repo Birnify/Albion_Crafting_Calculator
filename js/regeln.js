@@ -34,6 +34,41 @@ const REGELN = (function () {
   const FOKUS_HALBIERUNG_FCE = 10000; // je 10.000 FCE halbiert sich der Fokusbedarf
 
   // -----------------------------------------------------------------------
+  // Qualitaetsstufen (Feature 05.09.2026, s. kostenrechner-KONTEXT.md).
+  // Index 0..4 = Normal/Gut/Herausragend/Exzellent/Meisterwerk, deckungsgleich
+  // mit den API-Qualitaeten 1..5 der Albion-Online-Data-API (Index + 1).
+  // -----------------------------------------------------------------------
+
+  const QUALITAETEN = ["Normal", "Gut", "Herausragend", "Exzellent", "Meisterwerk"];
+
+  // Craft-Qualitaetswurf, Basistabelle OHNE Bonus (Korn, Entwickler-Forumspost,
+  // verlinkt vom offiziellen Wiki "Item_Quality", s. ../../CLAUDE.md
+  // "Craft-Qualitaetswurf"). Summe = 1 (68,9+25+5+1+0,1 %).
+  const QUALITAETSWURF_BASIS = [0.689, 0.25, 0.05, 0.01, 0.001];
+
+  // Reroll-Uebergangstabelle (Wiki "Item_Quality", Abschnitt "Rerolling
+  // quality at a repair station", s. ../../CLAUDE.md "Qualitaet rerollen an
+  // der Reparaturstation"). Schluessel = AKTUELLE Qualitaet vor dem Reroll,
+  // Werte = { ErgebnisQualitaet: Wahrscheinlichkeit }. Ein Eintrag mit
+  // ErgebnisQualitaet === AktuelleQualitaet ist "bleibt gleich" (kein
+  // Ruecklauf moeglich, deshalb nie eine NIEDRIGERE Qualitaet als Ergebnis).
+  // Bei "von Normal" fehlt der Stay-Eintrag bewusst: die Wiki-Werte summieren
+  // sich dort auf 100,1 % (Rundungsartefakt), die Rest-Wahrscheinlichkeit
+  // "bleibt Normal" wird deshalb in rerollUebergaenge() auf 0 gekappt statt
+  // negativ zu werden, statt der 4 Werte hier proportional zu kuerzen.
+  const REROLL_UEBERGANG = {
+    0: { 1: 0.80, 2: 0.15, 3: 0.05, 4: 0.001 }, // von Normal
+    1: { 1: 0.30, 2: 0.60, 3: 0.099, 4: 0.001 }, // von Gut (Stay 30 % explizit belegt)
+    2: { 2: 0.50, 3: 0.499, 4: 0.001 }, // von Herausragend (Stay 50 % explizit belegt)
+    3: { 3: 0.995, 4: 0.005 }, // von Exzellent (Stay 99,5 % explizit belegt)
+  };
+
+  // Kosten je Reroll = Gegenstandswert x Faktor der AKTUELLEN Qualitaet vor
+  // dem Reroll (Index 0..3 = Normal..Exzellent; Meisterwerk wird nie
+  // gererollt, ist bereits das Maximum).
+  const REROLL_FAKTOR = { 0: 4.4, 1: 5.5, 2: 6.6, 3: 27.5 };
+
+  // -----------------------------------------------------------------------
   // Kategorie -> Gebaeude / Gebuehrengruppe
   // Aus ../../CLAUDE.md, Abschnitt "Craft-Kategorie zu Gebaeude" (Wiki,
   // 04.09.2026). offhand, knuckles und meat_* sind dort ausdruecklich als
@@ -194,6 +229,99 @@ const REGELN = (function () {
   function fceAusAbgelesenemFokus(abgelesen, grundfokus) {
     if (!grundfokus || !abgelesen) return 0;
     return -Math.log2(abgelesen / grundfokus) * FOKUS_HALBIERUNG_FCE;
+  }
+
+  // -----------------------------------------------------------------------
+  // Qualitaetsstufen: Craft-Qualitaetswurf (Korn) und Reroll an der
+  // Reparaturstation. S. ../../CLAUDE.md "Craft-Qualitaetswurf" und
+  // "Qualitaet rerollen an der Reparaturstation" fuer die Belege.
+  // -----------------------------------------------------------------------
+
+  /**
+   * Liefert die vollstaendigen Uebergangswahrscheinlichkeiten EINES Rerolls ab
+   * `aktuelleQualitaet` (Index 0..3), inklusive "bleibt gleich" (Schluessel ===
+   * aktuelleQualitaet). null fuer Meisterwerk (4, nicht rerollbar, bereits
+   * Maximum) oder einen unbekannten Index.
+   * @returns {?Object<number, number>}
+   */
+  function rerollUebergaenge(aktuelleQualitaet) {
+    const eintraege = REROLL_UEBERGANG[aktuelleQualitaet];
+    if (!eintraege) return null;
+    const ergebnis = Object.assign({}, eintraege);
+    if (ergebnis[aktuelleQualitaet] == null) {
+      // Nur "von Normal": kein Stay-Eintrag in der Tabelle, Rest der Spalte
+      // (100 % - Summe der belegten Werte) wird bei 0 gekappt statt negativ
+      // zu werden, s. Kommentar bei REROLL_UEBERGANG.
+      const summe = Object.keys(eintraege).reduce((s, k) => s + eintraege[k], 0);
+      ergebnis[aktuelleQualitaet] = Math.max(0, 1 - summe);
+    }
+    return ergebnis;
+  }
+
+  /**
+   * Erwartete Silberkosten, ein Item per Reroll an der Reparaturstation von
+   * `aktuelleQualitaet` (Default 0 = Normal) auf MINDESTENS `zielQualitaet` zu
+   * bringen. Absorbierende Markov-Kette, geloest von Meisterwerk abwaerts (ein
+   * Reroll ergibt nie eine niedrigere Qualitaet): E[q] = 0 fuer q >=
+   * zielQualitaet, sonst E[q] = (Kosten_je_Reroll(q) + Summe_{r>q} P(q->r) x
+   * E[r]) / (1 - P(q->q)). `itemWertJeStueck` ist quality-unabhaengig (keine
+   * belegte Quelle nennt eine Aenderung des ItemValue durch Qualitaet), gilt
+   * fuer die gesamte Reroll-Kette gleichermassen.
+   * @returns {{silber: number, gesperrt: boolean, grund: ?string}}
+   */
+  function rerollKostenZuQualitaet(itemWertJeStueck, zielQualitaet, aktuelleQualitaet) {
+    const start = aktuelleQualitaet || 0;
+    if (zielQualitaet <= start) return { silber: 0, gesperrt: false, grund: null };
+    if (zielQualitaet > 4 || zielQualitaet < 0) {
+      return { silber: NaN, gesperrt: true, grund: "Qualitaetsindex " + zielQualitaet + " existiert nicht (0..4)" };
+    }
+    const e = { 4: 0 };
+    for (let q = 3; q >= start; q--) {
+      if (q >= zielQualitaet) {
+        e[q] = 0;
+        continue;
+      }
+      const uebergaenge = rerollUebergaenge(q);
+      const kostenJeReroll = itemWertJeStueck * (REROLL_FAKTOR[q] || 0);
+      const pStay = (uebergaenge && uebergaenge[q]) || 0;
+      let summeHoeher = 0;
+      if (uebergaenge) {
+        Object.keys(uebergaenge).forEach((r) => {
+          const rn = Number(r);
+          if (rn !== q) summeHoeher += uebergaenge[rn] * (e[rn] != null ? e[rn] : 0);
+        });
+      }
+      const nenner = 1 - pStay;
+      e[q] = nenner > 0 ? (kostenJeReroll + summeHoeher) / nenner : Infinity;
+    }
+    const silber = e[start];
+    return { silber, gesperrt: !isFinite(silber), grund: isFinite(silber) ? null : "Reroll-Erfolgswahrscheinlichkeit 0" };
+  }
+
+  /**
+   * Erfolgswahrscheinlichkeit EINES Craft-Versuchs, direkt mindestens
+   * `zielQualitaet` zu treffen (Korn: ohne Bonus ein Wurf auf die
+   * Basistabelle, mit X % Bonus zusaetzlich X % Chance auf einen zweiten Wurf,
+   * ab 100 % Bonus ein garantierter zweiter Wurf plus die restlichen Prozent
+   * als Chance auf einen dritten usw.; bei mehreren Wuerfen zaehlt der beste).
+   * `chancenpunkte` wird 1:1 als Prozent-Bonus gelesen: eine im Projekt
+   * dokumentierte UNBELEGTE Annahme (s. ../../CLAUDE.md "Craft-Qualitaetswurf"),
+   * keine Quelle bestaetigt woertlich 1 Punkt = 1 %.
+   */
+  function qualitaetWurfErfolgswahrscheinlichkeit(zielQualitaet, chancenpunkte) {
+    if (zielQualitaet <= 0) return 1; // Normal wird von jedem Wurf getroffen
+    const bonus = Math.max(0, chancenpunkte || 0);
+    const garantierteWuerfe = 1 + Math.floor(bonus / 100);
+    const zusatzChance = (bonus % 100) / 100;
+    let pEinzelUnter = 0;
+    for (let q = 0; q < zielQualitaet; q++) pEinzelUnter += QUALITAETSWURF_BASIS[q];
+    const pErfolgMitN = (n) => 1 - Math.pow(pEinzelUnter, n);
+    return zusatzChance * pErfolgMitN(garantierteWuerfe + 1) + (1 - zusatzChance) * pErfolgMitN(garantierteWuerfe);
+  }
+
+  /** Ob mindestens eine Zutat des Rezepts preservequality traegt (p:true). */
+  function rezeptHatPreservequality(rezept) {
+    return !!(rezept && rezept.i && rezept.i.some((z) => z.p));
   }
 
   // -----------------------------------------------------------------------
@@ -505,6 +633,99 @@ const REGELN = (function () {
       pruefe("itemWert-Gegenproben uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
     }
 
+    // Qualitaetsstufen (Feature 05.09.2026)
+    pruefe("QUALITAETEN hat 5 Eintraege, Index 0 = Normal, Index 4 = Meisterwerk", QUALITAETEN.length === 5 && QUALITAETEN[0] === "Normal" && QUALITAETEN[4] === "Meisterwerk");
+    pruefe(
+      "QUALITAETSWURF_BASIS summiert sich auf 1 (68,9+25+5+1+0,1 %)",
+      nahe(QUALITAETSWURF_BASIS.reduce((a, b) => a + b, 0), 1, 1e-9)
+    );
+
+    pruefe(
+      "qualitaetWurfErfolgswahrscheinlichkeit(0, ...) = 1 (Normal wird immer getroffen)",
+      qualitaetWurfErfolgswahrscheinlichkeit(0, 0) === 1
+    );
+    pruefe(
+      "qualitaetWurfErfolgswahrscheinlichkeit(Gut, 0 Bonus) = 1 - 0,689 = 31,1 % (ein Wurf auf die Basistabelle)",
+      nahe(qualitaetWurfErfolgswahrscheinlichkeit(1, 0), 1 - 0.689, 1e-9)
+    );
+    pruefe(
+      "qualitaetWurfErfolgswahrscheinlichkeit(Meisterwerk, 0 Bonus) = 0,1 % (Basistabelle direkt)",
+      nahe(qualitaetWurfErfolgswahrscheinlichkeit(4, 0), 0.001, 1e-9)
+    );
+    (function () {
+      // 100 % Bonus = "1 free reroll" (Korn woertlich): zwei garantierte
+      // Wuerfe, bestes Ergebnis zaehlt. P(Erfolg) = 1 - p^2 statt 1 - p.
+      const pUnter = 1 - 0.689; // P(ein Wurf >= Gut)
+      const erwartet = 1 - Math.pow(1 - pUnter, 2);
+      pruefe(
+        "qualitaetWurfErfolgswahrscheinlichkeit(Gut, 100 Bonus) = 1 - (P<Gut)^2 (zwei garantierte Wuerfe)",
+        nahe(qualitaetWurfErfolgswahrscheinlichkeit(1, 100), erwartet, 1e-9),
+        String(qualitaetWurfErfolgswahrscheinlichkeit(1, 100)) + " vs " + erwartet
+      );
+    })();
+    (function () {
+      // 150 % Bonus: zwei garantierte Wuerfe plus 50 % Chance auf einen dritten.
+      const pEinzelUnter = 0.689; // P(ein Wurf < Gut)
+      const mit2 = 1 - Math.pow(pEinzelUnter, 2);
+      const mit3 = 1 - Math.pow(pEinzelUnter, 3);
+      const erwartet = 0.5 * mit3 + 0.5 * mit2;
+      pruefe(
+        "qualitaetWurfErfolgswahrscheinlichkeit(Gut, 150 Bonus) = 50/50 zwischen 2 und 3 Wuerfen",
+        nahe(qualitaetWurfErfolgswahrscheinlichkeit(1, 150), erwartet, 1e-9),
+        String(qualitaetWurfErfolgswahrscheinlichkeit(1, 150)) + " vs " + erwartet
+      );
+    })();
+    pruefe(
+      "qualitaetWurfErfolgswahrscheinlichkeit: hoeherer Bonus erhoeht die Erfolgswahrscheinlichkeit nie ueber 1",
+      qualitaetWurfErfolgswahrscheinlichkeit(4, 100000) <= 1
+    );
+
+    pruefe(
+      "rerollUebergaenge(Normal): 'bleibt Normal' auf 0 gekappt (80+15+5+0,1 = 100,1 %, Rundungsartefakt)",
+      rerollUebergaenge(0)[0] === 0,
+      String(rerollUebergaenge(0)[0])
+    );
+    pruefe(
+      "rerollUebergaenge(Gut): 'bleibt Gut' 30 % (belegter Tabellenwert, keine Kappung noetig)",
+      nahe(rerollUebergaenge(1)[1], 0.3, 1e-9)
+    );
+    pruefe("rerollUebergaenge(Meisterwerk) = null (nicht rerollbar)", rerollUebergaenge(4) === null);
+    (function () {
+      const summeExz = Object.values(rerollUebergaenge(3)).reduce((a, b) => a + b, 0);
+      pruefe("rerollUebergaenge(Exzellent) summiert sich exakt auf 1 (99,5+0,5 %)", nahe(summeExz, 1, 1e-9), String(summeExz));
+    })();
+
+    pruefe(
+      "rerollKostenZuQualitaet: Ziel <= aktuelle Qualitaet kostet 0 (kein Reroll noetig)",
+      rerollKostenZuQualitaet(1000, 0, 0).silber === 0
+    );
+    (function () {
+      // Von Normal auf Gut: praktisch garantiert im ersten Versuch (100,1 %
+      // Trefferchance je Reroll, "bleibt Normal" ist 0), also ~1 Reroll-Kosten.
+      const r = rerollKostenZuQualitaet(100, 1, 0); // itemWert 100, Ziel Gut
+      const jeReroll = 100 * REROLL_FAKTOR[0];
+      pruefe(
+        "rerollKostenZuQualitaet(Normal->Gut) ~ genau ein Reroll (Erfolgschance ~100 %)",
+        nahe(r.silber, jeReroll, 0.5),
+        r.silber + " vs " + jeReroll
+      );
+    })();
+    (function () {
+      // Von Exzellent auf Meisterwerk: nur 0,5 % Trefferchance je Reroll,
+      // erwartete Kosten = Kosten je Reroll / 0,005 = Kosten x 200.
+      const itemWertJeStueck = 1000;
+      const r = rerollKostenZuQualitaet(itemWertJeStueck, 4, 3);
+      const erwartet = (itemWertJeStueck * REROLL_FAKTOR[3]) / 0.005;
+      pruefe(
+        "rerollKostenZuQualitaet(Exzellent->Meisterwerk) = Kosten je Reroll / 0,5 % (teuerster Schritt)",
+        nahe(r.silber, erwartet, 1),
+        r.silber + " vs " + erwartet
+      );
+    })();
+    pruefe("rezeptHatPreservequality: erkennt p:true", rezeptHatPreservequality({ i: [{ n: "X", c: 1, p: true }] }) === true);
+    pruefe("rezeptHatPreservequality: ohne p:true -> false", rezeptHatPreservequality({ i: [{ n: "X", c: 1 }] }) === false);
+    pruefe("rezeptHatPreservequality: leeres/fehlendes Rezept -> false, kein Absturz", rezeptHatPreservequality(null) === false && rezeptHatPreservequality({}) === false);
+
     // parseApiDatumUtc: API-Daten ohne Zeitzonen-Kennung muessen als UTC
     // gelesen werden, nicht als Lokalzeit (belegter Fehler, s. Funktionskommentar).
     (function () {
@@ -543,6 +764,10 @@ const REGELN = (function () {
     RRR_TAGESBONUS_SILBER,
     RRR_TAGESBONUS_GOLD,
     FOKUS_HALBIERUNG_FCE,
+    QUALITAETEN,
+    QUALITAETSWURF_BASIS,
+    REROLL_UEBERGANG,
+    REROLL_FAKTOR,
     KATEGORIE_ZU_GEBAEUDE,
     STADTBONUS,
     gebaeudeVonKategorie,
@@ -552,6 +777,10 @@ const REGELN = (function () {
     fokusMultiplikator,
     fokusKosten,
     fceAusAbgelesenemFokus,
+    rerollUebergaenge,
+    rerollKostenZuQualitaet,
+    qualitaetWurfErfolgswahrscheinlichkeit,
+    rezeptHatPreservequality,
     stationsgebuehr,
     steuerUndGebuehr,
     kaufKostenJeStueck,

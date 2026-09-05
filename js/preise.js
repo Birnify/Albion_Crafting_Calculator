@@ -48,7 +48,7 @@ const PREISE = (function () {
   // Eigenpreise (P6, 365 Kandidaten) loeschen, obwohl deren Format unveraendert
   // ist - genau der Fehlertyp, den eine Schema-Version eigentlich verhindern
   // soll.
-  const PREIS_CACHE_SCHEMA_VERSION = 2; // 2: Cache-Schluessel jetzt stadtabhaengig (Staedte-Feature), s. cacheSchluessel()
+  const PREIS_CACHE_SCHEMA_VERSION = 3; // 3: Cache-Schluessel jetzt zusaetzlich qualitaetsabhaengig (Feature "Qualitaetsstufen"), s. cacheSchluessel()
   const EIGENPREIS_SCHEMA_VERSION = 1; // unveraendert, vom Staedte-Feature nicht betroffen
 
   const PREIS_CACHE_KEY = "albion_kostenrechner_preiscache";
@@ -162,6 +162,62 @@ const PREISE = (function () {
     return Array.from(ids);
   }
 
+  /**
+   * Sammelt Markt-IDs, die eine Qualitaets-Rechnung (Feature "Qualitaetsstufen",
+   * s. kostenrechner-KONTEXT.md) ZUSAETZLICH zur normalen Preisabfrage braucht:
+   * die Kaufoption des Startknotens selbst UND jeder ueber eine
+   * preservequality-Zutat (p:true) oder eine Verzauberungs-Vorstufe (Verzaubern
+   * preserviert die Qualitaet, s. CLAUDE.md "Craft-Qualitaetswurf") erreichbare
+   * Folgeknoten, jeweils IN DER ZIELQUALITAET. Gewoehnliche Zutaten (ohne
+   * p:true) sind qualitaetsunabhaengig und werden hier NICHT gesammelt - fuer
+   * sie gilt weiterhin die normale, in sammleMarktIds() gesammelte
+   * Normal-Qualitaet-Preisliste. Ergebnis ist typischerweise sehr klein
+   * (einstellig bis niedrig zweistellig), anders als sammleMarktIds().
+   *
+   * @param {string} startItem
+   * @param {number} startStufe
+   * @param {{maxTiefe?: number}} [opts]
+   * @returns {string[]} eindeutige Markt-IDs
+   */
+  function sammleQualitaetsMarktIds(startItem, startStufe, opts) {
+    if (typeof REZEPTGRAPH === "undefined") {
+      throw new Error("REZEPTGRAPH fehlt - rezepte.js muss vor preise.js geladen werden");
+    }
+    opts = opts || {};
+    const maxTiefe = opts.maxTiefe || 30;
+    const ids = new Set();
+    const besucht = new Set();
+
+    function besuche(item, stufe, tiefe) {
+      if (tiefe > maxTiefe) return;
+      const schluessel = `${item}@${stufe}`;
+      if (besucht.has(schluessel)) return;
+      besucht.add(schluessel);
+      ids.add(marktId(item, stufe));
+
+      const node = REZEPTGRAPH.items[item];
+      if (!node) return;
+
+      const nutzeBasisrezept = node.el ? true : stufe === 0;
+      const rezepte = nutzeBasisrezept ? node.r || [] : ((node.e || {})[String(stufe)] || {}).r || [];
+      rezepte.forEach((rezept) => {
+        (rezept.i || []).forEach((zutat) => {
+          if (zutat.p) besuche(zutat.n, zutat.l || 0, tiefe + 1);
+        });
+      });
+
+      // Verzaubern preserviert die Qualitaet: die Vorstufe braucht deshalb
+      // ebenfalls einen Qualitaets-Preis, s. Funktionskommentar oben.
+      if (!node.el && stufe > 0) {
+        const eintrag = (node.e || {})[String(stufe)];
+        if (eintrag && eintrag.u) besuche(item, stufe - 1, tiefe + 1);
+      }
+    }
+
+    besuche(startItem, startStufe || 0, 0);
+    return Array.from(ids);
+  }
+
   // ---------------------------------------------------------------------
   // localStorage-Preiscache
   // ---------------------------------------------------------------------
@@ -184,16 +240,22 @@ const PREISE = (function () {
   }
 
   /**
-   * Cache-Schluessel fuer einen Preiseintrag: IMMER stadtabhaengig, s.
-   * PREIS_CACHE_SCHEMA_VERSION-Kommentar oben. Ohne die Stadt im Schluessel
-   * koennte ein frischer Cache-Eintrag fuer "T4_CLOTH" aus Lymhurst faelschlich
-   * als gueltig fuer Bridgewatch durchgehen, nur weil derselbe uniquename
-   * gemeint ist - Preise sind aber je Stadt komplett unabhaengig. "::" als
-   * Trenner, weil weder Staedtenamen noch Markt-IDs (die selbst schon ein "@"
+   * Cache-Schluessel fuer einen Preiseintrag: IMMER stadt- UND
+   * qualitaetsabhaengig, s. PREIS_CACHE_SCHEMA_VERSION-Kommentar oben. Ohne
+   * die Stadt im Schluessel koennte ein frischer Cache-Eintrag fuer
+   * "T4_CLOTH" aus Lymhurst faelschlich als gueltig fuer Bridgewatch
+   * durchgehen, nur weil derselbe uniquename gemeint ist - Preise sind aber
+   * je Stadt komplett unabhaengig. Ebenso mit der Qualitaet (Feature
+   * "Qualitaetsstufen", 05.09.2026): derselbe uniquename hat in Normal und in
+   * Exzellent voellig unterschiedliche Marktpreise. `qualitaet` fehlt in den
+   * meisten Aufrufen (Normal-Qualitaet-Preise, der weit ueberwiegende
+   * Regelfall) und faellt dann auf QUALITAET (1) zurueck. "::" als Trenner,
+   * weil weder Staedtenamen noch Markt-IDs (die selbst schon ein "@"
    * enthalten koennen, s. Modulkommentar oben) das Zeichen verwenden.
    */
-  function cacheSchluessel(stadt, id) {
-    return stadt + "::" + id;
+  function cacheSchluessel(stadt, id, qualitaet) {
+    const q = qualitaet == null ? QUALITAET : qualitaet;
+    return stadt + "::" + id + "::q" + q;
   }
 
   function preisCacheSchreiben(cache) {
@@ -257,8 +319,9 @@ const PREISE = (function () {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function holeBlock(ids, stadt) {
-    const url = `${API_BASE}/prices/${ids.join(",")}.json?locations=${stadt}&qualities=${QUALITAET}`;
+  async function holeBlock(ids, stadt, qualitaet) {
+    const q = qualitaet == null ? QUALITAET : qualitaet;
+    const url = `${API_BASE}/prices/${ids.join(",")}.json?locations=${stadt}&qualities=${q}`;
     let letzterFehler = null;
     for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
       try {
@@ -291,17 +354,24 @@ const PREISE = (function () {
    *                                                  anderen Stadt beantwortet werden.
    * @param {number} [opts.cacheMaxAlterMin=30]      ab wann ein Cache-Eintrag erneut abgerufen wird
    * @param {boolean} [opts.erzwingen=false]         Cache ignorieren, alles neu abrufen
+   * @param {number} [opts.qualitaet=1]              API-Qualitaet 1..5 (1=Normal..5=Meisterwerk,
+   *                                                  s. REGELN.QUALITAETEN Index+1). Feature
+   *                                                  "Qualitaetsstufen": normalerweise weggelassen
+   *                                                  (Normal-Preise fuer den ganzen Baum), nur fuer
+   *                                                  die kleine Liste aus sammleQualitaetsMarktIds()
+   *                                                  mit der gewaehlten Zielqualitaet aufgerufen.
    * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
    *
    * @returns {Promise<Object<string, {sell:{preis:?number,datum:string,kein:boolean}, buy:{preis:?number,datum:string,kein:boolean}, abgerufenAm:number}|null>>}
    *   Eintrag je Markt-ID (unpraefigiert, ohne Stadt - die Antwort gilt ohnehin
-   *   ausschliesslich fuer die angefragte Stadt). null = nie abgefragt (auch
-   *   nicht im Cache). sell.preis/buy.preis === null bedeutet "kein Angebot",
-   *   NIEMALS 0.
+   *   ausschliesslich fuer die angefragte Stadt UND Qualitaet). null = nie
+   *   abgefragt (auch nicht im Cache). sell.preis/buy.preis === null bedeutet
+   *   "kein Angebot", NIEMALS 0.
    */
   async function preiseAbrufen(ids, opts) {
     opts = opts || {};
     const stadt = opts.stadt || STADT_DEFAULT;
+    const qualitaet = opts.qualitaet != null ? opts.qualitaet : QUALITAET;
     const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : CACHE_GUELTIG_MIN_DEFAULT;
     const erzwingen = !!opts.erzwingen;
     const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
@@ -311,11 +381,11 @@ const PREISE = (function () {
 
     const zuHolen = erzwingen
       ? eindeutigeIds
-      : eindeutigeIds.filter((id) => !istFrisch(cache.eintraege[cacheSchluessel(stadt, id)], maxAlterMin));
+      : eindeutigeIds.filter((id) => !istFrisch(cache.eintraege[cacheSchluessel(stadt, id, qualitaet)], maxAlterMin));
 
     const ergebnis = {};
     eindeutigeIds.forEach((id) => {
-      ergebnis[id] = cache.eintraege[cacheSchluessel(stadt, id)] || null;
+      ergebnis[id] = cache.eintraege[cacheSchluessel(stadt, id, qualitaet)] || null;
     });
 
     const gesamt = eindeutigeIds.length;
@@ -325,11 +395,11 @@ const PREISE = (function () {
     if (!zuHolen.length) return ergebnis;
 
     for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
-      const zeilen = await holeBlock(block, stadt);
+      const zeilen = await holeBlock(block, stadt, qualitaet);
       const gesehen = new Set();
       (zeilen || []).forEach((zeile) => {
         const eintrag = normalisierePreisZeile(zeile);
-        cache.eintraege[cacheSchluessel(stadt, eintrag.id)] = eintrag;
+        cache.eintraege[cacheSchluessel(stadt, eintrag.id, qualitaet)] = eintrag;
         ergebnis[eintrag.id] = eintrag;
         gesehen.add(eintrag.id);
       });
@@ -532,6 +602,48 @@ const PREISE = (function () {
       typeof PREIS_CACHE_SCHEMA_VERSION === "number" && typeof EIGENPREIS_SCHEMA_VERSION === "number"
     );
 
+    // Feature "Qualitaetsstufen" (05.09.2026): der Cache-Schluessel muss auch
+    // die Qualitaet einschliessen, sonst koennte ein Normal-Preis faelschlich
+    // fuer Exzellent als frisch gelten - derselbe Fehlertyp wie beim
+    // Staedte-Feature oben, nur bei der Qualitaet statt der Stadt.
+    pruefe(
+      "cacheSchluessel: dieselbe Markt-ID in zwei Qualitaeten ergibt zwei verschiedene Schluessel",
+      cacheSchluessel("Lymhurst", "T4_HEAD_CLOTH_ROYAL@3", 1) !== cacheSchluessel("Lymhurst", "T4_HEAD_CLOTH_ROYAL@3", 4),
+      cacheSchluessel("Lymhurst", "T4_HEAD_CLOTH_ROYAL@3", 1) + " vs " + cacheSchluessel("Lymhurst", "T4_HEAD_CLOTH_ROYAL@3", 4)
+    );
+    pruefe(
+      "cacheSchluessel: ohne qualitaet-Parameter identisch zu qualitaet=1 (Normal-Rueckfall)",
+      cacheSchluessel("Lymhurst", "T4_CLOTH") === cacheSchluessel("Lymhurst", "T4_CLOTH", 1)
+    );
+
+    // sammleQualitaetsMarktIds: die Koenigliche Gugel .3 muss ueber die
+    // preservequality-Zutat (T4_HEAD_CLOTH_SET1@3) UND die per Verzaubern
+    // erreichbaren Vorstufen (SET1@2/@1/@0) einsammeln, aber NICHT die
+    // gewoehnliche Token-Zutat (QUESTITEM_TOKEN_ROYAL_T4, kein p:true) und
+    // auch nicht die Rohstoffe darunter (Faser/Stoff, qualitaetsunabhaengig).
+    if (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.items["T4_HEAD_CLOTH_ROYAL"]) {
+      const qids = sammleQualitaetsMarktIds("T4_HEAD_CLOTH_ROYAL", 3);
+      pruefe("sammleQualitaetsMarktIds enthaelt die Wurzel T4_HEAD_CLOTH_ROYAL@3", qids.includes("T4_HEAD_CLOTH_ROYAL@3"), qids.join(","));
+      pruefe("sammleQualitaetsMarktIds enthaelt die preservequality-Zutat T4_HEAD_CLOTH_SET1@3", qids.includes("T4_HEAD_CLOTH_SET1@3"), qids.join(","));
+      pruefe(
+        "sammleQualitaetsMarktIds enthaelt die per Verzaubern erreichbaren Vorstufen SET1@2/@1 und SET1 (Stufe 0)",
+        qids.includes("T4_HEAD_CLOTH_SET1@2") && qids.includes("T4_HEAD_CLOTH_SET1@1") && qids.includes("T4_HEAD_CLOTH_SET1"),
+        qids.join(",")
+      );
+      pruefe(
+        "sammleQualitaetsMarktIds enthaelt NICHT die gewoehnliche Token-Zutat (kein p:true, qualitaetsunabhaengig)",
+        !qids.includes("QUESTITEM_TOKEN_ROYAL_T4"),
+        qids.join(",")
+      );
+      pruefe(
+        "sammleQualitaetsMarktIds ist deutlich kleiner als sammleMarktIds fuer denselben Knoten (nur die Qualitaets-Kette, nicht der ganze Baum)",
+        qids.length < sammleMarktIds("T4_HEAD_CLOTH_ROYAL", 3).length,
+        qids.length + " vs " + sammleMarktIds("T4_HEAD_CLOTH_ROYAL", 3).length
+      );
+    } else {
+      pruefe("sammleQualitaetsMarktIds-Tests uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+    }
+
     return ergebnisse;
   }
 
@@ -543,6 +655,7 @@ const PREISE = (function () {
     EIGENPREIS_SCHEMA_VERSION,
     marktId,
     sammleMarktIds,
+    sammleQualitaetsMarktIds,
     preiseAbrufen,
     preisCacheLesen,
     preisCacheLeeren,

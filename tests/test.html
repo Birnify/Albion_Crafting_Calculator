@@ -869,6 +869,333 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     );
   })();
 
+  // ---- Feature "Qualitaetsstufen" (05.09.2026): kostenBeiQualitaet() und
+  // die vier neuen Kandidaten-Konstruktoren in js/rechenkern.js. Eigene
+  // Item-Namen (QUAL_*), s. Kommentar beim Stadtwechsel-Test oben zur
+  // itemWert-Memo-Kollision. ----
+  (function () {
+    // a) Regression: qualitaetsIndex 0 (Normal, Default) darf das bestehende
+    // Verhalten NICHT veraendern - kein neues Feld weg.qualitaet, kein
+    // "reroll"-Kandidat, exakt derselbe Pfad wie ohne das Feature.
+    (function () {
+      const testGraph = {
+        items: {
+          QUAL_R: { iv: 10, t: 4 },
+          QUAL_M: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ f: 50, i: [{ n: "QUAL_R", c: 4 }] }] },
+        },
+      };
+      const basisOpts = {
+        graph: testGraph,
+        preise: { QUAL_R: { sell: { preis: 10, kein: false }, buy: { preis: 0, kein: true } } },
+        stationssaetze: { Magierturm: 100 },
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+      };
+      const rOhneFeld = RECHENKERN.kosten("QUAL_M", 0, 1, basisOpts);
+      const rExplizitNormal = RECHENKERN.kosten("QUAL_M", 0, 1, Object.assign({}, basisOpts, { qualitaetsIndex: 0 }));
+      pruefe(
+        "Qualitaet-Regression: qualitaetsIndex 0 liefert identisches Silber wie ganz ohne das Feld",
+        nahe(rOhneFeld.silber, rExplizitNormal.silber, 1e-9) && rOhneFeld.weg.typ === rExplizitNormal.weg.typ,
+        rOhneFeld.silber + " vs " + rExplizitNormal.silber
+      );
+      pruefe(
+        "Qualitaet-Regression: bei Normal hat weg.qualitaet keinen Wert (undefined), kein qualitaetsart-Feld",
+        rExplizitNormal.weg.qualitaet === undefined && rExplizitNormal.weg.qualitaetsart === undefined
+      );
+    })();
+
+    // b) KAUFEN-BEI-QUALITAET: ein eigener, quality-spezifischer Preisdatensatz
+    // (opts.preiseQualitaet) gewinnt gegen einen viel teureren Normal-Weg.
+    (function () {
+      const testGraph = { items: { QUAL_KAUF: { t: 4, cc: "cloth_helmet" } } };
+      const r = RECHENKERN.kosten("QUAL_KAUF", 0, 1, {
+        graph: testGraph,
+        preise: {},
+        preiseQualitaet: { QUAL_KAUF: { sell: { preis: 5000, kein: false }, buy: { preis: 0, kein: true } } },
+        stationssaetze: {},
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+        qualitaetsIndex: 3, // Exzellent
+      });
+      pruefe("Qualitaet KAUFEN: nicht gesperrt, wenn preiseQualitaet einen Preis liefert", !r.gesperrt, r.grund);
+      pruefe(
+        "Qualitaet KAUFEN: Silber stammt aus preiseQualitaet (5.000), nicht aus dem leeren opts.preise",
+        r.weg.typ === "kaufen" && nahe(r.silber, 5000, 1e-9),
+        JSON.stringify({ typ: r.weg.typ, silber: r.silber })
+      );
+      pruefe("Qualitaet KAUFEN: weg.qualitaet ist 3 (Exzellent)", r.weg.qualitaet === 3, String(r.weg.qualitaet));
+
+      const rGesperrt = RECHENKERN.kosten("QUAL_KAUF", 0, 1, {
+        graph: testGraph,
+        preise: {},
+        preiseQualitaet: {},
+        stationssaetze: {},
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+        qualitaetsIndex: 3,
+      });
+      const kaufWegGesperrt = rGesperrt.alleWege.find((w) => w.typ === "kaufen");
+      pruefe(
+        "Qualitaet KAUFEN: ohne preiseQualitaet-Eintrag gesperrt, NICHT Kosten 0 (dieselbe Regel wie beim Normal-Kauf)",
+        kaufWegGesperrt && kaufWegGesperrt.gesperrt === true && kaufWegGesperrt.silber === null,
+        JSON.stringify(kaufWegGesperrt)
+      );
+    })();
+
+    // c) REROLL: Normal beschaffen + REGELN.rerollKostenZuQualitaet() -
+    // unabhaengig gegengerechnet, nicht nur "irgendein Wert ohne Sperre".
+    (function () {
+      const testGraph = { items: { QUAL_REROLL: { t: 4, cc: "cloth_helmet" } } };
+      const r = RECHENKERN.kosten("QUAL_REROLL", 0, 1, {
+        graph: testGraph,
+        preise: { QUAL_REROLL: { sell: { preis: 1000, kein: false }, buy: { preis: 0, kein: true } } },
+        preiseQualitaet: {}, // kein Qualitaets-Marktpreis -> KAUFEN-BEI-QUALITAET gesperrt, Reroll muss gewinnen
+        stationssaetze: {},
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+        qualitaetsIndex: 1, // Gut
+      });
+      pruefe("Qualitaet REROLL: nicht gesperrt", !r.gesperrt, r.grund);
+      pruefe("Qualitaet REROLL: gewaehlter Weg ist reroll (kein Qualitaets-Marktpreis vorhanden)", r.weg.typ === "reroll", r.weg.typ);
+      const itemWert = REGELN.itemWert("QUAL_REROLL", 0, undefined, testGraph);
+      const erwarteterReroll = REGELN.rerollKostenZuQualitaet(itemWert, 1, 0).silber;
+      pruefe(
+        "Qualitaet REROLL: Silber = Normal-Kaufpreis (1.000) + unabhaengig berechnete Reroll-Kosten",
+        nahe(r.silber, 1000 + erwarteterReroll, 0.01),
+        r.silber + " vs " + (1000 + erwarteterReroll)
+      );
+      pruefe("Qualitaet REROLL: kostet keinen Fokus (nur Silber, s. CLAUDE.md)", r.fokus === 0, String(r.fokus));
+      pruefe("Qualitaet REROLL: weg.basis zeigt den zugrundeliegenden Normal-Kauf", r.weg.basis && r.weg.basis.typ === "kaufen");
+    })();
+
+    // c2) Regression: unvollstaendig/fehlendeGebaeude muessen auch im
+    // VERSCHACHTELTEN weg-Objekt eines Reroll-Kandidaten stehen (nicht nur am
+    // Kandidaten selbst), weil js/ui.js/baueKnoten() beim Rendern nur dieses
+    // innere Objekt sieht, genau wie bei craften/verzaubern.
+    (function () {
+      const testGraph = {
+        items: {
+          QUAL_REROLL_UNVOLL_R: { iv: 10, t: 4 },
+          QUAL_REROLL_UNVOLL_M: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ f: 10, i: [{ n: "QUAL_REROLL_UNVOLL_R", c: 2 }] }] },
+        },
+      };
+      const r = RECHENKERN.kosten("QUAL_REROLL_UNVOLL_M", 0, 1, {
+        graph: testGraph,
+        preise: { QUAL_REROLL_UNVOLL_R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+        preiseQualitaet: {},
+        stationssaetze: {}, // Magierturm fehlt bewusst -> unvollstaendig
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+        qualitaetsIndex: 1,
+      });
+      pruefe("Qualitaet REROLL unvollstaendig: nicht gesperrt", !r.gesperrt, r.grund);
+      const rerollKandidatInAlleWege = r.alleWege.find((w) => w.typ === "reroll" && !w.gesperrt);
+      pruefe(
+        "Qualitaet REROLL unvollstaendig: ein gueltiger Reroll-Kandidat existiert in alleWege (unabhaengig davon, ob er der guenstigste ist)",
+        !!rerollKandidatInAlleWege,
+        JSON.stringify(r.alleWege.map((w) => w.typ + (w.gesperrt ? "(gesperrt)" : "")))
+      );
+      if (rerollKandidatInAlleWege) {
+        pruefe(
+          "Qualitaet REROLL unvollstaendig: das VERSCHACHTELTE weg-Objekt traegt unvollstaendig (Regressionstest: js/ui.js/baueKnoten() bekommt beim Rendern NUR dieses innere Objekt zu sehen, nicht den Kandidaten selbst)",
+          rerollKandidatInAlleWege.weg.unvollstaendig === true &&
+            Array.isArray(rerollKandidatInAlleWege.weg.fehlendeGebaeude) &&
+            rerollKandidatInAlleWege.weg.fehlendeGebaeude.indexOf("Magierturm") !== -1,
+          JSON.stringify({ unvollstaendig: rerollKandidatInAlleWege.weg.unvollstaendig, fehlendeGebaeude: rerollKandidatInAlleWege.weg.fehlendeGebaeude })
+        );
+      }
+    })();
+
+    // d) CRAFTEN-BEI-QUALITAET, Wurf-Zweig (kein preservequality): erwartete
+    // Kosten = Kosten je Versuch / Erfolgswahrscheinlichkeit, unabhaengig
+    // gegen REGELN.qualitaetWurfErfolgswahrscheinlichkeit() geprueft.
+    (function () {
+      const testGraph = {
+        items: {
+          QUAL_WURF_R: { iv: 10, t: 4 },
+          QUAL_WURF_M: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ f: 0, i: [{ n: "QUAL_WURF_R", c: 4 }] }] },
+        },
+      };
+      const opts = {
+        graph: testGraph,
+        preise: { QUAL_WURF_R: { sell: { preis: 10, kein: false }, buy: { preis: 0, kein: true } } },
+        preiseQualitaet: {}, // KAUFEN-BEI-QUALITAET gesperrt
+        stationssaetze: { Magierturm: 0 }, // Station auf 0 gesetzt, damit der Vergleich sauber nur die Materialien betrifft
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+        qualitaetsIndex: 1, // Gut
+        qualitaetsChancenpunkte: 0,
+      };
+      const r = RECHENKERN.kosten("QUAL_WURF_M", 0, 1, opts);
+      // Kein Reroll-Marktpreis fuer QUAL_WURF_R (Vorstufe des Reroll-Wegs
+      // braucht die REGULAERE Normal-Beschaffung, die hier zwar existiert -
+      // Reroll ist also ebenfalls ein gueltiger Kandidat, gewinnt aber nicht
+      // zwangslaeufig; wir pruefen deshalb gezielt den WURF-Kandidaten selbst,
+      // nicht nur den insgesamt guenstigsten Weg.
+      const wurfKandidat = r.alleWege.find((w) => w.typ === "craften" && w.weg && w.weg.qualitaetsart === "wurf" && !w.gesperrt);
+      pruefe("Qualitaet CRAFTEN (Wurf): mindestens ein gueltiger Wurf-Kandidat vorhanden", !!wurfKandidat, JSON.stringify(r.alleWege.map((w) => w.typ + ":" + (w.weg && w.weg.qualitaetsart))));
+      if (wurfKandidat) {
+        // Gegenprobe RRR-bewusst nachgerechnet (nicht nur 4x10 Silber
+        // angenommen): das Material unterliegt derselben Rueckgewinnung wie
+        // ein normaler Craft-Schritt, unabhaengig von der Qualitaetsfrage.
+        const rrrWert = REGELN.rrr({ cc: "cloth_helmet", stadt: "Lymhurst", mitFokus: wurfKandidat.weg.mitFokus });
+        const pErfolg = REGELN.qualitaetWurfErfolgswahrscheinlichkeit(1, 0);
+        const jeVersuch = 4 * (1 - rrrWert) * 10; // 4x QUAL_WURF_R a 10 Silber, RRR-bereinigt, Station 0, kein Rezeptsilber
+        const erwartet = jeVersuch / pErfolg;
+        pruefe(
+          "Qualitaet CRAFTEN (Wurf): Silber = Kosten je Versuch / Erfolgswahrscheinlichkeit",
+          nahe(wurfKandidat.silber, erwartet, 0.01),
+          wurfKandidat.silber + " vs " + erwartet
+        );
+        pruefe(
+          "Qualitaet CRAFTEN (Wurf): erwarteteVersuche = 1 / Erfolgswahrscheinlichkeit",
+          nahe(wurfKandidat.weg.erwarteteVersuche, 1 / pErfolg, 1e-6),
+          String(wurfKandidat.weg.erwarteteVersuche)
+        );
+      }
+    })();
+
+    // e) CRAFTEN-BEI-QUALITAET, preservequality-Zweig: deterministisch, kein
+    // Wurf, die Zutat wird rekursiv IN DERSELBEN Qualitaet beschafft.
+    (function () {
+      const testGraph = {
+        items: {
+          // iv bewusst hoch (5.000): treibt itemWert(QUAL_PQ_BASIS) und damit
+          // sowohl die Stationsgebuehr als auch REGELN.rerollKostenZuQualitaet()
+          // stark nach oben, damit im Test klar KAUFEN-BEI-QUALITAET (fester
+          // Preis 3.000, s. unten) gewinnt statt Reroll - sonst waere nicht
+          // eindeutig pruefbar, welchen der beiden gueltigen Wege die Zutat
+          // nimmt. Der tatsaechliche Marktpreis der Zutat bleibt unabhaengig
+          // davon bei 20 (opts.preise unten), iv ist nur die strukturelle
+          // ItemValue-Groesse fuer Gebuehr/Reroll, s. CLAUDE.md "ItemValue genau".
+          QUAL_PQ_TOKEN: { iv: 5000, t: 4 }, // gewoehnliche Zutat, qualitaetsunabhaengig
+          QUAL_PQ_BASIS: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ f: 100, i: [{ n: "QUAL_PQ_TOKEN", c: 8 }] }] },
+          QUAL_PQ_ROYAL: {
+            t: 4,
+            ivd: true,
+            r: [{ i: [{ n: "QUAL_PQ_BASIS", c: 1, p: true, m: 0 }, { n: "QUAL_PQ_TOKEN", c: 2 }] }],
+          },
+        },
+      };
+      const opts = {
+        graph: testGraph,
+        preise: { QUAL_PQ_TOKEN: { sell: { preis: 20, kein: false }, buy: { preis: 0, kein: true } } },
+        preiseQualitaet: {
+          QUAL_PQ_BASIS: { sell: { preis: 3000, kein: false }, buy: { preis: 0, kein: true } }, // guenstiger direkter Qualitaets-Kauf der Zutat
+          QUAL_PQ_ROYAL: {}, // kein direkter Kauf der Wurzel in dieser Qualitaet -> muss craften
+        },
+        stationssaetze: { Magierturm: 0 },
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+        qualitaetsIndex: 3, // Exzellent
+      };
+      const r = RECHENKERN.kosten("QUAL_PQ_ROYAL", 0, 1, opts);
+      pruefe("Qualitaet CRAFTEN (preservequality): nicht gesperrt", !r.gesperrt, r.grund);
+      pruefe("Qualitaet CRAFTEN (preservequality): craften gewinnt (kein Qualitaets-Kaufpreis der Wurzel)", r.weg.typ === "craften", r.weg.typ);
+      pruefe(
+        "Qualitaet CRAFTEN (preservequality): weg.qualitaetsart ist 'preservequality', kein Wurf",
+        r.weg.qualitaetsart === "preservequality" && r.weg.erfolgswahrscheinlichkeit === null,
+        JSON.stringify({ art: r.weg.qualitaetsart, p: r.weg.erfolgswahrscheinlichkeit })
+      );
+      const pqZutat = r.weg.zutaten.find((z) => z.item === "QUAL_PQ_BASIS");
+      pruefe(
+        "Qualitaet CRAFTEN (preservequality): die p:true-Zutat wurde IN Exzellent beschafft (Kaufpreis 3.000 aus preiseQualitaet, nicht der Normal-Weg)",
+        pqZutat && pqZutat.qualitaetsgebunden === true && nahe(pqZutat.silberJeStueck, 3000, 1e-6),
+        JSON.stringify(pqZutat)
+      );
+      const gewoehnlicheZutat = r.weg.zutaten.find((z) => z.item === "QUAL_PQ_TOKEN");
+      pruefe(
+        "Qualitaet CRAFTEN (preservequality): die gewoehnliche Zutat (kein p:true) bleibt qualitaetsunabhaengig (Normal-Kaufpreis 20)",
+        gewoehnlicheZutat && gewoehnlicheZutat.qualitaetsgebunden === false && nahe(gewoehnlicheZutat.silberJeStueck, 20, 1e-6),
+        JSON.stringify(gewoehnlicheZutat)
+      );
+      // Silber = 1x QUAL_PQ_BASIS@Exzellent (3.000) + 2x QUAL_PQ_TOKEN (20) = 3.040, Station 0.
+      pruefe("Qualitaet CRAFTEN (preservequality): Silber exakt 3.040 (keine Wurf-Vervielfachung)", nahe(r.silber, 3040, 0.01), String(r.silber));
+    })();
+
+    // f) VERZAUBERN-BEI-QUALITAET: Vorstufe in derselben Qualitaet, Verzauber-
+    // materialien (Runen etc.) bleiben quality-unabhaengig.
+    (function () {
+      const testGraph = {
+        items: {
+          QUAL_VZ_MAT: { iv: 1, t: 4 },
+          QUAL_VZ: {
+            t: 4,
+            cc: "cloth_helmet",
+            ivd: true,
+            r: [{ f: 10, i: [{ n: "QUAL_VZ_MAT", c: 1 }] }],
+            e: { 1: { u: { res: [{ n: "QUAL_VZ_MAT", c: 5 }] } } },
+          },
+        },
+      };
+      const r = RECHENKERN.kosten("QUAL_VZ", 1, 1, {
+        graph: testGraph,
+        preise: { QUAL_VZ_MAT: { sell: { preis: 2, kein: false }, buy: { preis: 0, kein: true } } },
+        preiseQualitaet: { QUAL_VZ: {} }, // Wurzel auf Stufe 1 nicht direkt in Qualitaet kaufbar -> muss verzaubern
+        stationssaetze: { Magierturm: 0 },
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 0,
+        qualitaetsIndex: 2, // Herausragend
+      });
+      pruefe("Qualitaet VERZAUBERN: nicht gesperrt", !r.gesperrt, r.grund);
+      const verzaubernKandidat = r.alleWege.find((w) => w.typ === "verzaubern" && !w.gesperrt);
+      pruefe("Qualitaet VERZAUBERN: ein gueltiger Verzaubern-bei-Qualitaet-Kandidat existiert", !!verzaubernKandidat);
+      if (verzaubernKandidat) {
+        pruefe(
+          "Qualitaet VERZAUBERN: die Vorstufe (Stufe 0) traegt dieselbe Zielqualitaet",
+          verzaubernKandidat.weg.vorstufe && verzaubernKandidat.weg.vorstufe.qualitaet === 2,
+          JSON.stringify(verzaubernKandidat.weg.vorstufe && verzaubernKandidat.weg.vorstufe.qualitaet)
+        );
+      }
+    })();
+
+    // g) Realer Graph: Koenigliche Gugel .3 auf Exzellent bleibt loesbar und
+    // waehlt die preservequality-Kette (Gegenprobe zur Hauptrechnung oben).
+    if (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.items["T4_HEAD_CLOTH_ROYAL"]) {
+      const preise = {
+        QUESTITEM_TOKEN_ROYAL_T4: { sell: { preis: 60000, kein: false }, buy: { preis: 0, kein: true } },
+        T4_RUNE: { sell: { preis: 10, kein: false }, buy: { preis: 0, kein: true } },
+        T4_SOUL: { sell: { preis: 20, kein: false }, buy: { preis: 0, kein: true } },
+        T4_RELIC: { sell: { preis: 40, kein: false }, buy: { preis: 0, kein: true } },
+      };
+      const preiseQualitaet = {
+        "T4_HEAD_CLOTH_SET1": { sell: { preis: 2000, kein: false }, buy: { preis: 0, kein: true } },
+      };
+      const r = RECHENKERN.kosten("T4_HEAD_CLOTH_ROYAL", 3, 1, {
+        preise,
+        preiseQualitaet,
+        stationssaetze: { Magierturm: 380, Weber: 380 },
+        stadt: "Lymhurst",
+        fce: 0,
+        fokuswert: 5,
+        qualitaetsIndex: 3,
+      });
+      pruefe("Qualitaet Koenigliche Gugel .3 Exzellent: nicht gesperrt", !r.gesperrt, r.grund);
+      pruefe("Qualitaet Koenigliche Gugel .3 Exzellent: craften gewinnt (kein direkter Qualitaets-Kaufpreis der Wurzel)", r.weg.typ === "craften", r.weg.typ);
+      pruefe(
+        "Qualitaet Koenigliche Gugel .3 Exzellent: preservequality-Zweig (kein Wurf fuer das Royal-Item selbst)",
+        r.weg.qualitaetsart === "preservequality",
+        r.weg.qualitaetsart
+      );
+      const set1Zutat = r.weg.zutaten.find((z) => z.item === "T4_HEAD_CLOTH_SET1");
+      pruefe(
+        "Qualitaet Koenigliche Gugel .3 Exzellent: SET1-Zutat qualitaetsgebunden ueber Verzaubern-Kette von SET1@0 Exzellent",
+        set1Zutat && set1Zutat.qualitaetsgebunden === true && set1Zutat.weg && set1Zutat.weg.typ === "verzaubern",
+        JSON.stringify(set1Zutat && { qualitaetsgebunden: set1Zutat.qualitaetsgebunden, typ: set1Zutat.weg && set1Zutat.weg.typ })
+      );
+    } else {
+      pruefe("Qualitaet Koenigliche-Gugel-Tests uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+    }
+  })();
+
   // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------

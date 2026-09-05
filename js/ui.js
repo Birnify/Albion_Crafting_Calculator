@@ -20,6 +20,14 @@ const UI = (function () {
     return {
       schema: EINSTELLUNGEN_SCHEMA,
       stadt: "Lymhurst", // Craft-Stadt der gesamten Rechnung (Kaufen, Craften, Verkaufen), s. CLAUDE.md "Craft-Kategorie zu Gebaeude"
+      // Qualitaetsstufen (Feature 05.09.2026): globale Zielqualitaet fuer die
+      // gesamte Rechnung (0 = Normal = unveraendertes Verhalten), analog zur
+      // Stadt-Einstellung persistiert. qualitaetsChancenpunkte ist der vom
+      // Nutzer am Schicksalsbrett abgelesene Bonus fuer Korns Craft-
+      // Qualitaetswurf, vorlaeufig 0 (s. CLAUDE.md "Craft-Qualitaetswurf"),
+      // bleibt wie die Stationssaetze ein echtes Eingabefeld, keine Konstante.
+      qualitaetsIndex: 0,
+      qualitaetsChancenpunkte: 0,
       fce: 0, // 0 = volle Rohfokuskosten, die konservative Richtung (zu teuer statt zu billig)
       fceAusnahmen: {}, // craftingcategory -> FCE
       // Fokuseinsatz steuerbar machen (Feature 05.09.2026): fokusRegelJeKategorie
@@ -68,6 +76,8 @@ const UI = (function () {
       if (!daten || daten.schema !== EINSTELLUNGEN_SCHEMA) return defaultEinstellungen();
       const basis = defaultEinstellungen();
       basis.stadt = daten.stadt || basis.stadt;
+      basis.qualitaetsIndex = daten.qualitaetsIndex != null ? daten.qualitaetsIndex : basis.qualitaetsIndex;
+      basis.qualitaetsChancenpunkte = daten.qualitaetsChancenpunkte != null ? daten.qualitaetsChancenpunkte : basis.qualitaetsChancenpunkte;
       basis.fce = daten.fce != null ? daten.fce : basis.fce;
       basis.fceAusnahmen = daten.fceAusnahmen || {};
       basis.fokusRegelJeKategorie = daten.fokusRegelJeKategorie || {};
@@ -117,6 +127,11 @@ const UI = (function () {
       } else if (w.typ === "verzaubern") {
         besuche(w.vorstufe);
         (w.materialien || []).forEach((m) => besuche(m.weg));
+      } else if (w.typ === "reroll") {
+        // Craften+Reroll (Feature "Qualitaetsstufen"): die Kategorien stecken
+        // in der eingebetteten Normal-Beschaffung (weg.basis), der Reroll-
+        // Schritt selbst hat keine eigene Kategorie (s. CLAUDE.md).
+        besuche(w.basis);
       }
       // kaufen/gesperrt: keine Kategorie, keine Kinder
     }
@@ -135,14 +150,26 @@ const UI = (function () {
   }
 
   /**
-   * Naechstbeste Alternative fuer EINEN Knoten (item, stufe) aus
+   * Knoten-Schluessel fuer knotenAlternativen (s. RECHENKERN.kosten()): bei
+   * Qualitaetsstufen > 0 (Feature 05.09.2026, s. kostenBeiQualitaet() in
+   * rechenkern.js) fuehrt der Rechenkern zusaetzlich eigene Schluessel
+   * "item@stufe@qN" fuer qualitaetsgebundene Knoten, GETRENNT von den
+   * quality-unabhaengigen "item@stufe"-Eintraegen desselben Items. weg.qualitaet
+   * ist nur auf qualitaetsgebundenen weg-Objekten gesetzt (>0).
+   */
+  function knotenSchluessel(item, stufe, qualitaet) {
+    return item + "@" + stufe + (qualitaet ? "@q" + qualitaet : "");
+  }
+
+  /**
+   * Naechstbeste Alternative fuer EINEN Knoten (item, stufe[, qualitaet]) aus
    * knotenAlternativen (s. RECHENKERN.kosten()). Index 0 ist immer der
    * gewaehlte (bestbewertete) Kandidat, Index 1 die naechstbeste Alternative,
    * unabhaengig davon, ob sie gesperrt ist. null, wenn es keine zweite
    * Option gibt.
    */
-  function naechstbesteAlternative(knotenAlternativen, item, stufe) {
-    const liste = knotenAlternativen && knotenAlternativen[item + "@" + stufe];
+  function naechstbesteAlternative(knotenAlternativen, item, stufe, qualitaet) {
+    const liste = knotenAlternativen && knotenAlternativen[knotenSchluessel(item, stufe, qualitaet)];
     if (!liste || liste.length < 2) return null;
     return liste[1];
   }
@@ -262,6 +289,8 @@ const UI = (function () {
     const tierFilterEl = document.getElementById("tierFilter");
     const stufeEl = document.getElementById("stufe");
     const stadtEl = document.getElementById("stadt");
+    const qualitaetEl = document.getElementById("qualitaet");
+    const qualitaetsChancenpunkteEl = document.getElementById("qualitaetsChancenpunkte");
     const ausgewaehltEl = document.getElementById("ausgewaehlt");
     const ausgewaehltTextEl = document.getElementById("ausgewaehltText");
     const ausgewaehltIdEl = document.getElementById("ausgewaehltId");
@@ -335,6 +364,7 @@ const UI = (function () {
       item: null,
       stufe: 0,
       preiseRoh: null,
+      preiseQualitaetRoh: null, // Feature "Qualitaetsstufen": zweiter, quality-spezifischer Preisdatensatz, s. berechnen()
       ergebnis: null,
       fceAlleZeigen: false,
       fokusRegelAlleZeigen: false,
@@ -353,6 +383,8 @@ const UI = (function () {
     // ---- Formular <- Einstellungen ----
     function ladeEinstellungenInFormular() {
       stadtEl.value = einstellungen.stadt;
+      qualitaetEl.value = einstellungen.qualitaetsIndex;
+      qualitaetsChancenpunkteEl.value = einstellungen.qualitaetsChancenpunkte;
       fceEingabeEl.value = einstellungen.fce;
       fokuswertEl.value = einstellungen.fokuswert;
       maxPreisAlterEl.value = einstellungen.maxPreisAlterMin == null ? "" : einstellungen.maxPreisAlterMin;
@@ -532,6 +564,25 @@ const UI = (function () {
       if (zustand.item) berechnen(false);
     });
 
+    // Qualitaetswechsel (Feature 05.09.2026): braucht wie ein Stadtwechsel
+    // einen NEUEN Preisabruf (die Qualitaets-spezifische Preisliste
+    // preiseQualitaetRoh gilt nur fuer die vorher gewaehlte Qualitaet), nicht
+    // nur eine Neuberechnung mit vorhandenen Preisen. Bei 0 (Normal) wird kein
+    // zusaetzlicher Preisabruf gebraucht, berechnen() ueberspringt ihn dann
+    // selbst (s. dort).
+    qualitaetEl.addEventListener("change", () => {
+      einstellungen.qualitaetsIndex = Number(qualitaetEl.value) || 0;
+      einstellungenSchreiben(einstellungen);
+      if (zustand.item) berechnen(false);
+    });
+    qualitaetsChancenpunkteEl.addEventListener("change", () => {
+      // Nur der Qualitaetswurf haengt an diesem Wert, keine neuen Markt-IDs
+      // noetig - persistiereUndRechne() (wie bei Fokuswert/FCE) reicht.
+      einstellungen.qualitaetsChancenpunkte = Math.max(0, Number(qualitaetsChancenpunkteEl.value) || 0);
+      qualitaetsChancenpunkteEl.value = einstellungen.qualitaetsChancenpunkte;
+      persistiereUndRechne();
+    });
+
     // ---- Preise laden + berechnen ----
     berechnenBtn.addEventListener("click", () => berechnen(false));
     refreshBtn.addEventListener("click", () => berechnen(true));
@@ -558,6 +609,7 @@ const UI = (function () {
       berechnenBtn.disabled = true;
       refreshBtn.disabled = true;
       const stadt = einstellungen.stadt;
+      const qualitaet = einstellungen.qualitaetsIndex || 0;
       setStatus("Sammle Markt-IDs (" + stadt + ") ...");
       try {
         const ids = PREISE.sammleMarktIds(zustand.item, zustand.stufe);
@@ -571,7 +623,31 @@ const UI = (function () {
           },
         });
         if (meinToken !== anfrageZaehler) return; // waehrend des Abrufs wurde ein neueres Item oder eine andere Stadt gewaehlt, diese Antwort ist veraltet
+
+        // Qualitaetsstufen (Feature 05.09.2026): bei einer Zielqualitaet > 0
+        // ZUSAETZLICH die kleine Preisliste der Qualitaets-/preservequality-
+        // Kette in genau dieser Qualitaet abrufen (API-Qualitaet = Index + 1,
+        // s. PREISE.preiseAbrufen()/REGELN.QUALITAETEN). Bleibt Normal (0)
+        // gewaehlt, entfaellt dieser zweite Abruf vollstaendig.
+        let preiseQualitaetRoh = {};
+        if (qualitaet > 0) {
+          const qualitaetsIds = PREISE.sammleQualitaetsMarktIds(zustand.item, zustand.stufe);
+          if (qualitaetsIds.length) {
+            setStatus("0 / " + qualitaetsIds.length + " Preise in Qualitaet " + REGELN.QUALITAETEN[qualitaet] + " abgerufen (" + stadt + ") ...");
+            preiseQualitaetRoh = await PREISE.preiseAbrufen(qualitaetsIds, {
+              erzwingen: !!erzwingen,
+              stadt: stadt,
+              qualitaet: qualitaet + 1,
+              aufFortschritt: (erledigt, gesamt) => {
+                if (meinToken === anfrageZaehler) setStatus(erledigt + " / " + gesamt + " Preise in Qualitaet " + REGELN.QUALITAETEN[qualitaet] + " abgerufen (" + stadt + ") ...");
+              },
+            });
+            if (meinToken !== anfrageZaehler) return;
+          }
+        }
+
         zustand.preiseRoh = preiseRoh;
+        zustand.preiseQualitaetRoh = preiseQualitaetRoh;
         berechneMitVorhandenenPreisen();
         setStatus(ids.length + " Markt-IDs, " + Object.keys(preiseRoh).length + " Preise fuer " + stadt + " geladen.", "ok");
       } catch (err) {
@@ -605,9 +681,12 @@ const UI = (function () {
     function baueOpts() {
       return {
         preise: preiseZuOptsFormat(zustand.preiseRoh || {}),
+        preiseQualitaet: preiseZuOptsFormat(zustand.preiseQualitaetRoh || {}),
         eigenpreise: eigenpreiseFuerOpts(),
         kaufweg: einstellungen.kaufweg,
         stadt: einstellungen.stadt,
+        qualitaetsIndex: einstellungen.qualitaetsIndex || 0,
+        qualitaetsChancenpunkte: einstellungen.qualitaetsChancenpunkte || 0,
         stationssaetze: einstellungen.stationssaetze,
         fce: einstellungen.fce,
         fceUeberschreibungen: einstellungen.fceAusnahmen,
@@ -672,7 +751,14 @@ const UI = (function () {
 
     function berechneGewinn(r) {
       const marktId = PREISE.marktId(zustand.item, zustand.stufe);
-      const eintrag = zustand.preiseRoh && zustand.preiseRoh[marktId];
+      // Qualitaetsstufen (Feature 05.09.2026): der Verkaufserloes muss aus der
+      // GEWAEHLTEN Zielqualitaet stammen, nicht aus dem Normal-Preis - genau
+      // das belegt die Motivation des Features (Gelehrtengugel T4.4 Normal
+      // 53.043 gegen Exzellent 71.581). preiseQualitaetRoh ist nur bei
+      // qualitaet > 0 befuellt (s. berechnen()).
+      const qualitaet = einstellungen.qualitaetsIndex || 0;
+      const quelle = qualitaet > 0 ? zustand.preiseQualitaetRoh : zustand.preiseRoh;
+      const eintrag = quelle && quelle[marktId];
       if (!eintrag) return null;
       // Sofortverkauf: buy_price_max (eintrag.buy). Verkaufsorder: sell_price_min (eintrag.sell). S. CLAUDE.md "Handelskonventionen".
       const seite = einstellungen.verkaufsweg === "order" ? eintrag.sell : eintrag.buy;
@@ -681,7 +767,12 @@ const UI = (function () {
       const sug = REGELN.steuerUndGebuehr(seite.preis, { steuersatz, mitEinstellgebuehr: einstellungen.verkaufsweg === "order" });
       return {
         gewinn: sug.netto - r.silber,
-        hinweis: (einstellungen.verkaufsweg === "order" ? "Verkaufsorder" : "Sofortverkauf") + ", " + Math.round(steuersatz * 100) + " % Steuer",
+        hinweis:
+          (einstellungen.verkaufsweg === "order" ? "Verkaufsorder" : "Sofortverkauf") +
+          ", " +
+          Math.round(steuersatz * 100) +
+          " % Steuer" +
+          (qualitaet > 0 ? ", Qualitaet " + REGELN.QUALITAETEN[qualitaet] : ""),
       };
     }
 
@@ -693,7 +784,7 @@ const UI = (function () {
         return;
       }
       heroEl.className = "hero";
-      const wegLabel = { kaufen: "Kaufen", craften: "Craften", verzaubern: "Verzaubern" }[r.weg.typ] || r.weg.typ;
+      const wegLabel = { kaufen: "Kaufen", craften: "Craften", verzaubern: "Verzaubern", reroll: "Craften + Reroll" }[r.weg.typ] || r.weg.typ;
       const gewinnInfo = berechneGewinn(r);
       let html = "<div class='cols'>";
       html += "<div><div class='k'>Guenstigster Weg</div><div class='v'>" + wegLabel + "</div></div>";
@@ -740,7 +831,7 @@ const UI = (function () {
         kurz = "gesperrt";
         voll = "Naechstbeste Alternative: gesperrt (" + (alt.grund || "") + ")";
       } else {
-        const typLabel = alt.typ === "kaufen" ? "Kaufen" : alt.typ === "craften" ? "Craften" : "Verzaubern";
+        const typLabel = { kaufen: "Kaufen", craften: "Craften", verzaubern: "Verzaubern", reroll: "Craften+Reroll" }[alt.typ] || alt.typ;
         kurz = typLabel + " " + formatSilber(alt.silber);
         voll = "Naechstbeste Alternative: " + typLabel + " fuer " + formatSilber(alt.silber) + " Silber";
       }
@@ -761,7 +852,7 @@ const UI = (function () {
      * Index nach, ohne die Rechenlogik selbst anzufassen.
      */
     function eigenerKandidat(r, weg) {
-      const liste = r && r.knotenAlternativen && r.knotenAlternativen[weg.item + "@" + weg.stufe];
+      const liste = r && r.knotenAlternativen && r.knotenAlternativen[knotenSchluessel(weg.item, weg.stufe, weg.qualitaet)];
       return liste && liste[0] ? liste[0] : null;
     }
 
@@ -780,15 +871,15 @@ const UI = (function () {
       return mitFokus ? "mit Fokus" : "ohne Fokus"; // automatisch: zeigt die tatsaechlich gewaehlte Variante
     }
     function baueFokusSchalter(weg) {
-      const knotenSchluessel = weg.item + "@" + weg.stufe;
-      const aktuell = einstellungen.fokusUebersteuerungJeKnoten[knotenSchluessel] || "automatisch";
+      const eigenerSchluessel = weg.item + "@" + weg.stufe;
+      const aktuell = einstellungen.fokusUebersteuerungJeKnoten[eigenerSchluessel] || "automatisch";
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "fokus-schalter" + (aktuell !== "automatisch" ? " uebersteuert" : "");
       btn.textContent = fokusUebersteuerungLabel(aktuell, weg.mitFokus);
       btn.title =
         "Fokuseinsatz fuer diesen Knoten (" +
-        knotenSchluessel +
+        eigenerSchluessel +
         "). Klicken zum Umschalten: automatisch -> immer -> nie -> automatisch. Automatisch heisst, die Zielfunktion (Silber + Fokus x Fokuswert) entscheidet wie bisher. Schlaegt die Fokus-Regel je Kategorie in den Einstellungen.";
       btn.addEventListener("click", (ev) => {
         // preventDefault + stopPropagation: der Klick sitzt in einem <summary>,
@@ -798,8 +889,8 @@ const UI = (function () {
         ev.stopPropagation();
         const i = FOKUS_REGEL_REIHENFOLGE.indexOf(aktuell);
         const neu = FOKUS_REGEL_REIHENFOLGE[(i + 1) % FOKUS_REGEL_REIHENFOLGE.length];
-        if (neu === "automatisch") delete einstellungen.fokusUebersteuerungJeKnoten[knotenSchluessel];
-        else einstellungen.fokusUebersteuerungJeKnoten[knotenSchluessel] = neu;
+        if (neu === "automatisch") delete einstellungen.fokusUebersteuerungJeKnoten[eigenerSchluessel];
+        else einstellungen.fokusUebersteuerungJeKnoten[eigenerSchluessel] = neu;
         persistiereUndRechne();
       });
       return btn;
@@ -845,6 +936,12 @@ const UI = (function () {
       return div;
     }
 
+    /** Qualitaets-Badge fuer einen qualitaetsgebundenen Knoten (Feature 05.09.2026), leer bei Normal (0/fehlt). */
+    function qualitaetBadgeHtml(qualitaet) {
+      if (!qualitaet) return "";
+      return "<span class='kn-qualitaet' title='Zielqualitaet dieses Schritts'>" + escapeHtml(REGELN.QUALITAETEN[qualitaet]) + "</span>";
+    }
+
     function baueKnoten(weg, r, tiefe, kante) {
       const wrap = document.createElement("div");
       if (!weg) return wrap;
@@ -854,13 +951,57 @@ const UI = (function () {
         return wrap;
       }
 
-      const alt = naechstbesteAlternative(r.knotenAlternativen, weg.item, weg.stufe);
+      const alt = naechstbesteAlternative(r.knotenAlternativen, weg.item, weg.stufe, weg.qualitaet);
       const altHtml = altBeschreibungKurz(alt);
       const mengeHtml = kante ? "<span class='kn-menge'>" + escapeHtml(kante.label) + "</span>" : "";
+      const qualitaetHtml = qualitaetBadgeHtml(weg.qualitaet);
       const ausschlussHtml =
         kante && kante.ausschluss
           ? "<span class='kn-flag kn-flag-ausschluss' title='Mengenobergrenze fuer dieses Material erreicht: es wird bei der Rueckgewinnung dieses Crafts nicht mehr beruecksichtigt.'>kein Ruecklauf</span>"
           : "";
+
+      if (weg.typ === "reroll") {
+        // Craften+Reroll (Feature "Qualitaetsstufen"): Normal beschaffen (Vorstufe
+        // in weg.basis, ueber baueKnoten() rekursiv gerendert), dann an der
+        // Reparaturstation auf die Zielqualitaet hochrerollen. Reroll selbst
+        // kostet nur Silber (kein Fokus, keine Station, keine Zutatenliste, s.
+        // CLAUDE.md "Qualitaet rerollen an der Reparaturstation"), deshalb keine
+        // eigene Zutatenliste im body, nur die eine Vorstufen-Kante.
+        const details = document.createElement("details");
+        details.open = tiefe < 2;
+        const summary = document.createElement("summary");
+        summary.className = "zeile-reroll";
+        const eigenReroll = eigenerKandidat(r, weg);
+        const zeile = document.createElement("div");
+        zeile.className = "kn-zeile";
+        zeile.innerHTML =
+          "<span class='kn-badge kn-badge-reroll'>Reroll</span>" +
+          mengeHtml +
+          "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>" +
+          qualitaetHtml +
+          ausschlussHtml +
+          (weg.unvollstaendig
+            ? "<span class='kn-flag kn-flag-unvoll' title='Stationssatz fuer mindestens ein Gebaeude fehlt. Silber ist eine Untergrenze.'>unvollstaendig</span>"
+            : "") +
+          "<span class='kn-spacer'></span>" +
+          "<span class='kn-kosten'>" + formatSilber(eigenReroll && eigenReroll.silber) + " Silber</span>" +
+          (eigenReroll && eigenReroll.fokus ? "<span class='kn-fokus'>" + formatFokus(eigenReroll.fokus) + " Fokus</span>" : "");
+        summary.appendChild(zeile);
+
+        const detail = document.createElement("div");
+        detail.className = "kn-detail";
+        detail.innerHTML =
+          "Reroll-Silber " + formatSilber(weg.rerollSilber) + " (Gegenstandswert " + formatSilber(weg.itemWertJeStueck) + "), Normal->" + escapeHtml(REGELN.QUALITAETEN[weg.qualitaet]) + altHtml;
+        summary.appendChild(detail);
+        details.appendChild(summary);
+
+        const body = document.createElement("div");
+        body.className = "body";
+        body.appendChild(baueKnoten(weg.basis, r, tiefe + 1, { label: "Normal beschaffen" }));
+        details.appendChild(body);
+        wrap.appendChild(details);
+        return wrap;
+      }
 
       if (weg.typ === "kaufen") {
         const details = document.createElement("details");
@@ -874,6 +1015,7 @@ const UI = (function () {
           "<span class='kn-badge kn-badge-kaufen'>Kaufen</span>" +
           mengeHtml +
           "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>" +
+          qualitaetHtml +
           ausschlussHtml +
           (weg.eigenpreis
             ? "<span class='kn-flag kn-flag-eigen' title='Kein Marktpreis, sondern eine hinterlegte eigene Schaetzung.'>Eigenpreis</span>"
@@ -904,7 +1046,8 @@ const UI = (function () {
         zeile.innerHTML =
           "<span class='kn-badge kn-badge-craften'>Craften</span>" +
           mengeHtml +
-          "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>";
+          "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>" +
+          qualitaetHtml;
         summary.appendChild(zeile);
         zeile.appendChild(baueFokusSchalter(weg));
 
@@ -932,6 +1075,25 @@ const UI = (function () {
           zeile.appendChild(fokusSpan);
         }
 
+        // Qualitaetsstufen (Feature 05.09.2026): bei einem qualitaetsgebundenen
+        // Craft-Knoten zusaetzlich ausweisen, WIE die Zielqualitaet erreicht
+        // wird - deterministisch ueber eine preservequality-Zutat, oder ueber
+        // Korns Wurf-Mechanik mit erwarteten Mehrfachversuchen (s.
+        // craftBeiQualitaetKandidat() in rechenkern.js). weg.qualitaetsart ist
+        // nur bei qualitaetsgebundenen Knoten gesetzt.
+        let qualitaetDetailHtml = "";
+        if (weg.qualitaetsart === "preservequality") {
+          qualitaetDetailHtml = ", Qualitaet " + escapeHtml(REGELN.QUALITAETEN[weg.qualitaet]) + " ueber preservequality-Zutat (kein Wurf, keine Fehlversuche)";
+        } else if (weg.qualitaetsart === "wurf") {
+          qualitaetDetailHtml =
+            ", Qualitaets-Wurf auf " +
+            escapeHtml(REGELN.QUALITAETEN[weg.qualitaet]) +
+            ": " +
+            formatProzent(weg.erfolgswahrscheinlichkeit * 100) +
+            " Erfolgschance je Versuch, erwartet " +
+            weg.erwarteteVersuche.toLocaleString("de-DE", { maximumFractionDigits: 2 }) +
+            " Versuche";
+        }
         const detail = document.createElement("div");
         detail.className = "kn-detail";
         detail.innerHTML =
@@ -942,6 +1104,7 @@ const UI = (function () {
           (weg.gebaeude ? " (" + escapeHtml(weg.gebaeude) + ")" : "") +
           ", Rueckgewinnung " +
           formatProzent(weg.rrr * 100) +
+          qualitaetDetailHtml +
           altHtml;
         summary.appendChild(detail);
         details.appendChild(summary);
@@ -970,6 +1133,7 @@ const UI = (function () {
           "<span class='kn-badge kn-badge-verzaubern'>Verzaubern</span>" +
           mengeHtml +
           "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + "." + weg.stufe + "</span>" +
+          qualitaetHtml +
           ausschlussHtml +
           (weg.unvollstaendig
             ? "<span class='kn-flag kn-flag-unvoll' title='Stationssatz fuer mindestens ein Gebaeude fehlt. Silber ist eine Untergrenze.'>unvollstaendig</span>"
@@ -1022,6 +1186,7 @@ const UI = (function () {
       if (w.typ === "craften")
         return "Craften #" + (w.weg.rezeptIndex != null ? w.weg.rezeptIndex + 1 : "?") + ", " + (w.weg.mitFokus ? "mit Fokus" : "ohne Fokus");
       if (w.typ === "verzaubern") return "Verzaubern";
+      if (w.typ === "reroll") return "Craften + Reroll";
       return w.typ;
     }
 

@@ -7,6 +7,63 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Standardwert Stationssaetze, 05.09.2026, v1.3.1)
+
+**Vorheriger Stand (v1.3.0, Feature "Bauplan-Ansicht ergonomisch
+ueberarbeitet") und alles davor** unverkürzt weiter unten in dieser Datei.
+
+**Auftrag, direkt vom Nutzer, ohne Orchestrator-Zyklus (kleine, klar
+umrissene Aenderung):** die Stationssaetze-Tabelle in den Einstellungen war
+vorher fuer jedes Gebaeude leer, jede Berechnung startete deshalb als
+"unvollstaendig", bis der Nutzer alle 14 Gebaeude von Hand ausfuellte. Der
+Nutzer hatte das bereits fuer sich selbst auf 400 gesetzt und wollte das als
+Standardwert, statt es nach jedem Zuruecksetzen erneut einzutragen.
+
+**Umsetzung, zwei Stellen in `js/ui.js`:**
+
+- `defaultEinstellungen()`: `stationssaetze` startet jetzt mit 400 fuer jedes
+  Gebaeude aus `REGELN.KATEGORIE_ZU_GEBAEUDE` (alle 14 Eintraege, inklusive
+  der drei Sonderfaelle Nebenhand/Kampfhandschuhe/Tierhaltung), statt einem
+  leeren Objekt.
+- `einstellungenLesen()`: die gespeicherten Saetze werden jetzt mit den
+  Standardwerten zusammengefuehrt (`Object.assign`) statt sie komplett zu
+  ersetzen. Ein Gebaeude, das der Nutzer ausdruecklich auf einen anderen Wert
+  gesetzt hat, bleibt dabei erhalten; ein Gebaeude, das noch nie gesetzt
+  wurde (auch ein erst spaeter hinzugekommenes), bekommt den 400er-Standard
+  statt leer zu bleiben.
+
+**Bleibt ein echtes Eingabefeld, keine Konstante im Code.** `CLAUDE.md`,
+Abschnitt "Spielerprofil", verlangt ausdruecklich: die Nutzungsgebuehr ist
+Eigentuemer-gesetzt, unterscheidet sich je Gebaeude und aendert sich laufend,
+gehoert deshalb als Eingabefeld, nie als Konstante in die Rechenlogik. 400
+ist hier nur der VORBELEGTE Wert dieses Feldes (in `js/ui.js`), nicht in
+`rechenkern.js`/`regeln.js` verankert; jedes Gebaeude bleibt frei editierbar.
+
+**Bewusste Nebenwirkung:** ein Gebaeude, das der Nutzer ueber das Eingabefeld
+wieder leert, bekommt beim naechsten Laden erneut 400 statt in den Zustand
+"nicht gepflegt" zurueckzufallen. Der Nutzer hat mit "pauschal 400 im
+Standard" explizit diesen Ersatz fuer die bisherige Vorsichts-Warnung
+gewaehlt, das ist keine versehentliche Regression.
+
+**Stadt-unabhaengig, wie vorgesehen:** Stationssaetze sind seit jeher nicht
+nach Stadt getrennt (eine reale, vom Nutzer selbst betriebene oder genutzte
+Station, keine Eigenschaft der Stadt-Auswahl), 400 gilt deshalb automatisch
+"in jeder Stadt", ohne dass die Stadt-Umschaltung angefasst werden musste.
+
+**Getestet:** Testsuite (keine der 136 Tests beruehrt `defaultEinstellungen()`
+oder `einstellungenLesen()` direkt) unveraendert 136/136 gruen, per Node
+cachefrei gegen die Dateien auf der Platte geprueft. Im Browser mit
+komplett geleertem `localStorage` bestaetigt: alle 14 Gebaeude zeigen 400,
+die "unvollstaendig"-Warnung erscheint bei einer frischen Rechnung nicht
+mehr, echte Stationsgebuehren (z.B. 7.373 fuer den Magierturm) erscheinen
+sofort im Bauplan statt 0.
+
+Versions-Schnappschuss unter `Versionen/v1.3.1 - Stationssaetze Standard 400/`
+angelegt, wie bei jeder abgeschlossenen Aenderung, unabhaengig davon, ob sie
+ueber einen Orchestrator-Zyklus oder inline erfolgte.
+
+---
+
 ## Aktueller Stand (Feature "Bauplan-Ansicht ergonomisch ueberarbeitet", 05.09.2026, v1.3.0)
 
 **Vorheriger Stand (v1.2.0, Feature "Fokuseinsatz steuerbar machen") und alles

@@ -48,7 +48,7 @@ Vom Nutzer am 04.09.2026 bestätigt. Nicht ohne Rücksprache ändern.
 |---|---|
 | **Umfang** | Alles Craftbare, per Suchfeld. Der komplette Rezeptgraph wird eingebettet. |
 | **Preise** | Live aus dem Browser gegen `europe.albion-online-data.com`, mit `localStorage`-Zwischenspeicher. |
-| **Qualität** | Nur Qualität 1 (Normal), für Ein- und Verkauf. Craft-Qualitätschance wird nicht modelliert. |
+| **Qualität** | Nur Qualität 1 (Normal), für Ein- und Verkauf. Craft-Qualitätschance wird nicht modelliert. **Aufgeweicht per Nutzer-Entscheidung 05.09.2026 (Feature "Qualitaetsstufen"):** eine globale Zielqualitaet (Normal bis Meisterwerk) ist jetzt per Dropdown waehlbar, inklusive Reroll an der Reparaturstation und Korns Craft-Qualitaetswurf, s. `kostenrechner-KONTEXT.md`. Kein Abweichen vom Plan ohne Ruecksprache, sondern die Ruecksprache selbst. |
 | **Fokus** | Ein globaler Wert „Fokus-Effizienz %", dazu eine Ausnahmeliste je Craft-Kategorie. |
 | **Stadt** | Alles Lymhurst. Andere Städte sind ausdrücklich v2. **Aufgeweicht per Nutzer-Entscheidung 05.09.2026:** eine Stadt fuer Kaufen, Craften und Verkaufen zugleich ist jetzt per Dropdown waehlbar, s. `kostenrechner-KONTEXT.md`. Kein Abweichen vom Plan ohne Ruecksprache, sondern die Ruecksprache selbst. |
 
@@ -446,6 +446,12 @@ Damit sie nicht durch die Hintertür wieder auftauchen.
   Einkaufen/Craften/Verkaufen, Vergleich mehrerer Staedte gleichzeitig,
   Transportkosten und Schwarzzonen-Risiko.
 - **Qualitätsstufen** über Normal hinaus, und die Qualitätschance beim Craften.
+  **Aufgeweicht 05.09.2026 (Feature "Qualitaetsstufen"):** eine globale
+  Zielqualitaet fuer Kaufen/Craften/Verkaufen ist jetzt waehlbar, inklusive
+  Reroll an der Reparaturstation und Korns Craft-Qualitaetswurf, s.
+  `kostenrechner-KONTEXT.md`. Weiterhin nicht in v1: unterschiedliche
+  Qualitaeten je Bauplanknoten (eine Zielqualitaet fuer die ganze Rechnung,
+  ausser wo die preservequality-Kette es technisch erzwingt).
 - **Wartezeit und Ausfallrisiko eigener Orders.**
 - **Craft-Fame und Spezialisierungsaufbau** als Nutzen. Die App rechnet Silber,
   nicht Fortschritt.
@@ -525,6 +531,9 @@ Beides in der Hauptsitzung am 04.09.2026 nachgewiesen, nicht vermutet:
    Rückgewinnung um bis zu neun Prozentpunkte.
 7. **Zählt `@preservequality: true` für uns?** Nur relevant, falls Qualität später
    doch modelliert wird. Für v1 ohne Belang, aber im Graph mitgeführt.
+   **Beantwortet 05.09.2026 (Feature "Qualitaetsstufen"):** ja. Bei einer
+   `p:true`-Zutat bestimmt deren Qualität direkt die Qualität des Ergebnisses,
+   kein eigener Craft-Wurf, s. `kostenrechner-KONTEXT.md`.
 
 ## 10. Wie der Plan abgearbeitet wird
 
