@@ -7,6 +7,132 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie, 05.09.2026, v1.5.0)
+
+**Vorheriger Stand (v1.4.0, Feature "Qualitaetsstufen") und alles davor**
+unverkürzt weiter unten in dieser Datei.
+
+**Auftrag (Orchestrator-Zyklus über zwei Sitzungen, drei Rückfragen aus dem
+ersten Durchlauf im zweiten beantwortet):** der bestätigte strukturelle Fehler
+in der bisherigen `fceAusSchicksalsbrett(Meisterschaftsstufe,
+Spezialisierungsstufe)`-Quick-Konvertierung (`js/ui.js`) sollte behoben
+werden. Der Fehler: die Formel nahm EINEN globalen Spezialisierungswert an und
+ignorierte sowohl den je Knotentyp unterschiedlichen Unique-/Mutual-Anteil
+(`CLAUDE.md`, "FCE je Stufe hängt vom Knotentyp ab") als auch, dass der
+Mutual-Anteil JEDES Spezialisierungsknotens auf ALLE ANDEREN Knoten derselben
+Kategorie wirkt, nicht nur auf sich selbst.
+
+**Rückfrage 1 (Herkunft der Knotenliste), beantwortet:** automatische
+Ableitung aus dem Rezeptgraphen statt Handpflege. Items derselben
+`craftingcategory` werden nach ihrem Namen ohne Tier-Präfix gruppiert (z. B.
+`T4_MAIN_SWORD` bis `T8_MAIN_SWORD` → ein Knoten `MAIN_SWORD`). Pro im
+Bauplan verwendeter Kategorie zeigt die Oberfläche ein Panel mit ALLEN
+abgeleiteten Knoten dieser Kategorie, nicht nur den im Bauplan vorkommenden,
+weil der Mutual-Anteil kategorieweit wirkt. Das ist eine Näherung (echte
+Schicksalsbrett-Knoten können anders geschnitten sein); als Fallback für
+Fehltreffer bleibt die bereits vorhandene kategorieweite Freitext-Ausnahme
+(`Fokus-Effizienz-Ausnahmen je Kategorie`) erhalten und gewinnt automatisch,
+solange für eine Kategorie im neuen Panel nichts eingetragen ist.
+
+**Rückfrage 2 (Meisterschafts-Mutual bei Umhängen/Taschen/Werkzeugen),
+beantwortet:** 30 FCE je Meisterschaftsstufe gilt einheitlich für
+Rüstung/Waffen, Veredeln, Umhänge, Taschen (auch Kriegshammer). Echte
+Ausnahme: „übrige Werkzeuge" (`tools`, `gatherergear`) haben KEINEN
+getrennten Meisterschaftsknoten, Meisterschaft und Spezialisierung sind dort
+zu einem „fused" Knoten verschmolzen (Ein-Feld-Modell: nur „Knotenstufe", kein
+separates Meisterschaftsfeld).
+
+**Rückfrage 3 (Speisen/Tränke), beantwortet:** beide folgen derselben
+250-Unique/30-Mutual-Struktur wie Rüstung/Waffen samt getrenntem
+Meisterschaftsknoten, unterscheiden sich nur in der Zahl der
+Spezialisierungsknoten (Koch 9 → max. 55.000 FCE, Alchemist 8 → max. 52.000
+FCE). `../CLAUDE.md` an der Stelle korrigiert, die fälschlich EINEN
+gemeinsamen Wert (55.000) für beide nannte.
+
+**Rechenmodell, `js/regeln.js`:** neue Tabellen `SPEZ_TYP` (7 Knotentypen:
+`waffen_ruestung`, `veredeln`, `umhang`, `tasche`, `werkzeug_fused`, `speise`,
+`trank`, je mit Unique-/Mutual-/Meisterschafts-FCE und `einFeld`-Flag) und
+`KATEGORIE_ZU_SPEZTYP` (rund 35 `craftingcategory`-Werte darauf abgebildet;
+`offhand`/`knuckles`/`meat_*` bewusst NICHT abgebildet, s. `../CLAUDE.md`
+„Craft-Kategorie zu Gebäude": keine eindeutige Wiki-Zuordnung, bleiben beim
+Freitext-Fallback). Neue Funktionen `spezTypVonKategorie()`,
+`gruppenSchluesselVonItem()` (Tier-Präfix strippen; **05.09.2026 in v1.5.1
+korrigiert für Veredeln, s. Eintrag oben in `kostenrechner-KONTEXT.md`**),
+`spezialisierungsGruppen(cc)` (Ableitung aus `REZEPTGRAPH`) und
+`fceAusSpezialisierungsknoten(cc, gruppenSchluessel, knotenStufen,
+meisterschaftsstufe)` (eigener Unique-Anteil + Mutual-Anteil aller anderen
+Knoten + ggf. Meisterschaft). Gegenprobe am echten Graphen: `cloth_helmet` hat
+9 abgeleitete Knoten (u. a. `HEAD_CLOTH_SET1` = Gelehrtengugel über alle
+Tiers); mit Spezialisierung 50 auf `HEAD_CLOTH_SET1` und Meisterschaft 10
+ergibt sich für `HEAD_CLOTH_SET1` selbst 12.800 FCE (50×250 + 10×30), für
+jeden ANDEREN Knoten derselben Kategorie (z. B. `HEAD_CLOTH_AVALON`, der
+selbst nichts hat) trotzdem 1.800 FCE (0×250 + 50×30 Mutual + 10×30
+Meisterschaft) - genau der vorher fehlende Mutual-Übertrag.
+
+**Rechenkern, `js/rechenkern.js`:** `fceFuer(cc, opts)` zu `fceFuer(item, cc,
+opts)` erweitert, drei Ebenen, jede schlägt die nächst allgemeinere: 1.
+knotenspezifisch (`opts.fceUeberschreibungen["cc|Gruppe"]`, aus dem neuen
+Panel), 2. kategorieweiter Freitext (`opts.fceUeberschreibungen[cc]`, die
+bisherige P5-Ausnahme, jetzt zugleich Fallback), 3. globaler Wert
+(`opts.fce`). Beide Aufrufstellen (`craftKandidat`, `craftBeiQualitaetKandidat`)
+angepasst. Rückwärtskompatibel: ohne knotenspezifische Einträge exakt das
+bisherige Verhalten.
+
+**Oberfläche, `js/ui.js` + `Kostenrechner.html`:** die alte
+„Meisterschaftsstufe + Spezialisierungsstufe → FCE"-Zeile (`skMeister`,
+`skSpez`, `skUebernehmen`) ist entfernt. Neuer Block „Spezialisierungsknoten
+je Kategorie" (`renderSpezialisierungsknoten()`, Container
+`#spezKnotenContainer`): pro Kategorie mit abgebildetem Knotentyp ein
+aufklappbarer Bereich mit (bei getrenntem Meisterschaftsknoten) einem
+Meisterschaftsstufe-Feld plus einer Tabelle aller abgeleiteten Knoten
+(Anzeigename aus `REZEPTGRAPH.namen`, Stufe-Eingabefeld, live berechnete
+FCE-Spalte). Persistiert in `einstellungen.spezialisierung` (`cc` → `{
+meisterschaft, knoten: { gruppenSchluessel: stufe } }`), zusammengeführt mit
+`einstellungen.fceAusnahmen` in `fceUeberschreibungenFuerOpts()`: eine
+Kategorie liefert nur dann Knoten-Overrides, wenn dort tatsächlich etwas
+eingetragen ist (Summe > 0), sonst greift weiterhin der Freitext/globale Wert
+- verhindert, dass ein bloßes Aufklappen des Panels (alle Stufen 0)
+versehentlich eine bestehende Kategorie-Ausnahme auf 0 FCE überschreibt. Die
+„Abgelesener Fokus/Grundfokus"-Quick-Konvertierung (unabhängiger Mechanismus,
+nicht vom Strukturfehler betroffen) bleibt unverändert erhalten.
+
+**Getestet:** Testsuite von 191 auf 212 Tests gewachsen (regeln.js: 9
+`spezTypVonKategorie`-Tests, `gruppenSchluesselVonItem`-Tests,
+`fceAusSpezialisierungsknoten`-Arithmetik für alle drei Knotentyp-Varianten
+inkl. „Meisterschaft wird bei fused-Typ ignoriert", zwei Gegenproben gegen den
+echten Rezeptgraphen für `spezialisierungsGruppen`; rechenkern.js: ein neuer
+Testblock für die dreistufige `fceFuer`-Vorrangreihenfolge, direkt gegen
+`RECHENKERN.kosten()` mit erzwungenem Fokuseinsatz geprüft; ui.js: die beiden
+`fceAusSchicksalsbrett`-Tests durch `spezKnotenAnzeigeGruppen`-Tests ersetzt),
+alle 212 grün, per Node cachefrei gegen die Dateien auf der Platte geprüft
+(exakt derselbe Ablauf/dieselbe Testlogik wie `tests/test.html` selbst, per
+Skript aus der Datei extrahiert und mit DOM-Stubs ausgeführt). Zusätzlich ein
+eigenes Rechenskript gegen den ECHTEN Rezeptgraphen (`T4_HEAD_CLOTH_SET1`,
+Kategorie `cloth_helmet`) durchlaufen lassen, s. Gegenprobe oben - keine
+Abstürze, FCE-Werte von Hand nachgerechnet und bestätigt.
+
+**Bewusste Abweichung vom Standardablauf, transparent gemacht:** wie schon in
+der v1.4.0-Sitzung standen weder die `SendMessage`-Funktion für
+Phasen-Meldungen/Subagenten-Anfragen noch ein interaktives Browser-Werkzeug
+zur Verfügung (versucht: `msedge --headless=new --dump-dom`, lieferte in
+dieser Umgebung keine Ausgabe, vermutlich Sandbox-Einschränkung). Die drei
+Spezialisten (`rechenkern-pruefer`, `spieldaten-pruefer`,
+`oberflaechen-pruefer`) konnten deshalb NICHT angefordert werden. Stattdessen:
+node-basierte, cachefreie Testsuite (s. oben), eigene Rechengegenprobe gegen
+den echten Graphen, und eine statische HTML/JS-Konsistenzprüfung (alle 47
+`getElementById`-Aufrufe in `js/ui.js` gegen vorhandene IDs in
+`Kostenrechner.html` abgeglichen, Tag-Balance für `div`/`details`/`table`/
+`thead`/`tbody`/`tr`/`label` geprüft). Die neue Oberfläche wurde NICHT
+tatsächlich im Browser angesehen. Vor der nächsten inhaltlichen Änderung an
+der Oberfläche sollte das nachgeholt werden, sobald ein Browser-Werkzeug
+verfügbar ist.
+
+Versions-Schnappschuss unter `Versionen/v1.5.0 - FCE-Ableitung ueber
+Schicksalsbrett-Knotenliste je Kategorie/` angelegt. Git-Commit und Push wie
+im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
 ## Aktueller Stand (Feature "Qualitaetsstufen", 05.09.2026, v1.4.0)
 
 **Vorheriger Stand (v1.3.1, "Standardwert Stationssaetze auf 400 gesetzt") und

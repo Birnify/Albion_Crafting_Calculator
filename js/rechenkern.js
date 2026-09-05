@@ -109,7 +109,7 @@ const RECHENKERN = (function () {
    */
   function fceFuer(item, cc, opts) {
     if (cc) {
-      const knotenSchluessel = cc + "|" + REGELN.gruppenSchluesselVonItem(item);
+      const knotenSchluessel = cc + "|" + REGELN.gruppenSchluesselVonItem(item, cc);
       if (opts.fceUeberschreibungen[knotenSchluessel] != null) return opts.fceUeberschreibungen[knotenSchluessel];
       if (opts.fceUeberschreibungen[cc] != null) return opts.fceUeberschreibungen[cc];
     }

@@ -298,9 +298,40 @@ const REGELN = (function () {
     return (cc && KATEGORIE_ZU_SPEZTYP[cc]) || null;
   }
 
-  /** Gruppenschluessel eines Items: uniquename ohne fuehrendes Tier-Praefix (T1_..T8_). */
-  function gruppenSchluesselVonItem(item) {
-    return String(item || "").replace(/^T\d+_/, "");
+  /**
+   * Gruppenschluessel eines Items fuer die Schicksalsbrett-Knotenableitung.
+   * Zwei GEGENSAETZLICHE Regeln je nach Knotentyp (Bug behoben 05.09.2026,
+   * per Browser-Test am fiber-Panel der Koeniglichen Gugel gefunden):
+   *
+   *  - Veredeln (fiber/ore/hide/wood/rock, spezTyp "veredeln"): fuers
+   *    Schicksalsbrett zaehlt NUR die Tier-Stufe des Rohstoffs, nicht die
+   *    Verzauberungsstufe des Ergebnisses. Veredelte Guetertypen tragen ihre
+   *    Verzauberungsstufe als Suffix IM Item-Namen (el-Knoten, jede Stufe ein
+   *    eigener uniquename: T4_CLOTH, T4_CLOTH_LEVEL1..LEVEL4), waehrend die
+   *    Tier-Stufe als Praefix ebenfalls im Namen steckt. Deshalb hier den
+   *    Verzauberungs-Suffix entfernen, das Tier-Praefix aber BEHALTEN: alle
+   *    fuenf Verzauberungsstufen von T4-Stoff teilen sich EINEN Knoten
+   *    ("Weberadept"), T5-Stoff ist bereits ein ANDERER Knoten
+   *    ("Weberexperte"). Belegt durch Schicksalsbrett-Screenshots des
+   *    Nutzers (Handwerk-Baum "Verfeinerer": Weberadept/-experte/-meister/
+   *    -grossmeister/-aeltester, exakt je ein Knoten pro Tier T4-T8), s.
+   *    kostenrechner-KONTEXT.md.
+   *  - Alles andere (Ausruestung usw.): das Schicksalsbrett zaehlt dort
+   *    tier-UNABHAENGIG pro Item-Familie (Wiki: ein Spezialisierungsknoten
+   *    wirkt "for all Galatine Pair you use" ueber alle Tiers). Ausruestung
+   *    traegt ihre Verzauberungsstufe ohnehin nicht im Item-Namen (gleicher
+   *    uniquename ueber alle Stufen, s. e[stufe].r), daher reicht es, das
+   *    Tier-Praefix (T1_..T8_) zu entfernen.
+   *
+   * @param {string} item
+   * @param {?string} [cc] craftingcategory des Items; bestimmt die Regel
+   */
+  function gruppenSchluesselVonItem(item, cc) {
+    const s = String(item || "");
+    if (spezTypVonKategorie(cc) === "veredeln") {
+      return s.replace(/_LEVEL\d+$/, "");
+    }
+    return s.replace(/^T\d+_/, "");
   }
 
   /**
@@ -317,7 +348,7 @@ const REGELN = (function () {
     Object.keys(g.items).forEach((item) => {
       const node = g.items[item];
       if (!node || node.cc !== cc) return;
-      const schluessel = gruppenSchluesselVonItem(item);
+      const schluessel = gruppenSchluesselVonItem(item, cc);
       if (!gruppen[schluessel]) gruppen[schluessel] = { schluessel, items: [] };
       gruppen[schluessel].items.push(item);
     });
@@ -722,6 +753,36 @@ const REGELN = (function () {
       gruppenSchluesselVonItem("QUESTITEM_TOKEN_ROYAL_T4") === "QUESTITEM_TOKEN_ROYAL_T4"
     );
 
+    // Bug behoben 05.09.2026 (Browser-Test am fiber-Panel der Koeniglichen
+    // Gugel): Veredeln zaehlt nach TIER, nicht nach Verzauberungsstufe.
+    // gruppenSchluesselVonItem MUSS bei cc="fiber" (spezTyp "veredeln") das
+    // Tier-Praefix BEHALTEN und nur den Verzauberungs-Suffix entfernen -
+    // exaktes Gegenteil der Ausruestungs-Regel oben.
+    pruefe(
+      "gruppenSchluesselVonItem(T4_CLOTH, cc=fiber) = T4_CLOTH (Tier bleibt, kein Suffix zu entfernen)",
+      gruppenSchluesselVonItem("T4_CLOTH", "fiber") === "T4_CLOTH"
+    );
+    pruefe(
+      "gruppenSchluesselVonItem(T4_CLOTH_LEVEL3, cc=fiber) = T4_CLOTH (Verzauberungs-Suffix entfernt, Tier bleibt)",
+      gruppenSchluesselVonItem("T4_CLOTH_LEVEL3", "fiber") === "T4_CLOTH"
+    );
+    pruefe(
+      "gruppenSchluesselVonItem: T4_CLOTH und T4_CLOTH_LEVEL1..4 (cc=fiber) landen alle im selben Gruppenschluessel",
+      ["T4_CLOTH", "T4_CLOTH_LEVEL1", "T4_CLOTH_LEVEL2", "T4_CLOTH_LEVEL3", "T4_CLOTH_LEVEL4"].every(
+        (n) => gruppenSchluesselVonItem(n, "fiber") === "T4_CLOTH"
+      )
+    );
+    pruefe(
+      "gruppenSchluesselVonItem: T5_CLOTH (cc=fiber) ist ein ANDERER Gruppenschluessel als T4_CLOTH (andere Tier-Stufe, anderer Schicksalsbrett-Knoten)",
+      gruppenSchluesselVonItem("T5_CLOTH", "fiber") === "T5_CLOTH" &&
+        gruppenSchluesselVonItem("T5_CLOTH", "fiber") !== gruppenSchluesselVonItem("T4_CLOTH", "fiber")
+    );
+    pruefe(
+      "gruppenSchluesselVonItem: ohne cc (oder nicht-veredelnde Kategorie) bleibt die alte Ausruestungs-Regel (Tier-Praefix entfernen) unveraendert",
+      gruppenSchluesselVonItem("T4_CLOTH_LEVEL1") === "CLOTH_LEVEL1" &&
+        gruppenSchluesselVonItem("T4_HEAD_CLOTH_SET1", "cloth_helmet") === "HEAD_CLOTH_SET1"
+    );
+
     (function () {
       // waffen_ruestung: unique 250, mutual 30, mastery 30. Knoten A Stufe 10,
       // Knoten B Stufe 5 (wirkt nur als Mutual auf A), Meisterschaft 3.
@@ -778,6 +839,37 @@ const REGELN = (function () {
           "spezialisierungsGruppen(cloth_helmet) findet die Gruppe HEAD_CLOTH_SET1 (Gelehrtengugel ueber alle Tiers)",
           !!gugel && gugel.items.indexOf("T4_HEAD_CLOTH_SET1") !== -1,
           JSON.stringify(gugel)
+        );
+      })();
+      (function () {
+        // Bug behoben 05.09.2026: fiber (Veredeln) muss nach TIER gruppieren,
+        // nicht nach Verzauberungsstufe. Vorher zeigte das Panel fuer T4-Stoff
+        // faelschlich 5 GETRENNTE Knoten (einen je Verzauberungsstufe:
+        // T4_CLOTH, CLOTH_LEVEL1..4), weil der alte gruppenSchluesselVonItem()
+        // das Tier-Praefix strippte, aber den Verzauberungs-Suffix im Namen
+        // stehen liess. Richtig: T4_CLOTH bis T4_CLOTH_LEVEL4 sind EIN Knoten
+        // ("Weberadept"), T5_CLOTH ein ANDERER ("Weberexperte").
+        const gruppen = spezialisierungsGruppen("fiber");
+        const t4 = gruppen.find((g) => g.schluessel === "T4_CLOTH");
+        const t5 = gruppen.find((g) => g.schluessel === "T5_CLOTH");
+        pruefe(
+          "spezialisierungsGruppen(fiber): T4_CLOTH-Gruppe fasst alle 5 Verzauberungsstufen von T4-Stoff zu EINEM Knoten zusammen",
+          !!t4 &&
+            t4.items.length === 5 &&
+            ["T4_CLOTH", "T4_CLOTH_LEVEL1", "T4_CLOTH_LEVEL2", "T4_CLOTH_LEVEL3", "T4_CLOTH_LEVEL4"].every(
+              (n) => t4.items.indexOf(n) !== -1
+            ),
+          JSON.stringify(t4)
+        );
+        pruefe(
+          "spezialisierungsGruppen(fiber): T5_CLOTH ist eine EIGENE Gruppe (andere Tier-Stufe), nicht mit T4_CLOTH vermischt",
+          !!t5 && t5.items.indexOf("T4_CLOTH") === -1 && t4.items.indexOf("T5_CLOTH") === -1,
+          JSON.stringify(t5)
+        );
+        pruefe(
+          "spezialisierungsGruppen(fiber): keine Gruppe 'CLOTH_LEVEL1' o.ae. mehr (frueherer Bug, Verzauberungsstufe als eigener Knoten)",
+          !gruppen.some((g) => /^CLOTH/.test(g.schluessel)),
+          JSON.stringify(gruppen.map((g) => g.schluessel))
         );
       })();
     } else {

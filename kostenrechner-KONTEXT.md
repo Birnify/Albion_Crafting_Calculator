@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.5.0 · FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie
+Stand: 2026-09-05 · Version: v1.5.1 · Veredeln-Spezialisierungsknoten nach Tier gruppiert (Bugfix)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,129 +21,86 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie, 05.09.2026, v1.5.0)
+## Aktueller Stand (Veredeln-Spezialisierungsknoten nach Tier gruppiert, Bugfix, 05.09.2026, v1.5.1)
 
-**Vorheriger Stand (v1.4.0, Feature "Qualitaetsstufen") und alles davor**
-unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
-(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Bug, im Hauptgespräch per Browser-Test gefunden** (an v1.5.0 direkt im
+Anschluss, noch bevor der Browser-Check aus v1.5.0 nachgeholt wurde): das
+`fiber`-Panel der Königlichen Gugel zeigte 5 Knoten **nach Verzauberungsstufe
+getrennt** ("Einfacher Stoff", CLOTH_LEVEL1 bis LEVEL4), statt der im Spiel
+tatsächlich existierenden 5 Knoten **nach Tier-Stufe getrennt** (Weberadept T4,
+Weberexperte T5, Webermeister T6, Webergroßmeister T7, Weberältester T8),
+bestätigt durch Schicksalsbrett-Screenshots des Nutzers.
 
-**Auftrag (Orchestrator-Zyklus über zwei Sitzungen, drei Rückfragen aus dem
-ersten Durchlauf im zweiten beantwortet):** der bestätigte strukturelle Fehler
-in der bisherigen `fceAusSchicksalsbrett(Meisterschaftsstufe,
-Spezialisierungsstufe)`-Quick-Konvertierung (`js/ui.js`) sollte behoben
-werden. Der Fehler: die Formel nahm EINEN globalen Spezialisierungswert an und
-ignorierte sowohl den je Knotentyp unterschiedlichen Unique-/Mutual-Anteil
-(`CLAUDE.md`, "FCE je Stufe hängt vom Knotentyp ab") als auch, dass der
-Mutual-Anteil JEDES Spezialisierungsknotens auf ALLE ANDEREN Knoten derselben
-Kategorie wirkt, nicht nur auf sich selbst.
+**Ursache:** `gruppenSchluesselVonItem()` (`js/regeln.js`) strippte einheitlich
+das Tier-Präfix und ließ den Verzauberungs-Suffix stehen. Das passt für
+Ausrüstung (ein Item-Name über alle Tiers, Verzauberungsstufe steckt NICHT im
+Namen, sondern in `e[stufe].r`), aber nicht für Veredeln: dort ist jede
+Verzauberungsstufe ein **eigener** uniquename mit `_LEVEL1` bis `_LEVEL4`-Suffix
+(`T4_CLOTH`, `T4_CLOTH_LEVEL1` ... `T4_CLOTH_LEVEL4`), während das Tier-Präfix
+die eigentlich zählende Größe ist.
 
-**Rückfrage 1 (Herkunft der Knotenliste), beantwortet:** automatische
-Ableitung aus dem Rezeptgraphen statt Handpflege. Items derselben
-`craftingcategory` werden nach ihrem Namen ohne Tier-Präfix gruppiert (z. B.
-`T4_MAIN_SWORD` bis `T8_MAIN_SWORD` → ein Knoten `MAIN_SWORD`). Pro im
-Bauplan verwendeter Kategorie zeigt die Oberfläche ein Panel mit ALLEN
-abgeleiteten Knoten dieser Kategorie, nicht nur den im Bauplan vorkommenden,
-weil der Mutual-Anteil kategorieweit wirkt. Das ist eine Näherung (echte
-Schicksalsbrett-Knoten können anders geschnitten sein); als Fallback für
-Fehltreffer bleibt die bereits vorhandene kategorieweite Freitext-Ausnahme
-(`Fokus-Effizienz-Ausnahmen je Kategorie`) erhalten und gewinnt automatisch,
-solange für eine Kategorie im neuen Panel nichts eingetragen ist.
+**Fix:** `gruppenSchluesselVonItem(item, cc)` bekommt einen zweiten,
+optionalen Parameter. Bei `spezTypVonKategorie(cc) === "veredeln"`
+(`fiber`/`ore`/`hide`/`wood`/`rock`) wird der `_LEVEL\d+`-Suffix entfernt, das
+Tier-Präfix aber **behalten** (Gegenteil der Ausrüstungs-Regel). Beide
+Aufrufstellen (`spezialisierungsGruppen()` in `regeln.js`, `fceFuer()` in
+`rechenkern.js`) reichen `cc` jetzt durch. `js/ui.js` unverändert, da es nur
+`REGELN.spezialisierungsGruppen(cc)` aufruft, die die Weiche intern trägt.
 
-**Rückfrage 2 (Meisterschafts-Mutual bei Umhängen/Taschen/Werkzeugen),
-beantwortet:** 30 FCE je Meisterschaftsstufe gilt einheitlich für
-Rüstung/Waffen, Veredeln, Umhänge, Taschen (auch Kriegshammer). Echte
-Ausnahme: „übrige Werkzeuge" (`tools`, `gatherergear`) haben KEINEN
-getrennten Meisterschaftsknoten, Meisterschaft und Spezialisierung sind dort
-zu einem „fused" Knoten verschmolzen (Ein-Feld-Modell: nur „Knotenstufe", kein
-separates Meisterschaftsfeld).
+**Nebenbefund beim Testen, im Auftrag nicht erwähnt, aber vom selben Fix
+mitbehoben:** `rock` (Steinblöcke) hat gar keine `_LEVEL`-Suffixe im
+Item-Namen (Steinblöcke werden nicht verzaubert), die alte Regel hätte dort
+alle 7 Tiers (T2 bis T8) fälschlich zu EINEM einzigen Knoten "STONEBLOCK"
+zusammengefasst - das genaue Gegenteil des gemeldeten Fehlers, aber derselbe
+Kategorie-Typ und vom selben Fix (Tier-Präfix behalten) automatisch mit
+korrigiert. Gegenprobe gegen den echten Graphen: `spezialisierungsGruppen("fiber")`
+liefert jetzt 7 Gruppen (T2_CLOTH bis T8_CLOTH, je ein Knoten mit allen 5
+Verzauberungsstufen als Mitgliedern), `spezialisierungsGruppen("cloth_helmet")`
+unverändert 9 Gruppen (Ausrüstung, tier-übergreifend). FCE-Rechenprobe mit den
+Nutzer-Testwerten (Weberadept 75, Weberexperte/-meister/-großmeister je 1,
+Weberältester 0): `T4_CLOTH` → 18.840 FCE (75×250 Unique + 90 Mutual von den
+drei anderen Stufe-1-Knoten).
 
-**Rückfrage 3 (Speisen/Tränke), beantwortet:** beide folgen derselben
-250-Unique/30-Mutual-Struktur wie Rüstung/Waffen samt getrenntem
-Meisterschaftsknoten, unterscheiden sich nur in der Zahl der
-Spezialisierungsknoten (Koch 9 → max. 55.000 FCE, Alchemist 8 → max. 52.000
-FCE). `../CLAUDE.md` an der Stelle korrigiert, die fälschlich EINEN
-gemeinsamen Wert (55.000) für beide nannte.
+**Getestet:** Testsuite von 212 auf 220 Tests gewachsen (8 neue: 5
+Einheitstests `gruppenSchluesselVonItem(item, cc)` inkl. Regressionstest "ohne
+cc/nicht-veredelnde Kategorie unverändert", 3 Gegenproben
+`spezialisierungsGruppen("fiber")` gegen den echten Rezeptgraphen: T4-Gruppe
+fasst alle 5 Stufen zusammen, T5 ist eine eigene Gruppe, keine
+`CLOTH_LEVEL*`-Gruppe mehr). Alle 220 grün, per Node cachefrei gegen die
+Dateien auf der Platte geprüft (Testrahmen aus `tests/test.html`,
+Zeilen 71-1263, per `vm.runInContext` mit `localStorage`/`performance`-Stub
+ausgeführt, identische Logik wie im Browser, kein Node-Modul-Cache möglich, da
+frisch aus der Datei geladen). Zusätzlich zwei eigene Rechenskripte gegen den ECHTEN
+Rezeptgraphen: Gruppenliste für `fiber` und `cloth_helmet` von Hand
+nachgesehen (s. Nebenbefund oben), FCE-Werte mit den Nutzer-Testdaten von Hand
+nachgerechnet.
 
-**Rechenmodell, `js/regeln.js`:** neue Tabellen `SPEZ_TYP` (7 Knotentypen:
-`waffen_ruestung`, `veredeln`, `umhang`, `tasche`, `werkzeug_fused`, `speise`,
-`trank`, je mit Unique-/Mutual-/Meisterschafts-FCE und `einFeld`-Flag) und
-`KATEGORIE_ZU_SPEZTYP` (rund 35 `craftingcategory`-Werte darauf abgebildet;
-`offhand`/`knuckles`/`meat_*` bewusst NICHT abgebildet, s. `../CLAUDE.md`
-„Craft-Kategorie zu Gebäude": keine eindeutige Wiki-Zuordnung, bleiben beim
-Freitext-Fallback). Neue Funktionen `spezTypVonKategorie()`,
-`gruppenSchluesselVonItem()` (Tier-Präfix strippen),
-`spezialisierungsGruppen(cc)` (Ableitung aus `REZEPTGRAPH`) und
-`fceAusSpezialisierungsknoten(cc, gruppenSchluessel, knotenStufen,
-meisterschaftsstufe)` (eigener Unique-Anteil + Mutual-Anteil aller anderen
-Knoten + ggf. Meisterschaft). Gegenprobe am echten Graphen: `cloth_helmet` hat
-9 abgeleitete Knoten (u. a. `HEAD_CLOTH_SET1` = Gelehrtengugel über alle
-Tiers); mit Spezialisierung 50 auf `HEAD_CLOTH_SET1` und Meisterschaft 10
-ergibt sich für `HEAD_CLOTH_SET1` selbst 12.800 FCE (50×250 + 10×30), für
-jeden ANDEREN Knoten derselben Kategorie (z. B. `HEAD_CLOTH_AVALON`, der
-selbst nichts hat) trotzdem 1.800 FCE (0×250 + 50×30 Mutual + 10×30
-Meisterschaft) - genau der vorher fehlende Mutual-Übertrag.
+**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0/v1.5.0:** weder
+die `SendMessage`-Funktion für Phasen-Meldungen/Subagenten-Anfragen noch ein
+interaktives Browser-Werkzeug standen in dieser Sitzung zur Verfügung (kein
+`SendMessage`, kein `Agent`, keine `mcp__claude-in-chrome__*`- oder
+`mcp__computer-use__*`-Tools im verfügbaren Werkzeugsatz, trotz
+Systemhinweisen, die sie erwähnen). Die drei Spezialisten
+(`rechenkern-pruefer`, `spieldaten-pruefer`, `oberflaechen-pruefer`) konnten
+deshalb NICHT angefordert werden. Ein lokaler Server
+(`.claude/no_cache_server.py`, Port 8791) wurde probehalber gestartet und
+antwortete mit HTTP 200 auf `Kostenrechner.html`, konnte aber mangels
+Browser-Werkzeug nicht tatsächlich angesehen werden. **Die reparierte
+Oberfläche wurde also weiterhin NICHT im Browser angesehen** - das steht schon
+so in der v1.5.0-Notiz und gilt unverändert. Vor der nächsten inhaltlichen
+Änderung an der Oberfläche nachholen, sobald ein Browser-Werkzeug verfügbar
+ist.
 
-**Rechenkern, `js/rechenkern.js`:** `fceFuer(cc, opts)` zu `fceFuer(item, cc,
-opts)` erweitert, drei Ebenen, jede schlägt die nächst allgemeinere: 1.
-knotenspezifisch (`opts.fceUeberschreibungen["cc|Gruppe"]`, aus dem neuen
-Panel), 2. kategorieweiter Freitext (`opts.fceUeberschreibungen[cc]`, die
-bisherige P5-Ausnahme, jetzt zugleich Fallback), 3. globaler Wert
-(`opts.fce`). Beide Aufrufstellen (`craftKandidat`, `craftBeiQualitaetKandidat`)
-angepasst. Rückwärtskompatibel: ohne knotenspezifische Einträge exakt das
-bisherige Verhalten.
-
-**Oberfläche, `js/ui.js` + `Kostenrechner.html`:** die alte
-„Meisterschaftsstufe + Spezialisierungsstufe → FCE"-Zeile (`skMeister`,
-`skSpez`, `skUebernehmen`) ist entfernt. Neuer Block „Spezialisierungsknoten
-je Kategorie" (`renderSpezialisierungsknoten()`, Container
-`#spezKnotenContainer`): pro Kategorie mit abgebildetem Knotentyp ein
-aufklappbarer Bereich mit (bei getrenntem Meisterschaftsknoten) einem
-Meisterschaftsstufe-Feld plus einer Tabelle aller abgeleiteten Knoten
-(Anzeigename aus `REZEPTGRAPH.namen`, Stufe-Eingabefeld, live berechnete
-FCE-Spalte). Persistiert in `einstellungen.spezialisierung` (`cc` → `{
-meisterschaft, knoten: { gruppenSchluessel: stufe } }`), zusammengeführt mit
-`einstellungen.fceAusnahmen` in `fceUeberschreibungenFuerOpts()`: eine
-Kategorie liefert nur dann Knoten-Overrides, wenn dort tatsächlich etwas
-eingetragen ist (Summe > 0), sonst greift weiterhin der Freitext/globale Wert
-- verhindert, dass ein bloßes Aufklappen des Panels (alle Stufen 0)
-versehentlich eine bestehende Kategorie-Ausnahme auf 0 FCE überschreibt. Die
-„Abgelesener Fokus/Grundfokus"-Quick-Konvertierung (unabhängiger Mechanismus,
-nicht vom Strukturfehler betroffen) bleibt unverändert erhalten.
-
-**Getestet:** Testsuite von 191 auf 212 Tests gewachsen (regeln.js: 9
-`spezTypVonKategorie`-Tests, `gruppenSchluesselVonItem`-Tests,
-`fceAusSpezialisierungsknoten`-Arithmetik für alle drei Knotentyp-Varianten
-inkl. „Meisterschaft wird bei fused-Typ ignoriert", zwei Gegenproben gegen den
-echten Rezeptgraphen für `spezialisierungsGruppen`; rechenkern.js: ein neuer
-Testblock für die dreistufige `fceFuer`-Vorrangreihenfolge, direkt gegen
-`RECHENKERN.kosten()` mit erzwungenem Fokuseinsatz geprüft; ui.js: die beiden
-`fceAusSchicksalsbrett`-Tests durch `spezKnotenAnzeigeGruppen`-Tests ersetzt),
-alle 212 grün, per Node cachefrei gegen die Dateien auf der Platte geprüft
-(exakt derselbe Ablauf/dieselbe Testlogik wie `tests/test.html` selbst, per
-Skript aus der Datei extrahiert und mit DOM-Stubs ausgeführt). Zusätzlich ein
-eigenes Rechenskript gegen den ECHTEN Rezeptgraphen (`T4_HEAD_CLOTH_SET1`,
-Kategorie `cloth_helmet`) durchlaufen lassen, s. Gegenprobe oben - keine
-Abstürze, FCE-Werte von Hand nachgerechnet und bestätigt.
-
-**Bewusste Abweichung vom Standardablauf, transparent gemacht:** wie schon in
-der v1.4.0-Sitzung standen weder die `SendMessage`-Funktion für
-Phasen-Meldungen/Subagenten-Anfragen noch ein interaktives Browser-Werkzeug
-zur Verfügung (versucht: `msedge --headless=new --dump-dom`, lieferte in
-dieser Umgebung keine Ausgabe, vermutlich Sandbox-Einschränkung). Die drei
-Spezialisten (`rechenkern-pruefer`, `spieldaten-pruefer`,
-`oberflaechen-pruefer`) konnten deshalb NICHT angefordert werden. Stattdessen:
-node-basierte, cachefreie Testsuite (s. oben), eigene Rechengegenprobe gegen
-den echten Graphen, und eine statische HTML/JS-Konsistenzprüfung (alle 47
-`getElementById`-Aufrufe in `js/ui.js` gegen vorhandene IDs in
-`Kostenrechner.html` abgeglichen, Tag-Balance für `div`/`details`/`table`/
-`thead`/`tbody`/`tr`/`label` geprüft). Die neue Oberfläche wurde NICHT
-tatsächlich im Browser angesehen. Vor der nächsten inhaltlichen Änderung an
-der Oberfläche sollte das nachgeholt werden, sobald ein Browser-Werkzeug
-verfügbar ist.
-
-Versions-Schnappschuss unter `Versionen/v1.5.0 - FCE-Ableitung ueber
-Schicksalsbrett-Knotenliste je Kategorie/` angelegt. Git-Commit und Push wie
+Versions-Schnappschuss unter `Versionen/v1.5.1 - Veredeln-
+Spezialisierungsknoten nach Tier gruppiert/` angelegt. Git-Commit und Push wie
 im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
+**Vorheriger Stand (v1.5.0, Feature "FCE-Ableitung ueber
+Schicksalsbrett-Knotenliste je Kategorie") und alles davor** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
 
@@ -151,9 +108,10 @@ Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0) plus
 Feature "Fokuseinsatz steuerbar machen" (v1.2.0) plus Feature "Bauplan-Ansicht
 ergonomisch ueberarbeitet" (v1.3.0) plus Standardwert Stationssaetze (v1.3.1)
 plus Feature "Qualitaetsstufen" (v1.4.0) plus "FCE-Ableitung ueber
-Schicksalsbrett-Knotenliste je Kategorie" (v1.5.0, `js/regeln.js`,
-`js/rechenkern.js`, `js/ui.js` und `Kostenrechner.html` geaendert,
-`tests/test.html` erweitert, `js/preise.js` unveraendert, keine neuen Dateien):
+Schicksalsbrett-Knotenliste je Kategorie" (v1.5.0) plus Bugfix "Veredeln-
+Spezialisierungsknoten nach Tier gruppiert" (v1.5.1, nur `js/regeln.js` und
+`js/rechenkern.js` geaendert, `tests/test.html` erweitert, `js/ui.js` und
+`Kostenrechner.html` unveraendert, keine neuen Dateien):
 
 ```
 Kostenrechner/
@@ -172,13 +130,15 @@ Kostenrechner/
                               EIGENPREIS_SCHEMA_VERSION getrennt seit v1.1.0. Unveraendert seit v1.4.0.
     regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0; Qualitaetswurf/Reroll-Kette
                               v1.4.0; SPEZ_TYP/KATEGORIE_ZU_SPEZTYP/spezialisierungsGruppen()/
-                              fceAusSpezialisierungsknoten() v1.5.0): itemWert, RRR, Stationsgebuehr
+                              fceAusSpezialisierungsknoten() v1.5.0; gruppenSchluesselVonItem(item,cc)
+                              Bugfix v1.5.1, s. "Aktueller Stand"): itemWert, RRR, Stationsgebuehr
                               (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
                               rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
-                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0)
+                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1)
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
                               Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
-                              fceFuer() um Knoten-Ebene erweitert v1.5.0):
+                              fceFuer() um Knoten-Ebene erweitert v1.5.0, reicht cc an
+                              gruppenSchluesselVonItem() durch v1.5.1):
                               kosten(item,stufe,menge,opts), stationssatzFuer() unterscheidet
                               fehlend von ausdruecklich 0, weg.eigenpreis kennzeichnet
                               Kauf-Kandidaten aus einer eigenen Schaetzung (P6), fokusRegelFuer()
@@ -212,7 +172,8 @@ Kostenrechner/
   Versionen/v1.3.1 - Stationssaetze Standard 400/
   Versionen/v1.4.0 - Qualitaetsstufen/
   Versionen/v1.5.0 - FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie/
-  tests/test.html           212 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.5.1 - Veredeln-Spezialisierungsknoten nach Tier gruppiert/
+  tests/test.html           220 Tests, Offline-Selbsttests + 2 Live-Abschnitte
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
