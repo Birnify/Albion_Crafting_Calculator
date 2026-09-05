@@ -7,6 +7,95 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Feature "Bauplan-Ansicht ergonomisch ueberarbeitet", 05.09.2026, v1.3.0)
+
+**Vorheriger Stand (v1.2.0, Feature "Fokuseinsatz steuerbar machen") und alles
+davor** unverkürzt weiter unten in dieser Datei.
+
+**Auftrag:** rein visuelle Ueberarbeitung des Bauplan-Baums (`js/ui.js`,
+`baueKnoten()`), keine Aenderung an der Rechenlogik. Auslöser war ein
+Nutzer-Screenshot der Gelehrtengugel: jeder Knoten eine einzige lange
+Fliesstextzeile mit Aktionstyp, Item, Rezept-Index, Fokus-Flag,
+Stationsgebuehr samt Gebaeude, Rueckgewinnung und der vollen "naechstbeste
+Alternative"-Erklaerung, Farbe faerbte nur die ganze Zeile ein. Bei einem
+tief verschachtelten Baum kaum noch lesbar ("man sieht nicht, was genau,
+wann, wie, wo zu tun ist").
+
+**Neue Struktur je Knoten, zwei Zeilen statt einer:**
+
+- **kn-zeile (primaer, immer sichtbar):** farbiges Badge des Aktionstyps
+  (Kaufen/Craften/Verzaubern/Gesperrt, Farbe sitzt NUR noch auf dem Badge,
+  nicht mehr auf der ganzen Zeile), Menge als Chip (nur bei Zutat/Material/
+  Vorstufe, z.B. "8,00x"), Item.Stufe fett, bei Craften der bestehende
+  Fokus-Schalter, Warn-Badges (unvollstaendig/kein Ruecklauf/Eigenpreis),
+  rechtsbuendig die tatsaechlichen Kosten GENAU DIESES Knotens (Silber, ggf.
+  Fokus).
+- **kn-detail (sekundaer, kleiner/gedaempft):** Rezept-Index, Stationsgebuehr
+  samt Gebaeude, genaue Rueckgewinnung bzw. Kaufweg, dazu die naechstbeste
+  Alternative in Kurzform ("Alt.: Craften 135.290") mit dem vollen Satz im
+  `title`-Tooltip. Gibt es keine Alternative, steht dort nichts (vorher immer
+  ein Fuelltext "(keine Alternative verfuegbar)").
+- Jeder Knoten ist jetzt eine klar umrandete Karte (`<details>` mit Rahmen),
+  nicht mehr eine randlose Zeile. Tiefenverschachtelung bleibt ueber Einrueckung
+  und den gepunkteten linken Rand erhalten, wird durch die Kartenoptik eher
+  klarer als vorher.
+
+**Relevanz-Entscheidung (Auftrag: "triff eine klare, begruendete
+Entscheidung"):**
+
+- **Immer sichtbar:** Aktionstyp, Item+Stufe, Menge, Kosten - genau die vier
+  Fragen "was/welches/wieviel/wieviel kostet's", die der Nutzer im Auslöser-
+  Zitat als fehlend nannte.
+- **Kosten je Knoten sind neu.** Vorher zeigte der Baum nirgends, was ein
+  einzelner Zwischenschritt selbst kostet (nur die Stationsgebuehr-Teilsumme
+  bei Craften). Das ist keine neue Berechnung: `eigenerKandidat(r, weg)` liest
+  den Wert aus dem seit v1.2.0 vorhandenen `r.knotenAlternativen` aus (Index 0
+  ist dort immer der guenstigste/gewaehlte Kandidat je "item@stufe",
+  rechenkern.js sortiert `alle` genau dafuer aufsteigend), der Bauplan hat ihn
+  vorher schlicht nicht angezeigt.
+- **Rueckgewinnungs-Prozentzahl je Zutat entfaellt.** Nachgewiesen (nicht nur
+  vermutet): `ruecklaufAnteil` je Zutat in `rechenkern.js` ist exakt derselbe
+  `rrrWert`, der auch als `weg.rrr` im umschliessenden Craften-Knoten landet
+  (`rechenkern.js` Zeilen 297/336/397) - beide Zahlen sind in JEDEM Fall
+  identisch, ausser eine einzelne Zutat hat die Mengenobergrenze erreicht
+  (`zutat.m===0`, dann greift ihr Ruecklauf gar nicht). Die alte Anzeige
+  wiederholte also bei jeder Zutat exakt den Wert, den die Detailzeile des
+  Eltern-Craftens ohnehin schon zeigt. Verbleibt: ein rotes "kein Ruecklauf"-
+  Badge nur fuer den Ausnahmefall (`ruecklaufAusgeschlossen`), das ist der
+  einzige Fall mit echtem Informationsgehalt.
+- **Sekundaer (kn-detail, kleiner):** Rezept-Index, Stationsgebuehr-
+  Aufschluesselung, genaue Rueckgewinnung, Kaufweg, naechstbeste Alternative -
+  im Alltag selten die erste Frage, deshalb kleiner statt gleichrangig, aber
+  nicht versteckt (keine zusaetzliche Klickinteraktion noetig, nur optisch
+  nachrangig). Vollstaendiger Text der Alternative steckt im `title`-Tooltip.
+- Nichts geht ersatzlos verloren: jede vorher gezeigte Angabe ist entweder in
+  kn-zeile, in kn-detail, oder im Tooltip weiterhin da; nur die nachgewiesen
+  redundante Ruecklaufzahl je Zutat wurde gestrichen (Begruendung oben).
+
+**Alle-Wege-Tabelle bewusst unveraendert gelassen:** sie ist bereits eine
+echte Tabelle mit getrennten Spalten (Weg/Silber/Fokus/Zielwert/Status) und
+Status-Pills statt einer Fliesstextzeile - teilt die Dichte-Problematik des
+Bauplans nicht, deshalb kein Umbau noetig.
+
+**Fokus-Schalter, Eigenpreis-Badge, Preisalter-Anzeige, Unvollstaendig-
+Warnung, Gesperrt-Karten:** alle im Browser tatsaechlich angeklickt bzw.
+erzwungen und geprueft (Königliche Gugel des Adepten .3, Lymhurst):
+Fokus-Schalter dreimal durchgeklickt (automatisch -> immer -> nie ->
+automatisch), Alle-Wege-Tabelle reagierte je Klick korrekt; Eigenpreis-Badge
+durch Setzen echter Eigenpreise fuer zwei nicht handelbare Zutaten sichtbar
+gemacht; Preisalter-Tooltip per DOM-Abfrage bestaetigt; Unvollstaendig-Warnung
+war durchgehend sichtbar (fehlende Stationssaetze); Gesperrt-Karte (rot,
+Badge "Gesperrt", Item+Stufe, Grund) durch `maxPreisAlterMin=0` erzwungen und
+sowohl als Wurzel- als auch als generische Karte bestaetigt, danach
+zurueckgesetzt.
+
+**Tests:** 136/136 weiterhin gruen, unveraendert (reine Darstellungsaenderung,
+keine neue Testabdeckung noetig - die getesteten `UI.*`-Funktionen sind reine,
+DOM-freie Helfer, `baueKnoten()`/`altBeschreibung()` waren nie oeffentlich und
+sind nicht Teil der Testsuite).
+
+---
+
 ## Aktueller Stand (Feature "Fokuseinsatz steuerbar machen", 05.09.2026, v1.2.0)
 
 **Vorheriger Stand (v1.1.0, Feature "Craft-Stadt waehlbar") und alles davor**

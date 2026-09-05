@@ -37,7 +37,21 @@ const UI = (function () {
       fokusRegelJeKategorie: {},
       fokusUebersteuerungJeKnoten: {},
       fokuswert: 0, // Silber je Fokuspunkt; 0 ist gueltig, verschiebt aber zu fokusintensiven Wegen
-      stationssaetze: {}, // Gebaeude -> Satz. NUR gepflegte Eintraege drin, s. rechenkern.js stationssatzFuer()
+      // Stationssaetze: Nutzer-Vorgabe vom 05.09.2026, pauschal 400 als Standard
+      // fuer jedes Gebaeude, in jeder Stadt (der Satz ist absichtlich nicht nach
+      // Stadt getrennt, s. CLAUDE.md "Craft-Kategorie zu Gebaeude": die Station
+      // ist eine reale, vom Nutzer selbst gewaehlte Anlage, keine Eigenschaft der
+      // Stadt). Bleibt trotzdem ein voll editierbares Eingabefeld je Gebaeude,
+      // kein hartkodierter Wert in der Rechenlogik selbst, s. CLAUDE.md
+      // "Spielerprofil": "Nutzungsgebuehr ... gehoert als Eingabefeld je Gebaeude,
+      // nie als Konstante in den Code." 400 ist hier nur der VORBELEGTE Wert
+      // dieses Feldes, keine Konstante in rechenkern.js/regeln.js. Vorher war
+      // stationssaetze leer, jedes Gebaeude startete als "nicht gepflegt" und
+      // machte das Ergebnis unvollstaendig, bis der Nutzer es manuell eintrug.
+      stationssaetze: Array.from(new Set(Object.values(REGELN.KATEGORIE_ZU_GEBAEUDE))).reduce((acc, g) => {
+        acc[g] = 400;
+        return acc;
+      }, {}),
       tagesbonus: {}, // craftingcategory -> "silber"|"gold", fehlt = aus
       kaufweg: "sofort",
       verkaufsweg: "order",
@@ -59,7 +73,13 @@ const UI = (function () {
       basis.fokusRegelJeKategorie = daten.fokusRegelJeKategorie || {};
       basis.fokusUebersteuerungJeKnoten = daten.fokusUebersteuerungJeKnoten || {};
       basis.fokuswert = daten.fokuswert != null ? daten.fokuswert : basis.fokuswert;
-      basis.stationssaetze = daten.stationssaetze || {};
+      // Zusammenfuehren statt ersetzen: ein Gebaeude, das der Nutzer schon
+      // ausdruecklich gesetzt hat (auch auf einen anderen Wert als 400), bleibt
+      // erhalten. Ein Gebaeude, das im gespeicherten Stand noch fehlt (z.B. weil
+      // es erst nach dem letzten Speichern zur Kategorie-Zuordnung dazukam),
+      // bekommt den 400er-Standard aus defaultEinstellungen() statt leer zu
+      // bleiben. S. Kommentar bei stationssaetze in defaultEinstellungen().
+      basis.stationssaetze = Object.assign({}, basis.stationssaetze, daten.stationssaetze || {});
       basis.tagesbonus = daten.tagesbonus || {};
       basis.kaufweg = daten.kaufweg || basis.kaufweg;
       basis.verkaufsweg = daten.verkaufsweg || basis.verkaufsweg;

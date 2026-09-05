@@ -1,7 +1,7 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-05 · Version: v1.3.0 · Feature: Bauplan-Ansicht ergonomisch ueberarbeitet
-(kein Paket aus dem Plan, Nutzer-Feature ausserhalb der P0-P7-Reihenfolge)
+Stand: 2026-09-05 · Version: v1.3.1 · Standardwert Stationssaetze auf 400 gesetzt
+(kein Paket aus dem Plan, kleine Nutzer-Vorgabe)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -20,93 +20,62 @@ ganzen Rezeptbaum. Alles in Lymhurst, Qualität Normal.
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Feature "Bauplan-Ansicht ergonomisch ueberarbeitet", 05.09.2026, v1.3.0)
+## Aktueller Stand (Standardwert Stationssaetze, 05.09.2026, v1.3.1)
 
-**Vorheriger Stand (v1.2.0, Feature "Fokuseinsatz steuerbar machen") und alles
-davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
-(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v1.3.0, Feature "Bauplan-Ansicht ergonomisch
+ueberarbeitet") und alles davor** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** rein visuelle Ueberarbeitung des Bauplan-Baums (`js/ui.js`,
-`baueKnoten()`), keine Aenderung an der Rechenlogik. Auslöser war ein
-Nutzer-Screenshot der Gelehrtengugel: jeder Knoten eine einzige lange
-Fliesstextzeile mit Aktionstyp, Item, Rezept-Index, Fokus-Flag,
-Stationsgebuehr samt Gebaeude, Rueckgewinnung und der vollen "naechstbeste
-Alternative"-Erklaerung, Farbe faerbte nur die ganze Zeile ein. Bei einem
-tief verschachtelten Baum kaum noch lesbar ("man sieht nicht, was genau,
-wann, wie, wo zu tun ist").
+**Auftrag, direkt vom Nutzer, ohne Orchestrator-Zyklus (kleine, klar
+umrissene Aenderung):** die Stationssaetze-Tabelle in den Einstellungen war
+vorher fuer jedes Gebaeude leer, jede Berechnung startete deshalb als
+"unvollstaendig", bis der Nutzer alle 14 Gebaeude von Hand ausfuellte. Der
+Nutzer hatte das bereits fuer sich selbst auf 400 gesetzt und wollte das als
+Standardwert, statt es nach jedem Zuruecksetzen erneut einzutragen.
 
-**Neue Struktur je Knoten, zwei Zeilen statt einer:**
+**Umsetzung, zwei Stellen in `js/ui.js`:**
 
-- **kn-zeile (primaer, immer sichtbar):** farbiges Badge des Aktionstyps
-  (Kaufen/Craften/Verzaubern/Gesperrt, Farbe sitzt NUR noch auf dem Badge,
-  nicht mehr auf der ganzen Zeile), Menge als Chip (nur bei Zutat/Material/
-  Vorstufe, z.B. "8,00x"), Item.Stufe fett, bei Craften der bestehende
-  Fokus-Schalter, Warn-Badges (unvollstaendig/kein Ruecklauf/Eigenpreis),
-  rechtsbuendig die tatsaechlichen Kosten GENAU DIESES Knotens (Silber, ggf.
-  Fokus).
-- **kn-detail (sekundaer, kleiner/gedaempft):** Rezept-Index, Stationsgebuehr
-  samt Gebaeude, genaue Rueckgewinnung bzw. Kaufweg, dazu die naechstbeste
-  Alternative in Kurzform ("Alt.: Craften 135.290") mit dem vollen Satz im
-  `title`-Tooltip. Gibt es keine Alternative, steht dort nichts (vorher immer
-  ein Fuelltext "(keine Alternative verfuegbar)").
-- Jeder Knoten ist jetzt eine klar umrandete Karte (`<details>` mit Rahmen),
-  nicht mehr eine randlose Zeile. Tiefenverschachtelung bleibt ueber Einrueckung
-  und den gepunkteten linken Rand erhalten, wird durch die Kartenoptik eher
-  klarer als vorher.
+- `defaultEinstellungen()`: `stationssaetze` startet jetzt mit 400 fuer jedes
+  Gebaeude aus `REGELN.KATEGORIE_ZU_GEBAEUDE` (alle 14 Eintraege, inklusive
+  der drei Sonderfaelle Nebenhand/Kampfhandschuhe/Tierhaltung), statt einem
+  leeren Objekt.
+- `einstellungenLesen()`: die gespeicherten Saetze werden jetzt mit den
+  Standardwerten zusammengefuehrt (`Object.assign`) statt sie komplett zu
+  ersetzen. Ein Gebaeude, das der Nutzer ausdruecklich auf einen anderen Wert
+  gesetzt hat, bleibt dabei erhalten; ein Gebaeude, das noch nie gesetzt
+  wurde (auch ein erst spaeter hinzugekommenes), bekommt den 400er-Standard
+  statt leer zu bleiben.
 
-**Relevanz-Entscheidung (Auftrag: "triff eine klare, begruendete
-Entscheidung"):**
+**Bleibt ein echtes Eingabefeld, keine Konstante im Code.** `CLAUDE.md`,
+Abschnitt "Spielerprofil", verlangt ausdruecklich: die Nutzungsgebuehr ist
+Eigentuemer-gesetzt, unterscheidet sich je Gebaeude und aendert sich laufend,
+gehoert deshalb als Eingabefeld, nie als Konstante in die Rechenlogik. 400
+ist hier nur der VORBELEGTE Wert dieses Feldes (in `js/ui.js`), nicht in
+`rechenkern.js`/`regeln.js` verankert; jedes Gebaeude bleibt frei editierbar.
 
-- **Immer sichtbar:** Aktionstyp, Item+Stufe, Menge, Kosten - genau die vier
-  Fragen "was/welches/wieviel/wieviel kostet's", die der Nutzer im Auslöser-
-  Zitat als fehlend nannte.
-- **Kosten je Knoten sind neu.** Vorher zeigte der Baum nirgends, was ein
-  einzelner Zwischenschritt selbst kostet (nur die Stationsgebuehr-Teilsumme
-  bei Craften). Das ist keine neue Berechnung: `eigenerKandidat(r, weg)` liest
-  den Wert aus dem seit v1.2.0 vorhandenen `r.knotenAlternativen` aus (Index 0
-  ist dort immer der guenstigste/gewaehlte Kandidat je "item@stufe",
-  rechenkern.js sortiert `alle` genau dafuer aufsteigend), der Bauplan hat ihn
-  vorher schlicht nicht angezeigt.
-- **Rueckgewinnungs-Prozentzahl je Zutat entfaellt.** Nachgewiesen (nicht nur
-  vermutet): `ruecklaufAnteil` je Zutat in `rechenkern.js` ist exakt derselbe
-  `rrrWert`, der auch als `weg.rrr` im umschliessenden Craften-Knoten landet
-  (`rechenkern.js` Zeilen 297/336/397) - beide Zahlen sind in JEDEM Fall
-  identisch, ausser eine einzelne Zutat hat die Mengenobergrenze erreicht
-  (`zutat.m===0`, dann greift ihr Ruecklauf gar nicht). Die alte Anzeige
-  wiederholte also bei jeder Zutat exakt den Wert, den die Detailzeile des
-  Eltern-Craftens ohnehin schon zeigt. Verbleibt: ein rotes "kein Ruecklauf"-
-  Badge nur fuer den Ausnahmefall (`ruecklaufAusgeschlossen`), das ist der
-  einzige Fall mit echtem Informationsgehalt.
-- **Sekundaer (kn-detail, kleiner):** Rezept-Index, Stationsgebuehr-
-  Aufschluesselung, genaue Rueckgewinnung, Kaufweg, naechstbeste Alternative -
-  im Alltag selten die erste Frage, deshalb kleiner statt gleichrangig, aber
-  nicht versteckt (keine zusaetzliche Klickinteraktion noetig, nur optisch
-  nachrangig). Vollstaendiger Text der Alternative steckt im `title`-Tooltip.
-- Nichts geht ersatzlos verloren: jede vorher gezeigte Angabe ist entweder in
-  kn-zeile, in kn-detail, oder im Tooltip weiterhin da; nur die nachgewiesen
-  redundante Ruecklaufzahl je Zutat wurde gestrichen (Begruendung oben).
+**Bewusste Nebenwirkung:** ein Gebaeude, das der Nutzer ueber das Eingabefeld
+wieder leert, bekommt beim naechsten Laden erneut 400 statt in den Zustand
+"nicht gepflegt" zurueckzufallen. Der Nutzer hat mit "pauschal 400 im
+Standard" explizit diesen Ersatz fuer die bisherige Vorsichts-Warnung
+gewaehlt, das ist keine versehentliche Regression.
 
-**Alle-Wege-Tabelle bewusst unveraendert gelassen:** sie ist bereits eine
-echte Tabelle mit getrennten Spalten (Weg/Silber/Fokus/Zielwert/Status) und
-Status-Pills statt einer Fliesstextzeile - teilt die Dichte-Problematik des
-Bauplans nicht, deshalb kein Umbau noetig.
+**Stadt-unabhaengig, wie vorgesehen:** Stationssaetze sind seit jeher nicht
+nach Stadt getrennt (eine reale, vom Nutzer selbst betriebene oder genutzte
+Station, keine Eigenschaft der Stadt-Auswahl), 400 gilt deshalb automatisch
+"in jeder Stadt", ohne dass die Stadt-Umschaltung angefasst werden musste.
 
-**Fokus-Schalter, Eigenpreis-Badge, Preisalter-Anzeige, Unvollstaendig-
-Warnung, Gesperrt-Karten:** alle im Browser tatsaechlich angeklickt bzw.
-erzwungen und geprueft (Königliche Gugel des Adepten .3, Lymhurst):
-Fokus-Schalter dreimal durchgeklickt (automatisch -> immer -> nie ->
-automatisch), Alle-Wege-Tabelle reagierte je Klick korrekt; Eigenpreis-Badge
-durch Setzen echter Eigenpreise fuer zwei nicht handelbare Zutaten sichtbar
-gemacht; Preisalter-Tooltip per DOM-Abfrage bestaetigt; Unvollstaendig-Warnung
-war durchgehend sichtbar (fehlende Stationssaetze); Gesperrt-Karte (rot,
-Badge "Gesperrt", Item+Stufe, Grund) durch `maxPreisAlterMin=0` erzwungen und
-sowohl als Wurzel- als auch als generische Karte bestaetigt, danach
-zurueckgesetzt.
+**Getestet:** Testsuite (keine der 136 Tests beruehrt `defaultEinstellungen()`
+oder `einstellungenLesen()` direkt) unveraendert 136/136 gruen, per Node
+cachefrei gegen die Dateien auf der Platte geprueft. Im Browser mit
+komplett geleertem `localStorage` bestaetigt: alle 14 Gebaeude zeigen 400,
+die "unvollstaendig"-Warnung erscheint bei einer frischen Rechnung nicht
+mehr, echte Stationsgebuehren (z.B. 7.373 fuer den Magierturm) erscheinen
+sofort im Bauplan statt 0.
 
-**Tests:** 136/136 weiterhin gruen, unveraendert (reine Darstellungsaenderung,
-keine neue Testabdeckung noetig - die getesteten `UI.*`-Funktionen sind reine,
-DOM-freie Helfer, `baueKnoten()`/`altBeschreibung()` waren nie oeffentlich und
-sind nicht Teil der Testsuite).
+Versions-Schnappschuss unter `Versionen/v1.3.1 - Stationssaetze Standard 400/`
+angelegt, wie bei jeder abgeschlossenen Aenderung, unabhaengig davon, ob sie
+ueber einen Orchestrator-Zyklus oder inline erfolgte.
 
 ## Dateistruktur
 
