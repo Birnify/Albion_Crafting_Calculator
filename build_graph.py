@@ -239,6 +239,21 @@ def has_own_recipe(entry):
 # "GAMEMASTER", z.B. UNIQUE_INTERNAL_HEAD_GAMEMASTER), ebenfalls nie von
 # einem echten Rezept referenziert.
 #
+# Zusaetzlich ausgeschlossen (06.09.2026, Nutzer-Fund "HEAD_CLOTH_PROTOTYPE"
+# in den Spezialisierungsknoten): Name enthaelt "PROTOTYPE". Betrifft 14
+# Items im Graph, nicht nur das gemeldete Beispiel: T8_ARMOR/HEAD/SHOES
+# _CLOTH/LEATHER/PLATE_PROTOTYPE (9, je Ruestungskategorie eines) sowie
+# UNIQUE_WEAPONMASTER_ARMOR/HEAD/IDLE/POTION/SHOES_PROTOTYPE (5, interne
+# "Waffenmeister"-Testreihe). Empirisch geprueft (am Beispiel
+# T8_HEAD_CLOTH_PROTOTYPE): @shopsubcategory1="other" (kein "vanity", der
+# bestehende Filter griff hier nicht), LocalizedNames komplett null (weder
+# Deutsch noch Englisch), @mesh/@uisprite von T8_HEAD_CLOTH_SET1 kopiert,
+# @silver="0" (kein echtes Item hat eine Stationsgebuehr von 0), und die
+# eigene craftingspelllist referenziert einen Spell "PROTOTYPE_CD_PENALTY" -
+# eindeutig interne Test-/Platzhalter-Eintraege, keine spielbaren Items.
+# Gegenprobe: keines der 14 wird von irgendeinem verbleibenden Rezept als
+# Zutat referenziert.
+#
 # Ausdruecklich NICHT hier gefiltert: Items ohne @craftingcategory oder ohne
 # @tradable, die als Zutat in einem echten Rezept vorkommen (z.B. Fischsauce,
 # GvG-/Fraktionsmarken, Arena-Kristall). Die bleiben im Graph und laufen
@@ -251,6 +266,8 @@ def is_excluded_root(name, entry):
     if entry.get("@shopcategory") in ROOT_EXCLUDE_SHOPCATEGORIES:
         return True
     if "GAMEMASTER" in name:
+        return True
+    if "PROTOTYPE" in name:
         return True
     return False
 
