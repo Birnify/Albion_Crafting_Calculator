@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-06 · Version: v2.1.2 · PROTOTYPE-Items ausgeschlossen, T4.3-Badge in Stufenfarbe
+Stand: 2026-09-06 · Version: v2.1.3 · Artefaktgiesserei-Gambling-Rezept ausgeschlossen
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,10 +21,47 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (v2.1.0-v2.1.2, mehrere kleine inline Punkte, 06.09.2026)
+## Aktueller Stand (v2.1.0-v2.1.3, mehrere kleine inline Punkte, 06.09.2026)
 
 Alle Punkte inline (nicht ueber den Orchestrator) umgesetzt, live im Browser
 geprueft, 275/275 Tests gruen:
+
+**v2.1.3, Artefaktgiesserei-Gambling faelschlich als Rezept behandelt (echter
+Rechenfehler, nicht nur kosmetisch):** Nutzer-Fund per Bauplan-Screenshot -
+der Rechner bot "Konserviertes Tierfell des Adepten"
+(`T4_ARTEFACT_ARMOR_PLATE_KEEPER`) als craftbar aus 50x Relikt an
+(Stationsgebuehr 0, Rueckgewinnung 0 %), als waere das ein garantiertes
+1:1-Rezept. Per offiziellem Wiki (`Adept's Relic`, Abschnitt
+"Re-rolling/Melding") UND vom Nutzer per Screenshot der Artefaktgiesserei
+im Spiel bestaetigt: 50 Relikte ergeben ZUFAELLIG eines von ~9-10
+moeglichen Artefakten einer Klasse (Krieger/Magier/Jaeger), kein
+garantierter Tausch. Der Spieldump kodiert dieses Gluecksspiel als
+normales `craftingrequirements`-Feld auf JEDEM der ~38 moeglichen
+Artefakte je Tier - `has_own_recipe()` las das bisher als echtes Rezept.
+Neue Funktion `is_gambling_recipe()` in `build_graph.py` erkennt das Muster
+(Name enthaelt "ARTEFACT", genau eine Zutat `*_RELIC`) und filtert es beim
+Knotenaufbau heraus, 190 betroffene Rezepte (38 je Tier T4-T8), ausnahmslos.
+Die "Transmute"-Aufwertung (5 Relikte einer Stufe zu 1 der naechsten, laut
+Wiki deterministisch, Menge 5 statt 50, kein "ARTEFACT" im Namen) bleibt
+unangetastet - Gegenprobe gezogen. Betroffene Artefakte bleiben als
+kaufbare Marktzutat im Graph (echte AODP-Preise vorhanden), verlieren nur
+die falsche Craften-Option. Live nachgerechnet an "Rechtssprecherruestung
+des Adepten.3": vorher faelschlich "Craften + Reroll" 127.939 Silber
+guenstigster Weg, jetzt korrekt "Verzaubern" 151.414 Silber
+(Craften+Reroll steigt auf 170.869, weil das Artefakt jetzt zum echten
+Marktpreis 68.781 statt der erfundenen 22.500 eingerechnet wird).
+
+**Dabei entdeckt, separat und NICHT behoben:** die "Craften #1/#2, mit/ohne
+Fokus"-Zeilen in "Alle Wege" (reiner Craft-Pfad, erzwingt Craften auf jeder
+Ebene statt Kaufen) liefern fuer T4.3-Plattenruestung astronomische Werte
+(z. B. 4,6-10,9 Mio. Silber, 274.710-600.958 Fokus) - Faktor 30-70 teurer
+als Verzaubern/Craften+Reroll fuer dasselbe Item. Gegenprobe an einem
+voellig unbeteiligten Item (Soldatenruestung des Adepten, keine
+Artefakt-/Relikt-Zutat) zeigt **exakt dieselben** Fokus-Werte
+(600.958,4 / 274.710,3) - das ist also ein eigener, vom heutigen Fix
+unabhaengiger Bug, vermutlich irgendwo tief in der rekursiven
+"immer craften, nie kaufen"-Traversierung (Rune/Seele/Relikt-Craft-
+Rekursion oder Ore->Barren-Kette). Noch nicht untersucht, s. Backlog unten.
 
 **v2.1.2, PROTOTYPE-Items ausgeschlossen:** Nutzer-Fund "HEAD_CLOTH_PROTOTYPE"
 als rohe ID statt Name in den Spezialisierungsknoten (cloth_helmet).
@@ -333,6 +370,21 @@ hier ebenfalls entfernt.
    Umsetzung klaeren, ob "automatisch" als Ausgangszustand gemeint ist oder
    der zuletzt gewaehlte Zustand je Knoten erhalten bleiben soll, wenn der
    Schalter wieder aus geht.
+6. **Reine "Craften"-Pfade in Alle Wege liefern astronomische Werte (echter
+   Rechenfehler, beim v2.1.3-Fix entdeckt, noch nicht untersucht).** Die
+   "Craften #N, mit/ohne Fokus"-Zeilen (erzwingen Craften statt Kaufen auf
+   jeder Ebene) zeigen fuer T4.3-Plattenruestung 4,6-10,9 Mio. Silber,
+   274.710-600.958 Fokus - Faktor 30-70 ueber Verzaubern/Craften+Reroll fuer
+   dasselbe Item. Gegenprobe an einem unbeteiligten Item (Soldatenruestung
+   des Adepten, keine Artefakt-/Relikt-Beteiligung) zeigt EXAKT dieselben
+   Fokus-Werte - deshalb sicher kein Folgefehler des v2.1.3-Fixes, sondern
+   ein eigener, vermutlich schon laenger bestehender Bug. Naheliegender
+   Verdacht (nicht verifiziert): die rekursive "immer craften"-Traversierung
+   craftet Rune/Seele/Relikt bzw. die Ore->Barren-Kette faelschlich mit statt
+   sie zu kaufen, oder ein `gesperrt`-Fallback tief im Baum liefert einen
+   ueberzogenen Ersatzwert statt den Pfad sauber zu sperren. Braucht eigene
+   Diagnose, am besten mit Zwischenwerten aus `craftKandidat()`/
+   `zutatenWeg()` in `rechenkern.js`.
 
 **Kleinere offene Punkte, unverändert seit früheren Paketen:**
 
