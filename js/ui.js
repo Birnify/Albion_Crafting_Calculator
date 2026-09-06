@@ -481,12 +481,46 @@ const UI = (function () {
    * IMMER +1, sonst zeigt jeder Knoten die falsche Qualitaetsstufe.
    *
    * count=1 unterdrueckt den Mengen-Stapel-Aufdruck auf dem Icon (die Menge
-   * zeigt die App ohnehin separat an der Baumkante). size=48 passt zur
-   * Nutzer-Vorgabe "40 bis 48px".
+   * zeigt die App ohnehin separat an der Baumkante). size=128 statt 48
+   * (Nutzer-Feedback 06.09.2026: sichtbar unscharf bei 48 auf einer 64px+
+   * Anzeigeflaeche mit Zoom-Crop) - der Browser skaliert beim Anzeigen
+   * herunter, das ist schaerfer als serverseitig hochskaliert.
+   *
+   * "@<stufe>" haengt die echte Verzauberungsstufe an die Item-ID (Nutzer-
+   * Feedback 06.09.2026: der Dienst liefert darueber den ECHTEN spielinternen
+   * Farbschimmer plus die gefuellten Rauten fuer die Verzauberungsstufe direkt
+   * im Bild mit - unabhaengig vom quality-Parameter, der nur den inneren
+   * Rahmen (Gegenstandsqualitaet) faerbt. Ohne dieses Suffix zeigt der Dienst
+   * immer die Stufe-0-Variante (leere Rauten, kein Schimmer). Live gegen den
+   * Dienst geprueft (@0/@3, quality 1 und 5) bevor das hier verbaut wurde.
+   * Der bisherige eigene CSS-Rahmen (--ic-color/--lvl0.."--lvl4) entfaellt
+   * deshalb, das echte Icon deckt das jetzt ab; das kombinierte "T4.3"-Badge
+   * und das Stueckzahl-Badge bleiben (Nutzer-Wunsch: die Textangabe soll
+   * bleiben, nur der zusaetzliche Rahmen war ueberfluessig).
+   *
+   * AUSNAHME, live gefunden (06.09.2026): Zutaten mit eigenem "el"-Feld
+   * (z.B. "T4_CLOTH_LEVEL3", el=3 - die Verzauberungsstufe steckt dort schon
+   * im Namen, s. marktId() in preise.js) liefern mit zusaetzlichem "@3"-Suffix
+   * einen HTTP 502 vom Render-Dienst, mit "@0" oder ganz ohne Suffix aber ein
+   * gueltiges Bild. Der Markt-Dienst (AODP) akzeptiert "T4_CLOTH_LEVEL3@3"
+   * durchaus (eigener, unabhaengiger Dienst mit eigener Konvention, s.
+   * marktId()-Kommentar "-> @3, nicht @6") - der Render-Dienst tut das nicht.
+   * Deshalb hier bewusst KEIN Suffix anhaengen, wenn REZEPTGRAPH ein eigenes
+   * "el" fuer das Item kennt; nur echte Ausruestung (ohne "el") bekommt den
+   * Kontext-Stufe-Suffix.
    */
-  function itemIconUrl(uniquename, qualitaetIndex) {
+  function itemIconUrl(uniquename, qualitaetIndex, stufe) {
     const q = (qualitaetIndex || 0) + 1;
-    return "https://render.albiononline.com/v1/item/" + encodeURIComponent(uniquename) + ".png?count=1&quality=" + q + "&size=48";
+    const node = (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.items[uniquename]) || {};
+    const stufenSuffix = node.el ? "" : "@" + (stufe || 0);
+    return (
+      "https://render.albiononline.com/v1/item/" +
+      encodeURIComponent(uniquename) +
+      stufenSuffix +
+      ".png?count=1&quality=" +
+      q +
+      "&size=128"
+    );
   }
 
   /**
@@ -564,6 +598,7 @@ const UI = (function () {
     const vwOrderEl = document.getElementById("vwOrder");
     const premiumEl = document.getElementById("premium");
     const maxPreisAlterEl = document.getElementById("maxPreisAlter");
+    const maxPreisAlterPresetsEl = document.getElementById("maxPreisAlterPresets");
 
     const eigenpreiseHinweisEl = document.getElementById("eigenpreiseHinweis");
     const eigenpreiseTabelleEl = document.getElementById("eigenpreiseTabelle");
@@ -1564,14 +1599,17 @@ const UI = (function () {
      * <img> ersatzlos, das Kaestchen bleibt ohne Icon, der Name bleibt
      * sichtbar.
      *
-     * Icon-Ueberarbeitung (Nutzer-Feedback 06.09.2026): Rahmenfarbe zeigt die
-     * Verzauberungsstufe (0 grau .. 4 gold, s. --lvl0.."--lvl4 in
-     * Kostenrechner.html), ein einzelnes Badge oben links traegt "T<Tier>.<Stufe>"
-     * statt der reinen Textangabe im Namen, ein Stueckzahl-Badge oben rechts
-     * (nur bei echten Mengenkanten, s. kante.menge) ersetzt die bisherige
-     * separate kn-menge-Beschriftung neben dem Verbindungsstrich. Bei Stufe 0
-     * faellt der Punkt weg (dieselbe Konvention wie beim kn-name-Text unten:
-     * "T4" statt "T4.0"), damit Kaufen-Token ohne Verzauberungsstufe nicht
+     * Icon-Ueberarbeitung (Nutzer-Feedback 06.09.2026, zweite Runde): das
+     * Icon selbst traegt jetzt per "@<Stufe>"-Suffix (s. itemIconUrl()) den
+     * echten spielinternen Farbschimmer und die Verzauberungs-Rauten, der
+     * bisherige eigene CSS-Rahmen (--ic-color/--lvl0.."--lvl4) ist deshalb
+     * weg (waere doppelt gewesen). Ein einzelnes Badge oben links traegt
+     * weiterhin "T<Tier>.<Stufe>" (Nutzer-Wunsch: Textangabe bleibt, nur der
+     * Rahmen war ueberfluessig), ein Stueckzahl-Badge oben rechts (nur bei
+     * echten Mengenkanten, s. kante.menge) ersetzt die bisherige separate
+     * kn-menge-Beschriftung neben dem Verbindungsstrich. Bei Stufe 0 faellt
+     * der Punkt weg (dieselbe Konvention wie beim kn-name-Text unten: "T4"
+     * statt "T4.0"), damit Kaufen-Token ohne Verzauberungsstufe nicht
      * faelschlich ".0" zeigen.
      */
     function bgCard(weg, r, kante) {
@@ -1583,14 +1621,13 @@ const UI = (function () {
       if (weg.item) {
         const wrap = document.createElement("div");
         wrap.className = "bg-ic-wrap";
-        wrap.style.setProperty("--ic-color", "var(--lvl" + (weg.stufe || 0) + ")");
         const slot = document.createElement("div");
         slot.className = "bg-slot";
         const img = document.createElement("img");
         img.className = "bg-icon";
         img.loading = "lazy";
         img.alt = "";
-        img.src = itemIconUrl(weg.item, weg.qualitaet);
+        img.src = itemIconUrl(weg.item, weg.qualitaet, weg.stufe);
         img.addEventListener("error", () => img.remove());
         slot.appendChild(img);
         wrap.appendChild(slot);
@@ -2301,6 +2338,28 @@ const UI = (function () {
       einstellungen.maxPreisAlterMin = maxPreisAlterEl.value.trim() === "" ? null : Number(maxPreisAlterEl.value);
       persistiereUndRechne();
     });
+    /**
+     * Voreinstellungen fuers Preisalter (Nutzer-Wunsch 06.09.2026): reine
+     * Komfort-Buttons, setzen nur den bestehenden Zahlenwert und feuern
+     * "change" auf dem Feld, keine eigene Zustandsquelle. Aktiver Button
+     * markiert sich selbst ueber den aktuellen Feldwert, auch nach manueller
+     * Eingabe oder nach dem Laden gespeicherter Einstellungen.
+     */
+    function maxPreisAlterPresetsAktualisieren() {
+      const aktuell = maxPreisAlterEl.value.trim();
+      maxPreisAlterPresetsEl.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("an", btn.dataset.min === aktuell);
+      });
+    }
+    maxPreisAlterPresetsEl.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-min]");
+      if (!btn) return;
+      maxPreisAlterEl.value = btn.dataset.min;
+      maxPreisAlterEl.dispatchEvent(new Event("change"));
+      maxPreisAlterPresetsAktualisieren();
+    });
+    maxPreisAlterEl.addEventListener("input", maxPreisAlterPresetsAktualisieren);
+    maxPreisAlterPresetsAktualisieren();
     fceEingabeEl.addEventListener("change", () => {
       // FCE unter 0 ist inhaltlich unmoeglich (Spezialisierung senkt Fokuskosten,
       // erhoeht sie nie); an der Eingabe abfangen, nicht erst rechnen lassen.

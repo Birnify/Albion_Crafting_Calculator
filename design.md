@@ -38,19 +38,6 @@ die App ist durchgehend dunkel, wie ein Spiel-Interface.
 --red:       oklch(0.62 0.19 25);   /* Gesperrt/Fehler */
 ```
 
-Verzauberungsstufen-Farben (Icon-Rahmen, s. "Icon-Kachel" unten), **bereits
-so in `Kostenrechner.html` v1.9.0 umgesetzt** (dort mit Hex statt oklch, weil
-die App vorher kein oklch nutzte; beim Redesign auf die oklch-Werte hier
-vereinheitlichen):
-
-```css
---lvl0: oklch(0.72 0.008 90);  /* grau, Stufe 0 / kein Stufenbezug (Kaufen-Token) */
---lvl1: oklch(0.72 0.14 145);  /* gruen, Stufe 1 */
---lvl2: oklch(0.72 0.12 235);  /* blau, Stufe 2 */
---lvl3: oklch(0.72 0.13 300);  /* lila, Stufe 3 */
---lvl4: oklch(0.79 0.15 88);   /* gold, Stufe 4 */
-```
-
 Statusfarben in Tabellen/Badges: `ok` = `--green` auf `oklch(0.72 0.13 145 / .14)`
 Hintergrund, `gesperrt` = `--red` auf `oklch(0.62 0.19 25 / .14)` Hintergrund.
 
@@ -90,16 +77,25 @@ dunklem Text (`oklch(0.2 0.03 60)`).
 **Badges** (Aktionstyp: Kaufen/Craften/Verzaubern/Reroll/Gesperrt): Textfarbe =
 die jeweilige Akzentfarbe, Hintergrund dieselbe Farbe bei 10-14% Deckkraft.
 
-**Icon-Kachel** (Bauplan grafisch, **bereits in `Kostenrechner.html` v1.9.0
-implementiert**, beim Redesign nur die Farbwerte auf die oklch-Token oben
-umstellen, Struktur unveraendert lassen):
-- `.bg-ic-wrap` 64x64px, `.bg-slot` mit 3px Rahmen in der Stufenfarbe
-  (`--lvl0`..`--lvl4`), Icon per `object-fit:cover` + `transform:scale(1.22)`
-  randfuellend zugeschnitten (Wert empirisch im Browser gegen echte
-  Render-Service-Icons ermittelt, s. Commit v1.9.0 - **nicht ohne erneuten
-  visuellen Test aendern**).
-- `.bg-ic-lvl` oben links: kombiniertes Badge "T\<Tier>.\<Stufe>" (Punkt
-  entfaellt bei Stufe 0), Hintergrund = Stufenfarbe, dunkler Text.
+**Icon-Kachel** (Bauplan grafisch, Stand 06.09.2026 nach zwei Ueberarbeitungs-
+Runden): kein eigener CSS-Rahmen mehr (das `--lvl0`..`--lvl4`-System aus
+v1.9.0 wurde entfernt). Der Render-Dienst liefert den Verzauberungs-Look
+jetzt direkt im Bild mit:
+- `itemIconUrl(item, qualitaet, stufe)` haengt `@<stufe>` an die Item-ID
+  UND erhoeht `size` auf 128 (vorher 48, wirkte auf der 64px-Anzeigeflaeche
+  unscharf). Das `@<stufe>`-Suffix liefert den ECHTEN spielinternen
+  Farbschimmer plus gefuellte Rauten fuer die Verzauberungsstufe direkt im
+  Bild - unabhaengig vom `quality`-Parameter, der nur den inneren Rahmen
+  (Gegenstandsqualitaet Normal..Meisterwerk) faerbt. Beide Parameter sind
+  eigenstaendig, nicht verwechseln (live gegen den Dienst geprueft,
+  06.09.2026).
+- `.bg-ic-wrap` 64x64px, `.bg-slot` ohne Rahmen, Icon per `object-fit:cover`
+  + `transform:scale(1.22)` randfuellend zugeschnitten (Wert empirisch im
+  Browser gegen echte Render-Service-Icons ermittelt, s. Commit v1.9.0 -
+  **nicht ohne erneuten visuellen Test aendern**).
+- `.bg-ic-lvl` oben links: kombiniertes Badge "T\<Tier>.\<Stufe>" bleibt
+  (Punkt entfaellt bei Stufe 0), Hintergrund `--gold-dim`, dunkler Text -
+  jetzt zusaetzlich zum echten Icon-Schimmer, nicht mehr als Ersatz dafuer.
 - `.bg-ic-qty` oben rechts: Stueckzahl kompakt ohne erzwungene
   Nachkommastellen ("2×" statt "2,00×"), nur bei echten Mengenkanten
   (nicht bei "Vorstufe"/"Normal beschaffen").
@@ -139,3 +135,4 @@ unangetastet, nur die Farbwerte wandern auf die oklch-Token dieses Dokuments.
 | 06.09.2026 | Dokument angelegt aus dem Claude-Design-Mockup | Nutzer-Wunsch: Entscheidungen dauerhaft nachschlagbar machen, nicht nur im Mockup |
 | 06.09.2026 | `.gp-panel` als eigene CSS-Klasse umgesetzt, aber die generischen Alt-Variablennamen (`--accent`, `--good(-bg)`, `--bad(-bg)`, `--warn(-bg)`), die der Grossteil des bestehenden Stylesheets bereits nutzte, als Aliase auf die neuen oklch-Tokens umgehaengt statt jede einzelne Regel auf die neuen Tokennamen umzubenennen | Identisches optisches Ergebnis, deutlich kleinere Aenderungsflaeche im bestehenden CSS, geringeres Risiko fuer die JS-Verzahnung |
 | 06.09.2026 | Hero-Kennzahlen bekommen keine Bild-Icons, sondern kleine goldgerahmte Buchstaben-Kacheln (W/S/F/G), rein per CSS `nth-child` | Keine Icon-Assets fuer die Hero-Kennzahlen vorhanden, kein Format dafuer spezifiziert; die Reihenfolge der vier Spalten in `renderHero()` ist stabil, deshalb ohne JS-Aenderung ueber CSS adressierbar |
+| 06.09.2026 | Icon-Kachel im grafischen Bauplan: eigener CSS-Rahmen (`--lvl0`..`--lvl4`) entfernt, stattdessen `@<Stufe>`-Suffix an der Render-Dienst-URL fuer den echten spielinternen Farbschimmer/Rauten, Icon-Groesse `size=48` auf `128` erhoeht | Nutzer-Feedback: Icon wirkte unscharf, und der eigene Rahmen war ueberfluessig, sobald das echte Icon den Verzauberungsgrad ohnehin zeigt. Text-Badge "T4.3" bleibt (Nutzer-Wunsch), nur der Rahmen fiel weg |

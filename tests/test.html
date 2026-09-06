@@ -1775,28 +1775,38 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   // -----------------------------------------------------------------------
   (function () {
     pruefe(
-      "itemIconUrl: Realm-unabhaengiger Render-Dienst, korrekte uniquename und Standardgroesse 48",
-      UI.itemIconUrl("T4_HEAD_CLOTH_ROYAL", 0) === "https://render.albiononline.com/v1/item/T4_HEAD_CLOTH_ROYAL.png?count=1&quality=1&size=48",
-      UI.itemIconUrl("T4_HEAD_CLOTH_ROYAL", 0)
+      "itemIconUrl: Realm-unabhaengiger Render-Dienst, korrekte uniquename, Stufe-0-Suffix und Standardgroesse 128",
+      UI.itemIconUrl("T4_HEAD_CLOTH_ROYAL", 0, 0) === "https://render.albiononline.com/v1/item/T4_HEAD_CLOTH_ROYAL@0.png?count=1&quality=1&size=128",
+      UI.itemIconUrl("T4_HEAD_CLOTH_ROYAL", 0, 0)
     );
     pruefe(
       "itemIconUrl: qualitaetsIndex 0/undefined ergibt Render-Qualitaet 1 (Normal), NICHT 0",
-      UI.itemIconUrl("X", 0).indexOf("quality=1") !== -1 && UI.itemIconUrl("X", undefined).indexOf("quality=1") !== -1
+      UI.itemIconUrl("X", 0, 0).indexOf("quality=1") !== -1 && UI.itemIconUrl("X", undefined, 0).indexOf("quality=1") !== -1
     );
     pruefe(
       "itemIconUrl: qualitaetsIndex 3 (Exzellent, 0-basiert) ergibt Render-Qualitaet 4 (1-basiert) - die im Auftrag hervorgehobene +1-Umrechnung",
-      UI.itemIconUrl("X", 3).indexOf("quality=4") !== -1,
-      UI.itemIconUrl("X", 3)
+      UI.itemIconUrl("X", 3, 0).indexOf("quality=4") !== -1,
+      UI.itemIconUrl("X", 3, 0)
     );
     pruefe(
       "itemIconUrl: qualitaetsIndex 4 (Meisterwerk) ergibt Render-Qualitaet 5, den laut Aufgabenstellung hoechsten gueltigen Wert",
-      UI.itemIconUrl("X", 4).indexOf("quality=5") !== -1,
-      UI.itemIconUrl("X", 4)
+      UI.itemIconUrl("X", 4, 0).indexOf("quality=5") !== -1,
+      UI.itemIconUrl("X", 4, 0)
     );
     pruefe(
       "itemIconUrl: uniquename wird URL-kodiert (defensiv, falls je ein Sonderzeichen vorkaeme)",
-      UI.itemIconUrl("A&B", 0).indexOf("A%26B") !== -1,
-      UI.itemIconUrl("A&B", 0)
+      UI.itemIconUrl("A&B", 0, 0).indexOf("A%26B") !== -1,
+      UI.itemIconUrl("A&B", 0, 0)
+    );
+    pruefe(
+      "itemIconUrl: Stufe haengt als @<Stufe> an die Item-ID (Nutzer-Feedback 06.09.2026: liefert den echten spielinternen Verzauberungs-Farbschimmer/Rauten)",
+      UI.itemIconUrl("X", 0, 3).indexOf("X@3.png") !== -1,
+      UI.itemIconUrl("X", 0, 3)
+    );
+    pruefe(
+      "itemIconUrl: fehlende/0 Stufe ergibt @0, nicht ohne Suffix (einheitliches Format, Dienst akzeptiert @0)",
+      UI.itemIconUrl("X", 0, undefined).indexOf("X@0.png") !== -1,
+      UI.itemIconUrl("X", 0, undefined)
     );
 
     pruefe("bgBadgeInfo: kaufen -> Label 'Kaufen', Farbklasse kn-badge-kaufen", JSON.stringify(UI.bgBadgeInfo({ typ: "kaufen" })) === JSON.stringify({ cls: "kn-badge-kaufen", label: "Kaufen" }));
