@@ -294,6 +294,16 @@ const UI = (function () {
     return n == null || !isFinite(n) ? "-" : n.toLocaleString("de-DE", { maximumFractionDigits: 1 });
   }
 
+  /**
+   * Kompakte Stueckzahl fuers Icon-Badge der grafischen Bauplan-Ansicht
+   * (Nutzer-Feedback 06.09.2026: "prägnant, nicht mit zwei Nachkommastellen"):
+   * toLocaleString rundet auf maximal 2 Nachkommastellen, laesst aber
+   * ueberfluessige Nullen weg ("2" bleibt "2", "1.5" wird "1,5").
+   */
+  function formatMengeKompakt(n) {
+    return n.toLocaleString("de-DE", { maximumFractionDigits: 2 }) + "×";
+  }
+
   function formatProzent(n) {
     return n.toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " %";
   }
@@ -603,6 +613,10 @@ const UI = (function () {
 
     function nameVon(uniquename) {
       return (REZEPTGRAPH.namen && REZEPTGRAPH.namen[uniquename]) || uniquename;
+    }
+
+    function tierVon(uniquename) {
+      return (REZEPTGRAPH.items[uniquename] && REZEPTGRAPH.items[uniquename].t) || 0;
     }
 
     function setStatus(text, cls) {
@@ -1549,6 +1563,16 @@ const UI = (function () {
      * Ladefehler (Nutzer-Entscheidung 5): der error-Handler entfernt das
      * <img> ersatzlos, das Kaestchen bleibt ohne Icon, der Name bleibt
      * sichtbar.
+     *
+     * Icon-Ueberarbeitung (Nutzer-Feedback 06.09.2026): Rahmenfarbe zeigt die
+     * Verzauberungsstufe (0 grau .. 4 gold, s. --lvl0.."--lvl4 in
+     * Kostenrechner.html), ein einzelnes Badge oben links traegt "T<Tier>.<Stufe>"
+     * statt der reinen Textangabe im Namen, ein Stueckzahl-Badge oben rechts
+     * (nur bei echten Mengenkanten, s. kante.menge) ersetzt die bisherige
+     * separate kn-menge-Beschriftung neben dem Verbindungsstrich. Bei Stufe 0
+     * faellt der Punkt weg (dieselbe Konvention wie beim kn-name-Text unten:
+     * "T4" statt "T4.0"), damit Kaufen-Token ohne Verzauberungsstufe nicht
+     * faelschlich ".0" zeigen.
      */
     function bgCard(weg, r, kante) {
       const badge = bgBadgeInfo(weg);
@@ -1557,13 +1581,30 @@ const UI = (function () {
       card.title = bgTooltipFuer(weg, r, kante);
 
       if (weg.item) {
+        const wrap = document.createElement("div");
+        wrap.className = "bg-ic-wrap";
+        wrap.style.setProperty("--ic-color", "var(--lvl" + (weg.stufe || 0) + ")");
+        const slot = document.createElement("div");
+        slot.className = "bg-slot";
         const img = document.createElement("img");
         img.className = "bg-icon";
         img.loading = "lazy";
         img.alt = "";
         img.src = itemIconUrl(weg.item, weg.qualitaet);
         img.addEventListener("error", () => img.remove());
-        card.appendChild(img);
+        slot.appendChild(img);
+        wrap.appendChild(slot);
+        const lvlBadge = document.createElement("span");
+        lvlBadge.className = "bg-ic-lvl";
+        lvlBadge.textContent = "T" + tierVon(weg.item) + (weg.stufe ? "." + weg.stufe : "");
+        wrap.appendChild(lvlBadge);
+        if (kante && kante.menge != null) {
+          const qtyBadge = document.createElement("span");
+          qtyBadge.className = "bg-ic-qty";
+          qtyBadge.textContent = formatMengeKompakt(kante.menge);
+          wrap.appendChild(qtyBadge);
+        }
+        card.appendChild(wrap);
       }
 
       const info = document.createElement("div");
@@ -1648,11 +1689,11 @@ const UI = (function () {
 
       if (weg.typ === "craften") {
         (weg.zutaten || []).forEach((z) =>
-          anhaengen(z.weg, { label: z.menge.toFixed(2) + "x", ausschluss: !!z.ruecklaufAusgeschlossen })
+          anhaengen(z.weg, { menge: z.menge, ausschluss: !!z.ruecklaufAusgeschlossen })
         );
       } else if (weg.typ === "verzaubern") {
         anhaengen(weg.vorstufe, { label: "Vorstufe" });
-        (weg.materialien || []).forEach((m) => anhaengen(m.weg, { label: m.menge + "x" }));
+        (weg.materialien || []).forEach((m) => anhaengen(m.weg, { menge: m.menge }));
       } else if (weg.typ === "reroll") {
         anhaengen(weg.basis, { label: "Normal beschaffen" });
       }

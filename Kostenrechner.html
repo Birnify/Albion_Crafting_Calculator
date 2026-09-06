@@ -10,6 +10,9 @@
   --accent:#1f5fa8; --accent-soft:#e8f0fa;
   --good:#0f7a45; --good-bg:#e4f5ec; --bad:#b3261e; --bad-bg:#fdeceb;
   --warn:#8a5a00; --warn-bg:#fdf3e0; --head:#1f3864;
+  /* Verzauberungsstufe 0-4 im Icon-Rahmen der grafischen Bauplan-Ansicht
+     (Nutzer-Vorgabe 06.09.2026: 0 grau, 1 gruen, 2 blau, 3 lila, 4 gold). */
+  --lvl0:#8b95a5; --lvl1:#2f9e57; --lvl2:#2f6fd8; --lvl3:#8a4fd8; --lvl4:#c99a2e;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
@@ -17,6 +20,7 @@
     --accent:#6aa9e8; --accent-soft:#1e2c3d;
     --good:#5fd39a; --good-bg:#14301f; --bad:#f08a82; --bad-bg:#33191a;
     --warn:#e0b25f; --warn-bg:#312709; --head:#243352;
+    --lvl0:#9aa4b2; --lvl1:#5fd39a; --lvl2:#6aa9e8; --lvl3:#b48aef; --lvl4:#e0b25f;
   }
 }
 *{box-sizing:border-box}
@@ -184,7 +188,16 @@ details>.body{padding:0 20px 20px}
                    background:var(--panel);border-radius:8px;padding:6px 10px;min-width:0}
 .bg-baum summary .bg-card{cursor:pointer}
 .bg-baum summary .bg-card:hover{background:var(--accent-soft)}
-.bg-baum .bg-icon{width:44px;height:44px;object-fit:contain;flex:none;border-radius:4px;background:var(--bg)}
+.bg-baum .bg-ic-wrap{position:relative;flex:none;width:64px;height:64px}
+.bg-baum .bg-slot{width:100%;height:100%;border-radius:6px;overflow:hidden;
+  border:3px solid var(--ic-color,var(--line));background:var(--bg)}
+.bg-baum .bg-icon{width:100%;height:100%;object-fit:cover;display:block;transform:scale(1.22)}
+.bg-baum .bg-ic-lvl{position:absolute;top:-7px;left:-7px;font:800 10px/1 "Segoe UI",Arial,sans-serif;
+  color:#1a2230;background:var(--ic-color,var(--dim));padding:2px 5px;border-radius:4px;
+  box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.bg-baum .bg-ic-qty{position:absolute;top:-7px;right:-7px;font:800 10.5px/1 "Segoe UI",Arial,sans-serif;
+  color:#1a2230;background:#e0b530;padding:2px 5px;border-radius:4px;
+  box-shadow:0 1px 3px rgba(0,0,0,.35)}
 .bg-baum .bg-info{display:flex;flex-direction:column;gap:3px;min-width:0}
 .bg-baum .bg-name-zeile{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;white-space:nowrap}
 .bg-baum .bg-kosten-zeile{display:flex;align-items:center;gap:8px;white-space:nowrap}
