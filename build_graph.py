@@ -214,6 +214,47 @@ def has_own_recipe(entry):
     return False
 
 
+# Root-Filter (06.09.2026): Sieg-Emote-Aufladungen und aehnliche kosmetische
+# Nicht-Crafting-Items haben im Dump technisch ebenfalls ein Rezeptfeld
+# (has_own_recipe() wuerde sie also als Ausgangspunkt/Root akzeptieren), sind
+# aber kein echtes Spieler-Crafting. Als Root eingesammelt reissen sie ihre
+# eigenen Zutaten mit in den Graph und landen als Eigenpreis-Kandidat, obwohl
+# sie fachlich nichts mit "Make or Buy" zu tun haben.
+#
+# Empirisch am Dump geprueft, nicht geraten: alle vom Nutzer genannten
+# Beispiele (Aufladung des Sieg-Emotes "Controllerbanner"/"Hammer"/
+# "Hoellentor"/"Mobilversionbanner"/"Schwert" usw.) tragen
+# @shopcategory="vanity" und @shopsubcategory1="killemotes". Dieselbe
+# "vanity"-Kategorie deckt daneben weitere rein kosmetische Familien ab
+# (Avatare, Avatarrahmen, kosmetische Ruestungs-/Waffen-/Reittier-/
+# Umhang-Skins), die ebenfalls kein Spieler ueber diesen Rechner beschafft.
+# Gegenprobe: keines der ausgeschlossenen "vanity"-Items wird von irgendeinem
+# verbleibenden (nicht-vanity) Rezept als Zutat referenziert, es verschwindet
+# also vollstaendig, statt nur als Root zu fehlen und trotzdem ueber eine
+# Zutatenreferenz wieder hereinzukommen. Kandidatenliste dadurch von 365 auf
+# rechnerisch 118 Eintraege gesunken, echte Zutaten wie
+# QUESTITEM_TOKEN_ROYAL_T4 bleiben unveraendert im Graph.
+#
+# Zusaetzlich ausgeschlossen: interne Gamemaster-/Debug-Items (Name enthaelt
+# "GAMEMASTER", z.B. UNIQUE_INTERNAL_HEAD_GAMEMASTER), ebenfalls nie von
+# einem echten Rezept referenziert.
+#
+# Ausdruecklich NICHT hier gefiltert: Items ohne @craftingcategory oder ohne
+# @tradable, die als Zutat in einem echten Rezept vorkommen (z.B. Fischsauce,
+# GvG-/Fraktionsmarken, Arena-Kristall). Die bleiben im Graph und laufen
+# weiterhin ueber find_non_tradeable_candidates() in die Eigenpreis-Pflege,
+# das ist dort korrekt so.
+ROOT_EXCLUDE_SHOPCATEGORIES = {"vanity"}
+
+
+def is_excluded_root(name, entry):
+    if entry.get("@shopcategory") in ROOT_EXCLUDE_SHOPCATEGORIES:
+        return True
+    if "GAMEMASTER" in name:
+        return True
+    return False
+
+
 def build_node(entry):
     # Item-Knoten: t=tier, cc=craftingcategory, iv=itemvalue, el=eigene
     # Verzauberungsstufe, r=baseRecipes, e=enchantments je Stufe (s. parse_enchantments)
@@ -261,7 +302,11 @@ def collect_ingredient_refs(node):
 
 
 def build_graph(index):
-    roots = [name for name, entry in index.items() if has_own_recipe(entry)]
+    roots = [
+        name
+        for name, entry in index.items()
+        if has_own_recipe(entry) and not is_excluded_root(name, entry)
+    ]
     nodes = {}
     missing = set()
     seen = set(roots)

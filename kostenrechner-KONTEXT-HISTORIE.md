@@ -7,6 +7,108 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Komplettes visuelles Redesign, Albion-Theme, 06.09.2026, v2.0.0)
+
+**Auftrag:** die gesamte Oberfläche (Suche/Filter, Hero-Ergebnis, Bauplan
+Text, Bauplan Grafisch, Alle-Wege-Tabelle, Einstellungen) auf ein dunkles
+Fantasy-/Albion-Online-Theme umstellen statt des bisherigen hellen
+Funktions-Looks. Verbindliche Spezifikation **`design.md`** (neu, aus einem
+im Hauptgespräch abgenommenen Claude-Design-Mockup, 5 Artboards) mit
+oklch-Farbtokens, Cinzel/Manrope-Typografie, `.gp-panel`-Rahmenkomponente,
+Banner, Hero-Kachel, Badges, Tabellen-/Eingabefeld-Stil. Bild-Assets
+`assets/lymhurst-bg.jpg` (Banner) und `assets/radiantwilds-bg.jpg`
+(unbenutzt, laut design.md kein separates Cover in der echten App) neu im
+Repo. Reines Optik-Redesign: keine neue Cover-Seite, keine Änderung an
+Rezeptdaten/API/Rechenkern/Testlogik, kein neues Feature.
+
+**Umgesetzt, ausschließlich `Kostenrechner.html` (CSS + Markup):** `js/*.js`
+komplett unangetastet, weil alle benötigten Klassennamen (`kn-badge-*`,
+`bg-*`, `pill`, `dreifach`, `klein-tbl`, ...) bereits stabil und generisch
+genug waren, um sie rein über CSS neu einzufärben, ohne die
+DOM-Erzeugung in `js/ui.js` anzufassen. Alle 49 von `js/ui.js` per
+`getElementById` referenzierten IDs erhalten (per Skript gegengeprüft).
+
+- **Tokens:** `:root` auf die oklch-Werte aus design.md umgestellt
+  (`--bg`/`--bg-2`/`--panel`/`--panel-2`/`--line`/`--line-strong`/`--text`/
+  `--dim`/`--gold`/`--gold-dim`/`--green`/`--purple`/`--teal`/`--red`,
+  `--lvl0`..`--lvl4`). Das bisherige `@media prefers-color-scheme`-Umschalten
+  entfernt, die App ist jetzt durchgehend dunkel. Die generischen Alt-Namen
+  (`--accent`, `--good(-bg)`, `--bad(-bg)`, `--warn(-bg)`), die der Großteil
+  des bestehenden Stylesheets bereits nutzte, wurden bewusst als **Aliase**
+  auf die neuen Tokens umgehängt (`--accent: var(--gold)` usw.) statt jede
+  einzelne Regel umzubenennen: identisches optisches Ergebnis, deutlich
+  kleinere Änderungsfläche. Explizite Direktfarben (statt Alias) nur dort,
+  wo design.md von der Alias-Zuordnung abweicht: `kn-badge-verzaubern` lila
+  (`--purple`), `kn-badge-reroll` türkis (`--teal`), `kn-badge-kaufen`/
+  `kn-badge-craften`/`kn-badge-gesperrt` folgen den Aliasen (gold/grün/rot).
+- **Typografie:** Google-Fonts-`@import` (Cinzel 600-800, Manrope 500-800).
+  Cinzel auf `h1`/`h2`/`.sek-t`/Panel-Titel (`details.gp-panel>summary`)/
+  Banner-Marke/Hero-Kicker-Label, Manrope als Grundschrift.
+- **`.gp-panel`:** neue Klasse (Verlauf `--panel-2`→`--panel`, 1px Rand,
+  Schatten, goldene Eckklammern oben links/rechts via `::before`/`::after`),
+  additiv auf die 5 Hauptcontainer gesetzt (Such-/Filter-Box, die 3
+  `<details>`-Panels Bauplan/Alle-Wege/Eigenpreis-Pflege, Einstellungen-Box).
+  Reine Zusatzklasse, keine ID/Struktur geändert.
+- **Banner:** neu, `assets/lymhurst-bg.jpg` mit `saturate(.9) brightness(.85)`,
+  abgedunkelter Verlauf, Marke "Kostenrechner" in Cinzel/Gold unten links.
+  Der bisherige sichtbare `<h1>Kostenrechner</h1>` wurde `sr-only` (Barrierefreiheit:
+  Seite behält eine echte Top-Level-Überschrift, ohne die Marke doppelt
+  sichtbar zu zeigen), `.sub`-Tagline bleibt als Fließtext unter dem Banner.
+- **Hero:** warmer oklch-Verlauf statt der alten Navy/Blau-Kombination, große
+  weiße Zahlen, goldene Kicker-Label; je Kennzahl (Weg/Silber/Fokus/Gewinn)
+  eine kleine goldgerahmte Buchstaben-Kachel (`W`/`S`/`F`/`G`) rein über
+  `nth-child`-Pseudoelemente, ohne `js/ui.js` anzufassen (Reihenfolge der 4
+  Spalten ist in `renderHero()` fest verdrahtet, also stabil adressierbar).
+- **Buttons/Segmented Control/Badges/Tabellen/Eingabefelder:** gemäß
+  design.md (goldener Primärbutton mit dunklem Text, `.mini`/`.dreifach` als
+  sekundäre Aktionen, Tabellenkopf schlank/dim statt farbiger Balken,
+  `tr.best` mit grünem linkem Akzentbalken via `box-shadow: inset`, `.pill`
+  großgeschrieben mit Farbpille, Eingabefelder auf `--bg-2` mit goldenem
+  Fokusring). Radio-Auswahl (Einkauf/Verkauf) optisch als Pille via
+  `:has(input:checked)` hervorgehoben, nativ funktional unverändert (kein
+  verstecktes Radio, reine additive Optik, degradiert bei fehlender
+  `:has()`-Unterstützung folgenlos auf normale Radios).
+- **Icon-Kachel (grafischer Bauplan, seit v1.9.0 funktional fertig):**
+  ausschließlich die Farbwerte von Hex auf die oklch-Tokens umgestellt
+  (`--lvl0`..`--lvl4`), Struktur/Crop-Faktor 1,22 unverändert wie in
+  design.md gefordert.
+
+**Bewusste Abweichungen von design.md, in `design.md` selbst im
+Änderungsprotokoll vermerkt:** kein wörtliches `.gp-panel` auf allen fünf
+Containern als einzige Quelle der Panel-Optik (siehe oben, Alias-Strategie);
+Hero-Icons als goldene Buchstaben-Kacheln statt Bild-Icons (keine
+Icon-Assets vorhanden, kein Format spezifiziert).
+
+**Getestet:** `tests/test.html` lädt `Kostenrechner.html` nicht mit (eigene,
+von der App unabhängige Testseite mit eigenem Minimal-Markup), das
+CSS-/Markup-Redesign konnte die Testsuite also strukturell nicht berühren.
+Trotzdem zur Sicherheit vollständig neu gegen den aktuellen Dateistand
+laufen lassen: eigener Node-Harness (`vm.createContext`, `document`/
+`localStorage`/`fetch`/`performance`-Stub, lädt `rezepte.js`/`js/*.js`/den
+Inline-Testblock aus `tests/test.html` cachefrei von der Platte) meldet
+**273 von 273 grün**, unverändert gegenüber v1.8.0/v1.9.0 (erwartungsgemäß,
+da kein `js/*.js` geändert wurde). Zusätzlich per Skript geprüft: alle
+Klammern im `<style>`-Block balanciert, alle 49 von `js/ui.js` benötigten
+IDs im Markup vorhanden, `<details>`/`<summary>`-Tags korrekt geschlossen.
+
+**Härtung:** `oberflaechen-pruefer` konnte **nicht** angefordert werden,
+`SendMessage`/`Agent` standen in dieser Sitzung nicht zur Verfügung (wie
+schon in mehreren Vorgänger-Zyklen, s. Historie). Ebenso kein interaktives
+Browser-Werkzeug für einen echten Rendering-Test verfügbar. Ersatzweise
+eine gründliche eigene Prüfung von Kontrast (Textfarben gegen die neuen
+dunklen Hintergründe rechnerisch abgeschätzt über die oklch-Lightness-Werte),
+Fokus-Sichtbarkeit (Eingabefelder behalten einen sichtbaren Fokusring,
+Radio-Buttons bleiben nativ und fokussierbar), und struktureller Konsistenz
+(s. "Getestet" oben). **Der Nutzer hat ausdrücklich angekündigt, das
+Ergebnis selbst live im Browser zu prüfen** - das ersetzt hier den fehlenden
+`oberflaechen-pruefer` und den fehlenden Browser-Zugriff dieser Sitzung.
+
+Versions-Schnappschuss unter `Versionen/v2.0.0 - Visuelles Redesign
+Albion-Theme/` angelegt (inkl. `design.md`, `assets/`). Git-Commit und Push
+wie im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
 ## Aktueller Stand (Bauplan grafisch als Baumdiagramm mit Item-Icons, 06.09.2026, v1.8.0)
 
 **Auftrag:** zusätzlich zur bestehenden Text-Baumansicht des Bauplans (bleibt

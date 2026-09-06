@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-06 · Version: v2.0.0 · Komplettes visuelles Redesign (Albion-Theme)
+Stand: 2026-09-06 · Version: v2.0.1 · Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,112 +21,89 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Komplettes visuelles Redesign, Albion-Theme, 06.09.2026, v2.0.0)
+## Aktueller Stand (Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt, 06.09.2026, v2.0.1)
 
-**Auftrag:** die gesamte Oberfläche (Suche/Filter, Hero-Ergebnis, Bauplan
-Text, Bauplan Grafisch, Alle-Wege-Tabelle, Einstellungen) auf ein dunkles
-Fantasy-/Albion-Online-Theme umstellen statt des bisherigen hellen
-Funktions-Looks. Verbindliche Spezifikation **`design.md`** (neu, aus einem
-im Hauptgespräch abgenommenen Claude-Design-Mockup, 5 Artboards) mit
-oklch-Farbtokens, Cinzel/Manrope-Typografie, `.gp-panel`-Rahmenkomponente,
-Banner, Hero-Kachel, Badges, Tabellen-/Eingabefeld-Stil. Bild-Assets
-`assets/lymhurst-bg.jpg` (Banner) und `assets/radiantwilds-bg.jpg`
-(unbenutzt, laut design.md kein separates Cover in der echten App) neu im
-Repo. Reines Optik-Redesign: keine neue Cover-Seite, keine Änderung an
-Rezeptdaten/API/Rechenkern/Testlogik, kein neues Feature.
+**Auftrag:** die Eigenpreis-Pflegeliste (`REZEPTGRAPH.nichtHandelbareKandidaten`,
+zuletzt 365 Eintraege) enthielt Item-Familien ohne jeden Bezug zu echtem
+Spieler-Crafting, vom Nutzer per Screenshot gezeigt: Sieg-Emote-Aufladungen
+("Aufladung des Sieg-Emotes Controllerbanner/Hammer/Hoellentor/
+Mobilversionbanner/Schwert" usw.). Ursache: `build_graph()` in
+`build_graph.py` waehlte als Graph-Wurzeln (`roots`) **jedes** Item mit
+eigenem Rezeptfeld (`has_own_recipe()`), unabhaengig davon, ob es sich um
+echtes Crafting oder um kosmetische/interne Sondermechaniken handelt. Von
+dort zieht die transitive Huelle deren Zutaten in den Graph, und
+`find_non_tradeable_candidates()` markiert sie als Eigenpreis-Kandidat.
 
-**Umgesetzt, ausschließlich `Kostenrechner.html` (CSS + Markup):** `js/*.js`
-komplett unangetastet, weil alle benötigten Klassennamen (`kn-badge-*`,
-`bg-*`, `pill`, `dreifach`, `klein-tbl`, ...) bereits stabil und generisch
-genug waren, um sie rein über CSS neu einzufärben, ohne die
-DOM-Erzeugung in `js/ui.js` anzufassen. Alle 49 von `js/ui.js` per
-`getElementById` referenzierten IDs erhalten (per Skript gegengeprüft).
+**Empirisch am Dump geprueft (nicht geraten):** alle vom Nutzer genannten
+Beispiele tragen `@shopcategory="vanity"` und `@shopsubcategory1="killemotes"`.
+Dieselbe `vanity`-Kategorie deckt zusaetzlich weitere rein kosmetische
+Familien ab (Avatare, Avatarrahmen, kosmetische Ruestungs-/Waffen-/
+Reittier-/Umhang-Skins), 270 von 4.054 bisherigen Graph-Wurzeln insgesamt.
+Gegenprobe: keines dieser `vanity`-Items wird von irgendeinem verbleibenden
+Rezept als Zutat referenziert, sie verschwinden also vollstaendig aus dem
+Graph statt nur als Wurzel zu fehlen und ueber eine Zutatenreferenz wieder
+hereinzukommen. Zusaetzlich ausgeschlossen: interne Gamemaster-/Debug-Items
+(Uniquename enthaelt `GAMEMASTER`, 4 Stueck, z. B.
+`UNIQUE_INTERNAL_HEAD_GAMEMASTER`), ebenfalls nie von einem echten Rezept
+referenziert.
 
-- **Tokens:** `:root` auf die oklch-Werte aus design.md umgestellt
-  (`--bg`/`--bg-2`/`--panel`/`--panel-2`/`--line`/`--line-strong`/`--text`/
-  `--dim`/`--gold`/`--gold-dim`/`--green`/`--purple`/`--teal`/`--red`,
-  `--lvl0`..`--lvl4`). Das bisherige `@media prefers-color-scheme`-Umschalten
-  entfernt, die App ist jetzt durchgehend dunkel. Die generischen Alt-Namen
-  (`--accent`, `--good(-bg)`, `--bad(-bg)`, `--warn(-bg)`), die der Großteil
-  des bestehenden Stylesheets bereits nutzte, wurden bewusst als **Aliase**
-  auf die neuen Tokens umgehängt (`--accent: var(--gold)` usw.) statt jede
-  einzelne Regel umzubenennen: identisches optisches Ergebnis, deutlich
-  kleinere Änderungsfläche. Explizite Direktfarben (statt Alias) nur dort,
-  wo design.md von der Alias-Zuordnung abweicht: `kn-badge-verzaubern` lila
-  (`--purple`), `kn-badge-reroll` türkis (`--teal`), `kn-badge-kaufen`/
-  `kn-badge-craften`/`kn-badge-gesperrt` folgen den Aliasen (gold/grün/rot).
-- **Typografie:** Google-Fonts-`@import` (Cinzel 600-800, Manrope 500-800).
-  Cinzel auf `h1`/`h2`/`.sek-t`/Panel-Titel (`details.gp-panel>summary`)/
-  Banner-Marke/Hero-Kicker-Label, Manrope als Grundschrift.
-- **`.gp-panel`:** neue Klasse (Verlauf `--panel-2`→`--panel`, 1px Rand,
-  Schatten, goldene Eckklammern oben links/rechts via `::before`/`::after`),
-  additiv auf die 5 Hauptcontainer gesetzt (Such-/Filter-Box, die 3
-  `<details>`-Panels Bauplan/Alle-Wege/Eigenpreis-Pflege, Einstellungen-Box).
-  Reine Zusatzklasse, keine ID/Struktur geändert.
-- **Banner:** neu, `assets/lymhurst-bg.jpg` mit `saturate(.9) brightness(.85)`,
-  abgedunkelter Verlauf, Marke "Kostenrechner" in Cinzel/Gold unten links.
-  Der bisherige sichtbare `<h1>Kostenrechner</h1>` wurde `sr-only` (Barrierefreiheit:
-  Seite behält eine echte Top-Level-Überschrift, ohne die Marke doppelt
-  sichtbar zu zeigen), `.sub`-Tagline bleibt als Fließtext unter dem Banner.
-- **Hero:** warmer oklch-Verlauf statt der alten Navy/Blau-Kombination, große
-  weiße Zahlen, goldene Kicker-Label; je Kennzahl (Weg/Silber/Fokus/Gewinn)
-  eine kleine goldgerahmte Buchstaben-Kachel (`W`/`S`/`F`/`G`) rein über
-  `nth-child`-Pseudoelemente, ohne `js/ui.js` anzufassen (Reihenfolge der 4
-  Spalten ist in `renderHero()` fest verdrahtet, also stabil adressierbar).
-- **Buttons/Segmented Control/Badges/Tabellen/Eingabefelder:** gemäß
-  design.md (goldener Primärbutton mit dunklem Text, `.mini`/`.dreifach` als
-  sekundäre Aktionen, Tabellenkopf schlank/dim statt farbiger Balken,
-  `tr.best` mit grünem linkem Akzentbalken via `box-shadow: inset`, `.pill`
-  großgeschrieben mit Farbpille, Eingabefelder auf `--bg-2` mit goldenem
-  Fokusring). Radio-Auswahl (Einkauf/Verkauf) optisch als Pille via
-  `:has(input:checked)` hervorgehoben, nativ funktional unverändert (kein
-  verstecktes Radio, reine additive Optik, degradiert bei fehlender
-  `:has()`-Unterstützung folgenlos auf normale Radios).
-- **Icon-Kachel (grafischer Bauplan, seit v1.9.0 funktional fertig):**
-  ausschließlich die Farbwerte von Hex auf die oklch-Tokens umgestellt
-  (`--lvl0`..`--lvl4`), Struktur/Crop-Faktor 1,22 unverändert wie in
-  design.md gefordert.
+**Umgesetzt in `build_graph.py`:** neue Funktion `is_excluded_root(name, entry)`
+(shopcategory in `ROOT_EXCLUDE_SHOPCATEGORIES = {"vanity"}` oder Name enthaelt
+`GAMEMASTER`), in `build_graph()` als zusaetzliche Bedingung neben
+`has_own_recipe()` bei der Wurzel-Auswahl verankert. Bewusst **nicht** an
+`find_non_tradeable_candidates()` oder an jedem erreichbaren Knoten
+angesetzt, nur an der Wurzel-Liste, damit Zutaten ohne eigene
+`craftingcategory`, die aber echte Zutaten in einem gueltigen Rezept sind
+(Fischsauce-Analogon, z. B. `QUESTITEM_TOKEN_ROYAL_T4`), nicht mit
+verschwinden. `rezepte.js` neu erzeugt: Knotenzahl 4.242 → 3.965,
+Eigenpreis-Kandidaten 365 → **118**. Stichprobe der verbleibenden 118 rein
+plausible echte Nicht-Markt-Zutaten (Fraktionsmarken, GvG-Marke, Community-
+Token, Fashion-Umhang-Freischaltungen, Kampagnientruhen-Token, Tierhaltungs-
+Jungtiere, Skillbooks). `run_self_checks()` weiterhin gruen, insbesondere
+`T4_HEAD_CLOTH_ROYAL`/`QUESTITEM_TOKEN_ROYAL_T4` unveraendert im Graph.
 
-**Bewusste Abweichungen von design.md, in `design.md` selbst im
-Änderungsprotokoll vermerkt:** kein wörtliches `.gp-panel` auf allen fünf
-Containern als einzige Quelle der Panel-Optik (siehe oben, Alias-Strategie);
-Hero-Icons als goldene Buchstaben-Kacheln statt Bild-Icons (keine
-Icon-Assets vorhanden, kein Format spezifiziert).
+**Getestet:** eigener Node-Harness (wie in frueheren Zyklen: `vm.createContext`,
+`document`/`localStorage`/`fetch`/`performance`-Stub, laedt `rezepte.js`/
+`js/*.js`/den Inline-Testblock aus `tests/test.html` cachefrei von der Platte)
+meldet **273 von 273 gruen**, unveraendert gegenueber v2.0.0 (die Pruefung
+auf die Kandidatenzahl vergleicht dynamisch gegen
+`REZEPTGRAPH.nichtHandelbareKandidaten.length`, kein Test war auf die
+Zahl 365 hartkodiert; nur die beschreibende Testbezeichnung in
+`tests/test.html` wurde von "365" auf einen zahlenunabhaengigen Wortlaut
+korrigiert). Zusaetzlich direkt gegen `rezepte.js` geprueft:
+`T1_KILL_EMOTE_FLAG_CONTROLLER_CHARGES_NONTRADABLE` (das vom Nutzer gezeigte
+Beispiel) ist verschwunden, `QUESTITEM_TOKEN_ROYAL_T4`/`T4_HEAD_CLOTH_ROYAL`
+weiterhin vorhanden, `QUESTITEM_TOKEN_ARENA_CRYSTAL`/`QUESTITEM_TOKEN_ADC_FRAME`
+weiterhin korrekt als Eigenpreis-Kandidat gelistet.
 
-**Getestet:** `tests/test.html` lädt `Kostenrechner.html` nicht mit (eigene,
-von der App unabhängige Testseite mit eigenem Minimal-Markup), das
-CSS-/Markup-Redesign konnte die Testsuite also strukturell nicht berühren.
-Trotzdem zur Sicherheit vollständig neu gegen den aktuellen Dateistand
-laufen lassen: eigener Node-Harness (`vm.createContext`, `document`/
-`localStorage`/`fetch`/`performance`-Stub, lädt `rezepte.js`/`js/*.js`/den
-Inline-Testblock aus `tests/test.html` cachefrei von der Platte) meldet
-**273 von 273 grün**, unverändert gegenüber v1.8.0/v1.9.0 (erwartungsgemäß,
-da kein `js/*.js` geändert wurde). Zusätzlich per Skript geprüft: alle
-Klammern im `<style>`-Block balanciert, alle 49 von `js/ui.js` benötigten
-IDs im Markup vorhanden, `<details>`/`<summary>`-Tags korrekt geschlossen.
+**Haerten:** `spieldaten-pruefer` und `oberflaechen-pruefer` konnten **nicht**
+angefordert werden, `SendMessage`/`Agent` standen in dieser Sitzung nicht zur
+Verfuegung (wie schon in mehreren Vorgaenger-Zyklen). Ersatzweise die
+Dump-Analyse selbst grundlegend und mit mehreren Gegenproben durchgefuehrt
+(s. oben), keine reine Behauptung uebernommen. Kein Browser-Werkzeug
+verfuegbar; ersatzweise `UI.gefilterteEigenpreisKandidaten("")` ueber
+denselben Node-Harness aufgerufen und die ersten 25 von 118 Eintraegen
+(alphabetisch, deutsche Namen) durchgesehen: ausschliesslich plausible
+Nicht-Markt-Zutaten, keine Emotes/Kosmetik/Debug-Items mehr darunter. Eine
+echte visuelle Pruefung im Browser steht noch aus.
 
-**Härtung:** `oberflaechen-pruefer` konnte **nicht** angefordert werden,
-`SendMessage`/`Agent` standen in dieser Sitzung nicht zur Verfügung (wie
-schon in mehreren Vorgänger-Zyklen, s. Historie). Ebenso kein interaktives
-Browser-Werkzeug für einen echten Rendering-Test verfügbar. Ersatzweise
-eine gründliche eigene Prüfung von Kontrast (Textfarben gegen die neuen
-dunklen Hintergründe rechnerisch abgeschätzt über die oklch-Lightness-Werte),
-Fokus-Sichtbarkeit (Eingabefelder behalten einen sichtbaren Fokusring,
-Radio-Buttons bleiben nativ und fokussierbar), und struktureller Konsistenz
-(s. "Getestet" oben). **Der Nutzer hat ausdrücklich angekündigt, das
-Ergebnis selbst live im Browser zu prüfen** - das ersetzt hier den fehlenden
-`oberflaechen-pruefer` und den fehlenden Browser-Zugriff dieser Sitzung.
+**Offene Frage, bewusst nicht entschieden (im Zweifel drin gelassen):** von
+den verbliebenen 118 Kandidaten sind 16 Tierhaltungs-/Zucht-Jungtiere
+(`T5_FARM_*_BABY`/`T8_FARM_*_BABY`, shopcategory `farming`) und mehrere
+Season-/Kampagnen-Kosmetikfamilien (z. B. `UNIQUE_LOOTCHEST_FACTIONCAMPAIGN_*`,
+Avalon-Umhang-Freischaltungen). Ob diese ebenfalls raus sollen oder als
+legitime Eigenpreis-Faelle bleiben sollen, war nicht eindeutig zu entscheiden
+und wurde deshalb **nicht** entfernt.
 
-Versions-Schnappschuss unter `Versionen/v2.0.0 - Visuelles Redesign
-Albion-Theme/` angelegt (inkl. `design.md`, `assets/`). Git-Commit und Push
-wie im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+Versions-Schnappschuss unter `Versionen/v2.0.1 - Eigenpreis-Kandidatenliste
+auf echte Crafting-Zutaten eingeschraenkt/` angelegt. Git-Commit und Push wie
+im Projekt ueblich (s. `../CLAUDE.md`, "Versionskontrolle").
 
 ---
 
-**Vorheriger Stand (v1.9.0, "Icon-Kachel im grafischen Bauplan
-ueberarbeitet") und alles davor** unverkürzt nach
-`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
-"Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v2.0.0, "Komplettes visuelles Redesign Albion-Theme")
+und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
+ausgelagert (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
 
@@ -149,12 +126,18 @@ Rechenkern-/Regeln-/Preise-Code geaendert, keine neuen Dateien) plus
 "Icon-Kachel im grafischen Bauplan ueberarbeitet" (v1.9.0, `js/ui.js`/
 `Kostenrechner.html`) plus "Komplettes visuelles Redesign, Albion-Theme"
 (v2.0.0, ausschliesslich `Kostenrechner.html` CSS+Markup, `js/*.js` und
-`tests/test.html` unveraendert, neue Dateien `design.md`/`assets/`):
+`tests/test.html` unveraendert, neue Dateien `design.md`/`assets/`) plus
+"Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt"
+(v2.0.1, nur `build_graph.py`/`rezepte.js` (neu erzeugt)/`tests/test.html`
+(eine Testbezeichnung angepasst), kein Rechenkern-/Regeln-/UI-Code geaendert):
 
 ```
 Kostenrechner/
-  build_graph.py            fertig (P1, P2: el-Feld ergaenzt), seither unveraendert
-  rezepte.js                erzeugt (P1, P2), nicht von Hand bearbeiten
+  build_graph.py            fertig (P1, P2: el-Feld ergaenzt); Root-Filter
+                              is_excluded_root() gegen kosmetische/interne
+                              Nicht-Crafting-Items (vanity-Shopkategorie,
+                              GAMEMASTER-Items) v2.0.1
+  rezepte.js                erzeugt (P1, P2, v2.0.1 neu erzeugt), nicht von Hand bearbeiten
   Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0; Fokus-Regel-
                               Tabelle + Fokus-Schalter im Bauplan v1.2.0; Qualitaet-Dropdown
                               + Qualitaets-Chancenpunkte-Block v1.4.0; Schicksalsbrett-
@@ -241,7 +224,10 @@ Kostenrechner/
   Versionen/v1.8.0 - Bauplan grafisch als Baumdiagramm mit Item-Icons/
   Versionen/v1.9.0 - Icon-Kachel im grafischen Bauplan ueberarbeitet/
   Versionen/v2.0.0 - Visuelles Redesign Albion-Theme/
-  tests/test.html           273 Tests, Offline-Selbsttests + 2 Live-Abschnitte, unveraendert seit v1.7.0
+  Versionen/v2.0.1 - Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt/
+  tests/test.html           273 Tests, Offline-Selbsttests + 2 Live-Abschnitte; Testrahmen/
+                              -logik unveraendert seit v1.7.0, v2.0.1 nur eine Testbezeichnung
+                              von "365" auf einen zahlenunabhaengigen Wortlaut korrigiert
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -308,7 +294,19 @@ zweite Punkt („Bekannte Grenze der Preisquelle") wurde im Zyklus
 05.09.2026) zur Hälfte umgesetzt (s. "Aktueller Stand" oben) und ist deshalb
 hier ebenfalls entfernt.
 
-1. **Noch offener Rest aus dem v1.7.0-Zyklus: Wortlaut-Alternative nicht
+1. **Offen aus dem v2.0.1-Zyklus: Tierhaltung/Zucht und Season-Kosmetik in der
+   Eigenpreis-Pflegeliste, bewusst nicht entschieden.** Nach dem Root-Filter
+   auf `@shopcategory=="vanity"` und `GAMEMASTER`-Items (365 → 118 Kandidaten,
+   s. "Aktueller Stand") bleiben u. a. 16 Tierhaltungs-/Zucht-Jungtiere
+   (`T5_FARM_*_BABY`/`T8_FARM_*_BABY`) und mehrere Season-/Kampagnen-
+   Kosmetikfamilien (`UNIQUE_LOOTCHEST_FACTIONCAMPAIGN_*`, Avalon-Umhang-
+   Freischaltungen) in der Liste. Nicht klar entscheidbar, ob das echte
+   Eigenpreis-Faelle sind oder ebenfalls raus sollten; im Zweifel drin
+   gelassen statt geraten. Falls gewuenscht: Nutzer-Entscheidung je Familie,
+   dann `ROOT_EXCLUDE_SHOPCATEGORIES`/`is_excluded_root()` in
+   `build_graph.py` gezielt erweitern.
+
+2. **Noch offener Rest aus dem v1.7.0-Zyklus: Wortlaut-Alternative nicht
    umgesetzt.** Die ursprüngliche Backlog-Notiz nannte zwei Ideen: (a) den
    Wortlaut „gesperrt" auf etwas wie „kein bei AODP erfasster Preis" ändern,
    (b) `history/`-Handelsvolumen als Zusatzsignal nutzen. Die vier
@@ -317,7 +315,7 @@ hier ebenfalls entfernt.
    der Wortlaut angepasst werden soll (z. B. nur bei `ursprungsTyp==="kaufen"`
    ohne jeden Preisdatensatz, oder generell).
 
-2. **Fokuswert-Verdacht aus der v1.5.2-Diagnose, noch nicht durch den Nutzer
+3. **Fokuswert-Verdacht aus der v1.5.2-Diagnose, noch nicht durch den Nutzer
    bestätigt.** Der gemeldete Fokus-Anstieg (754,9 → 1.233,5) ließ sich mit
    `fokuswert:0` rechnerisch nicht reproduzieren (s. `kostenrechner-KONTEXT-HISTORIE.md`,
    Abschnitt "Aktueller Stand (Fokus-Monotonie-Regressionstest ..., v1.5.2)"), wohl
@@ -337,9 +335,10 @@ hier ebenfalls entfernt.
   auf Lager hat ("kostet mich nichts mehr"). In P6 bewusst nicht gelöst,
   `eigenpreisSetzen(id, 0)` löscht weiterhin den Eintrag. Falls gewünscht:
   eigene, klar gekennzeichnete Funktion statt eines überladenen Preisfelds.
-- 21 von 365 Kandidaten in der Eigenpreis-Pflegeliste haben keinen deutschen
-  Namen (`REZEPTGRAPH.namen[id]` fehlt, z. B. `QUESTITEM_TOKEN_ARENA_CRYSTAL`)
-  und zeigen stattdessen ihre ID. Nicht nachgebessert, da `build_graph.py`/die
+- 11 von 118 Kandidaten (Stand v2.0.1, vorher 21 von 365) in der
+  Eigenpreis-Pflegeliste haben keinen deutschen Namen
+  (`REZEPTGRAPH.namen[id]` fehlt, z. B. `QUESTITEM_TOKEN_ARENA_CRYSTAL`) und
+  zeigen stattdessen ihre ID. Nicht nachgebessert, da `build_graph.py`/die
   Namensquelle betroffen wäre.
 
 **Browser-Vorschau, Stand 05.09.2026 (wichtig für die nächste Sitzung):**

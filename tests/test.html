@@ -744,7 +744,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 
     // ---- P6: Eigenpreis-Pflege ----
     pruefe(
-      "ui: gefilterteEigenpreisKandidaten(leer) liefert alle 365 Kandidaten aus rezepte.js",
+      "ui: gefilterteEigenpreisKandidaten(leer) liefert alle Kandidaten aus rezepte.js (Zahl schwankt mit dem Dump-Stand, s. build_graph.py Root-Filter)",
       UI.gefilterteEigenpreisKandidaten("").length === (REZEPTGRAPH.nichtHandelbareKandidaten || []).length,
       String(UI.gefilterteEigenpreisKandidaten("").length)
     );
