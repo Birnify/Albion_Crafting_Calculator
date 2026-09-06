@@ -1352,10 +1352,15 @@ const UI = (function () {
       }
 
       if (weg.typ === "kaufen") {
-        const details = document.createElement("details");
-        details.open = tiefe < 1;
-        const summary = document.createElement("summary");
-        summary.className = "zeile-kaufen";
+        // Kein <details>/<summary> hier (anders als reroll/craften unten):
+        // ein Kaufen-Knoten hat keine Unterknoten, es gaebe nichts zum
+        // Auf-/Zuklappen. Nutzer-Fund 06.09.2026: der bisherige <details>-
+        // Aufklapp-Pfeil suggerierte trotzdem einen Baum darunter und war
+        // beim Klicken ein verwirrender Leerlauf-Effekt ("ich bekomme hier
+        // nichts wieder aufgeklappt"). Reine <div> mit derselben Optik statt
+        // eines <details>-Wrappers behebt das strukturell.
+        const summary = document.createElement("div");
+        summary.className = "zeile-kaufen kn-blatt";
         const alterInfo = alterFuerMarktId(weg.marktId);
         const zeile = document.createElement("div");
         zeile.className = "kn-zeile";
@@ -1378,8 +1383,7 @@ const UI = (function () {
         detail.className = "kn-detail";
         detail.innerHTML = (weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf") + altHtml;
         summary.appendChild(detail);
-        details.appendChild(summary);
-        wrap.appendChild(details);
+        wrap.appendChild(summary);
         return wrap;
       }
 

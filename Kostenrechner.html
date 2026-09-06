@@ -196,6 +196,12 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
                        border-radius:8px;list-style:none}
 .baum details>summary:hover{background:var(--accent-soft)}
 .baum details>summary::before{margin-right:6px;font-size:11px}
+/* Kaufen-Blattknoten (kein <details>, s. baueKnoten() in ui.js): hat keine
+   Unterknoten, deshalb keine <details>-Verpackung mit taeuschendem
+   Aufklapp-Pfeil. Optik entspricht 1:1 der von details/summary oben,
+   nur ohne den Pfeil. */
+.baum .kn-blatt{border:1px solid var(--line);background:var(--panel);margin:0 0 6px;
+                 border-radius:8px;padding:8px 10px;font-weight:400;font-size:13px}
 .baum .body{padding:6px 0 2px 20px;border-left:1px dotted var(--line);margin-left:15px}
 .baum .kn-zeile{display:flex;align-items:center;flex-wrap:wrap;gap:5px 8px}
 .baum .kn-zeile-gesperrt{border:1px solid var(--red);background:var(--bad-bg);
