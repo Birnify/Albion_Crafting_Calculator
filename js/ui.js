@@ -1633,6 +1633,10 @@ const UI = (function () {
         wrap.appendChild(slot);
         const lvlBadge = document.createElement("span");
         lvlBadge.className = "bg-ic-lvl";
+        // Nutzer-Wunsch 06.09.2026: das "T4.3"-Badge (nicht der entfernte
+        // Icon-Rahmen) traegt die Stufenfarbe, dieselbe Palette wie die
+        // Icon-Ueberarbeitung davor (0 grau .. 4 gold).
+        lvlBadge.style.setProperty("--ic-lvl-color", ["var(--dim)", "var(--green)", "var(--blue)", "var(--purple)", "var(--gold)"][weg.stufe || 0]);
         lvlBadge.textContent = "T" + tierVon(weg.item) + (weg.stufe ? "." + weg.stufe : "");
         wrap.appendChild(lvlBadge);
         if (kante && kante.menge != null) {
