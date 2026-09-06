@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-06 · Version: v1.8.0 · Bauplan grafisch als Baumdiagramm mit Item-Icons
+Stand: 2026-09-06 · Version: v2.0.0 · Komplettes visuelles Redesign (Albion-Theme)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,109 +21,112 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Bauplan grafisch als Baumdiagramm mit Item-Icons, 06.09.2026, v1.8.0)
+## Aktueller Stand (Komplettes visuelles Redesign, Albion-Theme, 06.09.2026, v2.0.0)
 
-**Auftrag:** zusätzlich zur bestehenden Text-Baumansicht des Bauplans (bleibt
-vollständig erhalten) eine umschaltbare grafische Ansicht, die den Bauplan als
-Baumdiagramm zeigt: Knoten als Kästchen mit Item-Icon vom offiziellen
-Render-Dienst, Name, Kosten, durch Linien verbunden. Bestätigte
-Design-Entscheidungen aus der Brainstorming-Phase: Baumrichtung **links nach
-rechts** (Wurzel links, Zweige nach rechts), Umschalter-Wahl dauerhaft in
-`localStorage` gemerkt, kein Zoom-Regler (nur Scrollen), Kästchen zeigt
-Icon+Name+Verzauberungs-/Qualitäts-Badge+Silber+Fokus+Status-Badge, Details
-(Rezept-Index, Stationsgebühr, Rückgewinnung, Preisalter) nur im
-`title`-Tooltip, Icon-Größe 40-48px, bei Ladefehler kein Platzhalterbild,
-gleiche Auf-/Zuklapp-Logik wie die Text-Ansicht.
+**Auftrag:** die gesamte Oberfläche (Suche/Filter, Hero-Ergebnis, Bauplan
+Text, Bauplan Grafisch, Alle-Wege-Tabelle, Einstellungen) auf ein dunkles
+Fantasy-/Albion-Online-Theme umstellen statt des bisherigen hellen
+Funktions-Looks. Verbindliche Spezifikation **`design.md`** (neu, aus einem
+im Hauptgespräch abgenommenen Claude-Design-Mockup, 5 Artboards) mit
+oklch-Farbtokens, Cinzel/Manrope-Typografie, `.gp-panel`-Rahmenkomponente,
+Banner, Hero-Kachel, Badges, Tabellen-/Eingabefeld-Stil. Bild-Assets
+`assets/lymhurst-bg.jpg` (Banner) und `assets/radiantwilds-bg.jpg`
+(unbenutzt, laut design.md kein separates Cover in der echten App) neu im
+Repo. Reines Optik-Redesign: keine neue Cover-Seite, keine Änderung an
+Rezeptdaten/API/Rechenkern/Testlogik, kein neues Feature.
 
-**Umgesetzte Implementierung vorgefunden, nicht neu gebaut:** eine vorherige
-Sitzung dieses Zyklus hatte die Umsetzung bereits vollständig fertiggestellt
-und war am eigenen Sitzungslimit abgebrochen, während sie gerade den
-Node-Testlauf zur eigenen Verifikation ausführte (also nach abgeschlossener
-Implementierung, mitten in Phase 3). Diese Fortsetzung hat den unveränderten
-`git diff` gegen `fada022` (v1.7.0) Zeile für Zeile geprüft, bevor irgendetwas
-angefasst wurde, und keine Abweichung von den obigen Design-Entscheidungen
-gefunden - deshalb direkt verifiziert statt neu gebaut oder verworfen.
+**Umgesetzt, ausschließlich `Kostenrechner.html` (CSS + Markup):** `js/*.js`
+komplett unangetastet, weil alle benötigten Klassennamen (`kn-badge-*`,
+`bg-*`, `pill`, `dreifach`, `klein-tbl`, ...) bereits stabil und generisch
+genug waren, um sie rein über CSS neu einzufärben, ohne die
+DOM-Erzeugung in `js/ui.js` anzufassen. Alle 49 von `js/ui.js` per
+`getElementById` referenzierten IDs erhalten (per Skript gegengeprüft).
 
-**Umgesetzt in `js/ui.js`:**
+- **Tokens:** `:root` auf die oklch-Werte aus design.md umgestellt
+  (`--bg`/`--bg-2`/`--panel`/`--panel-2`/`--line`/`--line-strong`/`--text`/
+  `--dim`/`--gold`/`--gold-dim`/`--green`/`--purple`/`--teal`/`--red`,
+  `--lvl0`..`--lvl4`). Das bisherige `@media prefers-color-scheme`-Umschalten
+  entfernt, die App ist jetzt durchgehend dunkel. Die generischen Alt-Namen
+  (`--accent`, `--good(-bg)`, `--bad(-bg)`, `--warn(-bg)`), die der Großteil
+  des bestehenden Stylesheets bereits nutzte, wurden bewusst als **Aliase**
+  auf die neuen Tokens umgehängt (`--accent: var(--gold)` usw.) statt jede
+  einzelne Regel umzubenennen: identisches optisches Ergebnis, deutlich
+  kleinere Änderungsfläche. Explizite Direktfarben (statt Alias) nur dort,
+  wo design.md von der Alias-Zuordnung abweicht: `kn-badge-verzaubern` lila
+  (`--purple`), `kn-badge-reroll` türkis (`--teal`), `kn-badge-kaufen`/
+  `kn-badge-craften`/`kn-badge-gesperrt` folgen den Aliasen (gold/grün/rot).
+- **Typografie:** Google-Fonts-`@import` (Cinzel 600-800, Manrope 500-800).
+  Cinzel auf `h1`/`h2`/`.sek-t`/Panel-Titel (`details.gp-panel>summary`)/
+  Banner-Marke/Hero-Kicker-Label, Manrope als Grundschrift.
+- **`.gp-panel`:** neue Klasse (Verlauf `--panel-2`→`--panel`, 1px Rand,
+  Schatten, goldene Eckklammern oben links/rechts via `::before`/`::after`),
+  additiv auf die 5 Hauptcontainer gesetzt (Such-/Filter-Box, die 3
+  `<details>`-Panels Bauplan/Alle-Wege/Eigenpreis-Pflege, Einstellungen-Box).
+  Reine Zusatzklasse, keine ID/Struktur geändert.
+- **Banner:** neu, `assets/lymhurst-bg.jpg` mit `saturate(.9) brightness(.85)`,
+  abgedunkelter Verlauf, Marke "Kostenrechner" in Cinzel/Gold unten links.
+  Der bisherige sichtbare `<h1>Kostenrechner</h1>` wurde `sr-only` (Barrierefreiheit:
+  Seite behält eine echte Top-Level-Überschrift, ohne die Marke doppelt
+  sichtbar zu zeigen), `.sub`-Tagline bleibt als Fließtext unter dem Banner.
+- **Hero:** warmer oklch-Verlauf statt der alten Navy/Blau-Kombination, große
+  weiße Zahlen, goldene Kicker-Label; je Kennzahl (Weg/Silber/Fokus/Gewinn)
+  eine kleine goldgerahmte Buchstaben-Kachel (`W`/`S`/`F`/`G`) rein über
+  `nth-child`-Pseudoelemente, ohne `js/ui.js` anzufassen (Reihenfolge der 4
+  Spalten ist in `renderHero()` fest verdrahtet, also stabil adressierbar).
+- **Buttons/Segmented Control/Badges/Tabellen/Eingabefelder:** gemäß
+  design.md (goldener Primärbutton mit dunklem Text, `.mini`/`.dreifach` als
+  sekundäre Aktionen, Tabellenkopf schlank/dim statt farbiger Balken,
+  `tr.best` mit grünem linkem Akzentbalken via `box-shadow: inset`, `.pill`
+  großgeschrieben mit Farbpille, Eingabefelder auf `--bg-2` mit goldenem
+  Fokusring). Radio-Auswahl (Einkauf/Verkauf) optisch als Pille via
+  `:has(input:checked)` hervorgehoben, nativ funktional unverändert (kein
+  verstecktes Radio, reine additive Optik, degradiert bei fehlender
+  `:has()`-Unterstützung folgenlos auf normale Radios).
+- **Icon-Kachel (grafischer Bauplan, seit v1.9.0 funktional fertig):**
+  ausschließlich die Farbwerte von Hex auf die oklch-Tokens umgestellt
+  (`--lvl0`..`--lvl4`), Struktur/Crop-Faktor 1,22 unverändert wie in
+  design.md gefordert.
 
-- `itemIconUrl(uniquename, qualitaetIndex)`: baut die URL des
-  Render-Diensts (`https://render.albiononline.com/v1/item/{id}.png?count=1&quality=Q&size=48`).
-  **Wichtigste Einzelheit:** der Dienst zählt Qualität 1-basiert (1=Normal),
-  die App 0-basiert (`weg.qualitaet` 0=Normal) - deshalb immer `+1`.
-  `count=1` unterdrückt den Mengen-Stapel-Aufdruck (die Menge zeigt die App
-  ohnehin separat an der Baumkante).
-- `bgBadgeInfo(weg)`: Aktionstyp-Badge (Farbe+Label), dieselbe Farbgebung wie
-  die Text-Ansicht (`kn-badge-*`).
-- `bgTooltipFuer(weg, r, kante)`/`altBeschreibungPlain()`/`wegVolumenTextPlain()`:
-  bauen den gesamten `title`-Tooltip-Text (Rezept-Index, Stationsgebühr samt
-  Gebäude, Rückgewinnung, Qualitätsweg, Kaufweg, Preisalter, Handelsvolumen,
-  nächstbeste Alternative) - Plain-Text-Varianten der bestehenden
-  HTML-Bausteine, weil `title` kein Markup erlaubt.
-- `bgCard(weg, r, kante)`: Kästchen-Inhalt (Icon, Badge, Name+Stufe,
-  Qualitäts-Badge, Silber, Fokus). Ladefehler: `img.addEventListener("error",
-  () => img.remove())` statt Platzhalterbild.
-- `baueKnotenGrafisch(weg, r, tiefe, kante)`: Baumaufbau links->rechts,
-  dieselbe Tiefenschwelle (`tiefe < 2` automatisch aufgeklappt) und dieselben
-  vier Wegtypen (craften/verzaubern/reroll/kaufen+gesperrt als Blätter) wie
-  `baueKnoten()` in der Text-Ansicht.
-- `renderBauplanGrafisch(r)`/`renderBauplan(r)`: Weiche zwischen Text- und
-  Grafisch-Ansicht über `einstellungen.bauplanAnsicht` (`"text"` Standard,
-  `"grafisch"` Opt-in), Auswahl dauerhaft in den bestehenden
-  Einstellungen-`localStorage` integriert (kein neues Schema).
+**Bewusste Abweichungen von design.md, in `design.md` selbst im
+Änderungsprotokoll vermerkt:** kein wörtliches `.gp-panel` auf allen fünf
+Containern als einzige Quelle der Panel-Optik (siehe oben, Alias-Strategie);
+Hero-Icons als goldene Buchstaben-Kacheln statt Bild-Icons (keine
+Icon-Assets vorhanden, kein Format spezifiziert).
 
-**Umgesetzt in `Kostenrechner.html`:** CSS für `.bg-*`-Klassen (Kästchen,
-Icon, Verbindungslinien als `::before`/`::after`-Pseudoelemente auf
-`.bg-child`, links->rechts durch `.bg-children` als Spalte rechts vom
-Elternkästchen), Umschalter `#bauplanAnsichtSchalter` (Text/Grafisch, `.dreifach`-
-Stil wie andere Umschalter im Projekt) neben "Alles auf-/zuklappen"/
-"Handelsvolumen laden". Keine belegten Werte/Formeln berührt.
+**Getestet:** `tests/test.html` lädt `Kostenrechner.html` nicht mit (eigene,
+von der App unabhängige Testseite mit eigenem Minimal-Markup), das
+CSS-/Markup-Redesign konnte die Testsuite also strukturell nicht berühren.
+Trotzdem zur Sicherheit vollständig neu gegen den aktuellen Dateistand
+laufen lassen: eigener Node-Harness (`vm.createContext`, `document`/
+`localStorage`/`fetch`/`performance`-Stub, lädt `rezepte.js`/`js/*.js`/den
+Inline-Testblock aus `tests/test.html` cachefrei von der Platte) meldet
+**273 von 273 grün**, unverändert gegenüber v1.8.0/v1.9.0 (erwartungsgemäß,
+da kein `js/*.js` geändert wurde). Zusätzlich per Skript geprüft: alle
+Klammern im `<style>`-Block balanciert, alle 49 von `js/ui.js` benötigten
+IDs im Markup vorhanden, `<details>`/`<summary>`-Tags korrekt geschlossen.
 
-**Getestet:** Testsuite von 261 auf **273 Tests** gewachsen (12 neue), alle im
-neuen Abschnitt "Regressionstest `UI.itemIconUrl()`/`UI.bgBadgeInfo()`": die
-+1-Qualitätsumrechnung (Index 0/undefined -> 1, Index 3 -> 4, Index 4 -> 5),
-URL-Kodierung des `uniquename`, alle fünf Badge-Zuordnungen plus
-Negativfall (`null`), und `defaultEinstellungen().bauplanAnsicht === "text"`
-als Standardwert. Alle 273 grün geprüft per eigenem Node-Harness
-(`vm.createContext`, `document`/`localStorage`/`fetch`-Stub, lädt
-`rezepte.js`/`js/*.js`/den Inline-Testblock aus `tests/test.html` cachefrei
-von der Platte, extrahiert `alleTests` über einen zweiten `vm.runInContext`-
-Lauf im selben Kontext, da `const` auf Skript-Ebene keine Eigenschaft des
-Sandbox-Objekts wird).
+**Härtung:** `oberflaechen-pruefer` konnte **nicht** angefordert werden,
+`SendMessage`/`Agent` standen in dieser Sitzung nicht zur Verfügung (wie
+schon in mehreren Vorgänger-Zyklen, s. Historie). Ebenso kein interaktives
+Browser-Werkzeug für einen echten Rendering-Test verfügbar. Ersatzweise
+eine gründliche eigene Prüfung von Kontrast (Textfarben gegen die neuen
+dunklen Hintergründe rechnerisch abgeschätzt über die oklch-Lightness-Werte),
+Fokus-Sichtbarkeit (Eingabefelder behalten einen sichtbaren Fokusring,
+Radio-Buttons bleiben nativ und fokussierbar), und struktureller Konsistenz
+(s. "Getestet" oben). **Der Nutzer hat ausdrücklich angekündigt, das
+Ergebnis selbst live im Browser zu prüfen** - das ersetzt hier den fehlenden
+`oberflaechen-pruefer` und den fehlenden Browser-Zugriff dieser Sitzung.
 
-**Zusätzlich echt im Browser geprüft** (Puppeteer, da in dieser Sitzung kein
-interaktives Browser-Werkzeug zur Verfügung stand, wohl aber Netzzugriff für
-`npm install`): `Kostenrechner.html` per `file://` geladen, Gelehrtengugel
-T4.3 und T8.3 gesucht, berechnet, auf "Grafisch" umgeschaltet, "Alles
-aufklappen" geklickt. Bestätigt per Screenshot: Baum wächst tatsächlich
-**links nach rechts** (Wurzel links, mehrstufige Verzweigung nach rechts,
-Mengenlabel wie "8.00x"/"2.00x" an den Verbindungslinien, Icons laden
-sichtbar farbig, nicht nur der Text). Bestätigt per DOM-Auswertung: `title`-
-Tooltips enthalten die volle Detailtiefe ("Rezept #1. Stationsgebuehr 461
-(Magierturm). Rueckgewinnung 43,5 %. Naechstbeste Alternative: ..."); ein
-simulierter 404 auf eine Icon-URL entfernt genau das `<img>` (7 Icons -> 6),
-das Kästchen selbst bleibt intakt, kein Platzhalter erscheint; die
-Text/Grafisch-Wahl übersteht einen Seiten-Reload (localStorage-Persistenz
-bestätigt, Schlüssel `albion_kostenrechner_einstellungen`).
-
-**Bewusste Abweichung vom Standardablauf, wie schon in v1.4.0-v1.7.0:** weder
-`SendMessage` noch `Agent` standen in dieser Sitzung zur Verfügung, die drei
-Spezialisten (`rechenkern-pruefer`, `spieldaten-pruefer`, `oberflaechen-pruefer`)
-konnten deshalb nicht angefordert werden, obwohl `oberflaechen-pruefer` (neue
-Ansicht, neuer Umschalter) fachlich angebracht gewesen wäre. Ersatzweise
-diesmal aber, anders als in v1.4.0-v1.7.0, ein **echter** Klicktest im
-gerenderten Browser per Puppeteer (s. oben) statt nur Code-Review - dieser
-Zyklus hat die in den Vorgängern offen gebliebene Lücke ("kein echter
-Klick-Test im gerenderten Browser") also geschlossen.
-
-Versions-Schnappschuss unter `Versionen/v1.8.0 - Bauplan grafisch als
-Baumdiagramm mit Item-Icons/` angelegt. Git-Commit und Push wie im Projekt
-üblich (s. `../CLAUDE.md`, "Versionskontrolle").
+Versions-Schnappschuss unter `Versionen/v2.0.0 - Visuelles Redesign
+Albion-Theme/` angelegt (inkl. `design.md`, `assets/`). Git-Commit und Push
+wie im Projekt üblich (s. `../CLAUDE.md`, "Versionskontrolle").
 
 ---
 
-**Vorheriger Stand (v1.7.0, "Handelsvolumen als Zusatzsignal bei gesperrten
-Preisen") und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
-ausgelagert (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v1.9.0, "Icon-Kachel im grafischen Bauplan
+ueberarbeitet") und alles davor** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
 
@@ -142,7 +145,11 @@ Preisen" (v1.7.0, `js/preise.js`/`js/ui.js`/`Kostenrechner.html`/
 `tests/test.html`, kein Rechenkern-/Regeln-Code geaendert, keine neuen
 Dateien) plus Feature "Bauplan grafisch als Baumdiagramm mit Item-Icons"
 (v1.8.0, `js/ui.js`/`Kostenrechner.html`/`tests/test.html`, kein
-Rechenkern-/Regeln-/Preise-Code geaendert, keine neuen Dateien):
+Rechenkern-/Regeln-/Preise-Code geaendert, keine neuen Dateien) plus
+"Icon-Kachel im grafischen Bauplan ueberarbeitet" (v1.9.0, `js/ui.js`/
+`Kostenrechner.html`) plus "Komplettes visuelles Redesign, Albion-Theme"
+(v2.0.0, ausschliesslich `Kostenrechner.html` CSS+Markup, `js/*.js` und
+`tests/test.html` unveraendert, neue Dateien `design.md`/`assets/`):
 
 ```
 Kostenrechner/
@@ -155,7 +162,10 @@ Kostenrechner/
                               #spezKnotenContainer-Panel v1.5.0; #volumenBtn +
                               .kn-volumen v1.7.0; .bg-*-CSS (grafischer Bauplan-Baum,
                               Verbindungslinien als Pseudoelemente) + #bauplanAnsichtSchalter
-                              v1.8.0): Suche, Hero,
+                              v1.8.0; Icon-Kachel-Farbwerte/-Badges v1.9.0; komplettes
+                              CSS + Banner-/`.gp-panel`-Markup auf das dunkle Albion-Theme
+                              aus design.md umgestellt, IDs/JS-Klassennamen unveraendert
+                              v2.0.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
     preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
@@ -206,6 +216,10 @@ Kostenrechner/
   kostenrechner-PLAN.md
   kostenrechner-KONTEXT.md
   kostenrechner-KONTEXT-HISTORIE.md
+  design.md                 neu v2.0.0, verbindliche Design-Spezifikation (Farben/Typografie/
+                              Bausteine), einzige Quelle fuer Design-Entscheidungen
+  assets/lymhurst-bg.jpg    neu v2.0.0, Banner Hauptseite
+  assets/radiantwilds-bg.jpg neu v2.0.0, in der App bisher unbenutzt (kein Cover, s. design.md)
   Versionen/v0.1.0 - Rezeptgraph erzeugt/
   Versionen/v0.2.0 - Preisschicht mit localStorage-Cache/
   Versionen/v0.3.0 - Rechenkern/
@@ -225,7 +239,9 @@ Kostenrechner/
   Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert gleichwertige Wege/
   Versionen/v1.7.0 - Handelsvolumen als Zusatzsignal bei gesperrten Preisen/
   Versionen/v1.8.0 - Bauplan grafisch als Baumdiagramm mit Item-Icons/
-  tests/test.html           273 Tests, Offline-Selbsttests + 2 Live-Abschnitte
+  Versionen/v1.9.0 - Icon-Kachel im grafischen Bauplan ueberarbeitet/
+  Versionen/v2.0.0 - Visuelles Redesign Albion-Theme/
+  tests/test.html           273 Tests, Offline-Selbsttests + 2 Live-Abschnitte, unveraendert seit v1.7.0
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
