@@ -111,6 +111,38 @@ def parse_ingredient(raw):
     return ing
 
 
+# Artefaktgiesserei-Umwandlung (06.09.2026, Nutzer-Fund am Beispiel
+# "Konserviertes Tierfell des Adepten"/T4_ARTEFACT_ARMOR_PLATE_KEEPER, per
+# Screenshot des Bauplans UND des offiziellen Wikis belegt): der Dump
+# kodiert das Verschmelzen von 50 Relikten zu einem ZUFAELLIGEN Artefakt
+# einer Klasse (Krieger/Magier/Jaeger, je ~9-10 moegliche Ergebnisse) als
+# stinknormales craftingrequirements-Feld auf JEDEM der ~38 moeglichen
+# Artefakte je Stufe - has_own_recipe()/build_node() lasen das bisher als
+# garantiertes 1:1-Rezept "50 Relikte -> genau dieses eine Artefakt", was
+# schlicht falsch ist: man bekommt eines von mehreren zufaellig, nicht das
+# gewaehlte. Empirisch am ganzen Graph geprueft: exakt 190 betroffene
+# Rezepte, ausnahmslos bei Items mit "ARTEFACT" im Namen, ausnahmslos genau
+# eine Zutat "*_RELIC" mit Menge 50, gleichmaessig 38 je Tier T4-T8, jedes
+# der 190 Items wird genau einmal als (bereits vorhandene, WEITERHIN
+# gueltige) alternative Kauf-Zutat eines echten Waffen-/Ruestungsrezepts
+# gebraucht. NICHT verwechseln mit der "Transmute"-Aufwertung (5 Relikte
+# einer Stufe -> 1 Relikt der naechsten Stufe, laut Wiki deterministisch,
+# eigenes Item ohne "ARTEFACT" im Namen, Menge 5 statt 50) - die bleibt
+# unangetastet. Betroffene Artefakte behalten ihren Status als kaufbare
+# Marktzutat (haben echte AODP-Marktpreise, das war nie das Problem),
+# verlieren nur die faelschliche eigene "Craften"-Option.
+GAMBLING_RECIPE_INGREDIENT_SUFFIX = "_RELIC"
+
+
+def is_gambling_recipe(name, recipe_raw):
+    if "ARTEFACT" not in name:
+        return False
+    resources = [r for r in as_list(recipe_raw.get("craftresource")) if isinstance(r, dict)]
+    if len(resources) != 1:
+        return False
+    return str(resources[0].get("@uniquename", "")).endswith(GAMBLING_RECIPE_INGREDIENT_SUFFIX)
+
+
 def parse_recipe(raw):
     recipe = {"i": [parse_ingredient(r) for r in as_list(raw.get("craftresource")) if isinstance(r, dict)]}
     focus = to_int(raw.get("@craftingfocus"), 0)
@@ -292,7 +324,10 @@ def build_node(entry):
         node["el"] = el
     cr = entry.get("craftingrequirements")
     if cr:
-        node["r"] = [parse_recipe(r) for r in as_list(cr) if isinstance(r, dict)]
+        name = entry.get("@uniquename", "")
+        recipes_raw = [r for r in as_list(cr) if isinstance(r, dict) and not is_gambling_recipe(name, r)]
+        if recipes_raw:
+            node["r"] = [parse_recipe(r) for r in recipes_raw]
     ench = parse_enchantments(entry.get("enchantments"))
     if ench:
         node["e"] = ench
