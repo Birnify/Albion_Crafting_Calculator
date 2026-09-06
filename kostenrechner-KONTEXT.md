@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-06 · Version: v2.1.0 · Preisalter-Voreinstellungen, echtes Verzauberungs-Icon
+Stand: 2026-09-06 · Version: v2.1.2 · PROTOTYPE-Items ausgeschlossen, T4.3-Badge in Stufenfarbe
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,10 +21,33 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Preisalter-Voreinstellungen, echtes Verzauberungs-Icon, 06.09.2026, v2.1.0)
+## Aktueller Stand (v2.1.0-v2.1.2, mehrere kleine inline Punkte, 06.09.2026)
 
-Drei kleine, inline (nicht ueber den Orchestrator) umgesetzte Punkte, alle
-live im Browser geprueft, 275/275 Tests gruen:
+Alle Punkte inline (nicht ueber den Orchestrator) umgesetzt, live im Browser
+geprueft, 275/275 Tests gruen:
+
+**v2.1.2, PROTOTYPE-Items ausgeschlossen:** Nutzer-Fund "HEAD_CLOTH_PROTOTYPE"
+als rohe ID statt Name in den Spezialisierungsknoten (cloth_helmet).
+`is_excluded_root()` in `build_graph.py` um "PROTOTYPE" im Namen erweitert -
+betrifft 14 Items (9 T8_*_CLOTH/LEATHER/PLATE_PROTOTYPE, 5
+UNIQUE_WEAPONMASTER_*_PROTOTYPE), empirisch als interne Test-/Platzhalter-
+Eintraege verifiziert (LocalizedNames komplett null, geliehenes Mesh, 0
+Stationsgebuehr, Spell "PROTOTYPE_CD_PENALTY"), keines als Zutat referenziert.
+Knotenzahl 3965 → 3951. **Noch offen, bewusst zurueckgestellt:** dieselbe
+Untersuchung zeigte 549 Graph-Wurzeln komplett ohne Namen (deutsch UND
+englisch) quer durch viele Item-Familien (Quest-Items, Karawanen-Handelspakete
+etc.) - deutlich groesser als die 14 PROTOTYPE-Faelle und braucht sorgfaeltige
+Fallunterscheidung wie beim vanity-Filter aus v2.0.1, dafuer als naechstes
+Orchestrator-Paket eingereiht (s. Backlog unten), nicht mit der schmaleren
+PROTOTYPE-Regel mit erledigt.
+
+**v2.1.1, T4.3-Badge in Stufenfarbe:** nachdem der eigene Icon-Rahmen in
+v2.1.0 entfernt wurde, sollte das "T4.3"-Badge selbst die Stufenfarbe tragen
+(0 grau .. 4 gold). Badge-Hintergrund per `--ic-lvl-color` (neue CSS-Variable
+`--blue` ergaenzt, die anderen Stufenfarben wiederverwenden `--green`/
+`--purple`/`--gold`/`--dim`).
+
+**v2.1.0:**
 
 - **Eigenpreis-Pflege-Text korrigiert:** die statische Beschreibung nannte
   nach der Bereinigung in v2.0.1 (365 → 118 Kandidaten) noch "365
@@ -289,6 +312,27 @@ hier ebenfalls entfernt.
    die eine erneute, tiefere Diagnose braucht (evtl. mit Zugriff auf ein
    Browser-Werkzeug, um den tatsächlichen `localStorage`-Stand der gemeldeten
    Sitzung einzusehen).
+
+4. **Naechstes Orchestrator-Paket: 549 Graph-Wurzeln komplett ohne Namen
+   (weder Deutsch noch Englisch).** Beim v2.1.2-PROTOTYPE-Fund (s.
+   "Aktueller Stand" oben) mitentdeckt: deutlich groesser als die 14
+   PROTOTYPE-Faelle, quer durch viele Item-Familien (Quest-Items wie
+   `QUESTITEM_CARAVAN_TRADEPACK_*`, Dungeon-Erfahrungs-Token
+   `QUESTITEM_EXP_TOKEN_*` usw.), meist ohne `craftingcategory`. Nicht
+   pauschal ausschliessbar wie bei "vanity" - braucht dieselbe empirische
+   Sorgfalt (Stichproben pruefen, Gegenprobe "wird als Zutat referenziert?"),
+   bevor `is_excluded_root()` erweitert wird. Vom Nutzer als naechstes Paket
+   angefordert (06.09.2026: "die 549 namenlosen Items einreihen").
+5. **Knopf zum voruebergehenden Ausschalten des Fokuseinsatzes.** Nutzer-
+   Wunsch (06.09.2026): eine Moeglichkeit, die Fokusnutzung fuer die
+   Berechnung komplett und temporaer abzuschalten (nicht dauerhaft in den
+   Einstellungen aendern). Noch nicht spezifiziert, ob das global (ein
+   Schalter fuer die ganze Berechnung) oder je Knoten gemeint ist - die App
+   hat bereits einen Fokus-Schalter je Knoten (`automatisch/immer/nie`, s.
+   `fokus-schalter`-Klasse), ein GLOBALER Kurzschalter fehlt aber. Vor der
+   Umsetzung klaeren, ob "automatisch" als Ausgangszustand gemeint ist oder
+   der zuletzt gewaehlte Zustand je Knoten erhalten bleiben soll, wenn der
+   Schalter wieder aus geht.
 
 **Kleinere offene Punkte, unverändert seit früheren Paketen:**
 
