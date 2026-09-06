@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-06 · Version: v2.0.1 · Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt
+Stand: 2026-09-06 · Version: v2.1.0 · Preisalter-Voreinstellungen, echtes Verzauberungs-Icon
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -21,89 +21,50 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 
 Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-## Aktueller Stand (Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt, 06.09.2026, v2.0.1)
+## Aktueller Stand (Preisalter-Voreinstellungen, echtes Verzauberungs-Icon, 06.09.2026, v2.1.0)
 
-**Auftrag:** die Eigenpreis-Pflegeliste (`REZEPTGRAPH.nichtHandelbareKandidaten`,
-zuletzt 365 Eintraege) enthielt Item-Familien ohne jeden Bezug zu echtem
-Spieler-Crafting, vom Nutzer per Screenshot gezeigt: Sieg-Emote-Aufladungen
-("Aufladung des Sieg-Emotes Controllerbanner/Hammer/Hoellentor/
-Mobilversionbanner/Schwert" usw.). Ursache: `build_graph()` in
-`build_graph.py` waehlte als Graph-Wurzeln (`roots`) **jedes** Item mit
-eigenem Rezeptfeld (`has_own_recipe()`), unabhaengig davon, ob es sich um
-echtes Crafting oder um kosmetische/interne Sondermechaniken handelt. Von
-dort zieht die transitive Huelle deren Zutaten in den Graph, und
-`find_non_tradeable_candidates()` markiert sie als Eigenpreis-Kandidat.
+Drei kleine, inline (nicht ueber den Orchestrator) umgesetzte Punkte, alle
+live im Browser geprueft, 275/275 Tests gruen:
 
-**Empirisch am Dump geprueft (nicht geraten):** alle vom Nutzer genannten
-Beispiele tragen `@shopcategory="vanity"` und `@shopsubcategory1="killemotes"`.
-Dieselbe `vanity`-Kategorie deckt zusaetzlich weitere rein kosmetische
-Familien ab (Avatare, Avatarrahmen, kosmetische Ruestungs-/Waffen-/
-Reittier-/Umhang-Skins), 270 von 4.054 bisherigen Graph-Wurzeln insgesamt.
-Gegenprobe: keines dieser `vanity`-Items wird von irgendeinem verbleibenden
-Rezept als Zutat referenziert, sie verschwinden also vollstaendig aus dem
-Graph statt nur als Wurzel zu fehlen und ueber eine Zutatenreferenz wieder
-hereinzukommen. Zusaetzlich ausgeschlossen: interne Gamemaster-/Debug-Items
-(Uniquename enthaelt `GAMEMASTER`, 4 Stueck, z. B.
-`UNIQUE_INTERNAL_HEAD_GAMEMASTER`), ebenfalls nie von einem echten Rezept
-referenziert.
+- **Eigenpreis-Pflege-Text korrigiert:** die statische Beschreibung nannte
+  nach der Bereinigung in v2.0.1 (365 → 118 Kandidaten) noch "365
+  Kandidaten". Live entdeckt, Zahl aus dem Satz entfernt.
+- **Preisalter-Voreinstellungen:** Buttons (10 Min./1/4/8/24/48/72 Std.)
+  neben dem Zahlenfeld "Preise hoechstens", setzen den Wert und markieren
+  sich passend zum aktuellen Feldwert als aktiv, auch nach manueller
+  Eingabe. Erster Versuch vergass, den aktiven Button nach Preset-Klick
+  neu zu markieren (nur der "input"-Pfad war verdrahtet, nicht der
+  programmatische Preset-Klick) - beim Live-Test gefunden und behoben.
+- **Echtes Verzauberungs-Icon im grafischen Bauplan:** `itemIconUrl()`
+  haengt jetzt `@<Stufe>` an die Item-ID. Live gegen den Render-Dienst
+  geklaert (Nutzer-Frage "kommst du an die farbigen Rauten/den Schimmer
+  ran?"): der `quality`-Parameter faerbt nur den INNEREN Rahmen
+  (Gegenstandsqualitaet), das `@<Stufe>`-Suffix liefert unabhaengig davon
+  den ECHTEN spielinternen Verzauberungs-Farbschimmer plus gefuellte
+  Rauten direkt im Bild. Der bisherige selbst gebaute CSS-Rahmen
+  (`--lvl0`..`--lvl4`, aus v1.9.0) ist deshalb entfernt - Nutzer-Entscheidung:
+  "echtes Icon + nur Stueckzahl-Badge", spaeter praezisiert auf "T4.3"-Badge
+  bleibt, nur der Rahmen war ueberfluessig. `size` von 48 auf 128 erhoeht
+  (sichtbar unscharf bei der 64px-Anzeigeflaeche mit Zoom-Crop).
+  **Live gefundene Ausnahme:** Zutaten mit eigenem `el`-Feld (Materialien
+  wie `T4_CLOTH_LEVEL3`, deren Stufe schon im Namen steckt, s. `marktId()`
+  in `preise.js`) liefern mit zusaetzlichem `@3`-Suffix HTTP 502 vom
+  Render-Dienst (der Markt-Dienst AODP akzeptiert dieselbe Kombination
+  durchaus, ist aber ein anderer Dienst mit anderer Konvention). Fuer
+  Items mit `el`-Feld haengt `itemIconUrl()` deshalb keinen Suffix an.
 
-**Umgesetzt in `build_graph.py`:** neue Funktion `is_excluded_root(name, entry)`
-(shopcategory in `ROOT_EXCLUDE_SHOPCATEGORIES = {"vanity"}` oder Name enthaelt
-`GAMEMASTER`), in `build_graph()` als zusaetzliche Bedingung neben
-`has_own_recipe()` bei der Wurzel-Auswahl verankert. Bewusst **nicht** an
-`find_non_tradeable_candidates()` oder an jedem erreichbaren Knoten
-angesetzt, nur an der Wurzel-Liste, damit Zutaten ohne eigene
-`craftingcategory`, die aber echte Zutaten in einem gueltigen Rezept sind
-(Fischsauce-Analogon, z. B. `QUESTITEM_TOKEN_ROYAL_T4`), nicht mit
-verschwinden. `rezepte.js` neu erzeugt: Knotenzahl 4.242 → 3.965,
-Eigenpreis-Kandidaten 365 → **118**. Stichprobe der verbleibenden 118 rein
-plausible echte Nicht-Markt-Zutaten (Fraktionsmarken, GvG-Marke, Community-
-Token, Fashion-Umhang-Freischaltungen, Kampagnientruhen-Token, Tierhaltungs-
-Jungtiere, Skillbooks). `run_self_checks()` weiterhin gruen, insbesondere
-`T4_HEAD_CLOTH_ROYAL`/`QUESTITEM_TOKEN_ROYAL_T4` unveraendert im Graph.
-
-**Getestet:** eigener Node-Harness (wie in frueheren Zyklen: `vm.createContext`,
-`document`/`localStorage`/`fetch`/`performance`-Stub, laedt `rezepte.js`/
-`js/*.js`/den Inline-Testblock aus `tests/test.html` cachefrei von der Platte)
-meldet **273 von 273 gruen**, unveraendert gegenueber v2.0.0 (die Pruefung
-auf die Kandidatenzahl vergleicht dynamisch gegen
-`REZEPTGRAPH.nichtHandelbareKandidaten.length`, kein Test war auf die
-Zahl 365 hartkodiert; nur die beschreibende Testbezeichnung in
-`tests/test.html` wurde von "365" auf einen zahlenunabhaengigen Wortlaut
-korrigiert). Zusaetzlich direkt gegen `rezepte.js` geprueft:
-`T1_KILL_EMOTE_FLAG_CONTROLLER_CHARGES_NONTRADABLE` (das vom Nutzer gezeigte
-Beispiel) ist verschwunden, `QUESTITEM_TOKEN_ROYAL_T4`/`T4_HEAD_CLOTH_ROYAL`
-weiterhin vorhanden, `QUESTITEM_TOKEN_ARENA_CRYSTAL`/`QUESTITEM_TOKEN_ADC_FRAME`
-weiterhin korrekt als Eigenpreis-Kandidat gelistet.
-
-**Haerten:** `spieldaten-pruefer` und `oberflaechen-pruefer` konnten **nicht**
-angefordert werden, `SendMessage`/`Agent` standen in dieser Sitzung nicht zur
-Verfuegung (wie schon in mehreren Vorgaenger-Zyklen). Ersatzweise die
-Dump-Analyse selbst grundlegend und mit mehreren Gegenproben durchgefuehrt
-(s. oben), keine reine Behauptung uebernommen. Kein Browser-Werkzeug
-verfuegbar; ersatzweise `UI.gefilterteEigenpreisKandidaten("")` ueber
-denselben Node-Harness aufgerufen und die ersten 25 von 118 Eintraegen
-(alphabetisch, deutsche Namen) durchgesehen: ausschliesslich plausible
-Nicht-Markt-Zutaten, keine Emotes/Kosmetik/Debug-Items mehr darunter. Eine
-echte visuelle Pruefung im Browser steht noch aus.
-
-**Offene Frage, bewusst nicht entschieden (im Zweifel drin gelassen):** von
-den verbliebenen 118 Kandidaten sind 16 Tierhaltungs-/Zucht-Jungtiere
-(`T5_FARM_*_BABY`/`T8_FARM_*_BABY`, shopcategory `farming`) und mehrere
-Season-/Kampagnen-Kosmetikfamilien (z. B. `UNIQUE_LOOTCHEST_FACTIONCAMPAIGN_*`,
-Avalon-Umhang-Freischaltungen). Ob diese ebenfalls raus sollen oder als
-legitime Eigenpreis-Faelle bleiben sollen, war nicht eindeutig zu entscheiden
-und wurde deshalb **nicht** entfernt.
-
-Versions-Schnappschuss unter `Versionen/v2.0.1 - Eigenpreis-Kandidatenliste
-auf echte Crafting-Zutaten eingeschraenkt/` angelegt. Git-Commit und Push wie
-im Projekt ueblich (s. `../CLAUDE.md`, "Versionskontrolle").
+`design.md` und `tests/test.html` entsprechend nachgezogen (Icon-Kachel-
+Abschnitt umgeschrieben, `itemIconUrl`-Tests auf die neue 3-Parameter-
+Signatur und das `el`-Verhalten erweitert). Versions-Schnappschuss unter
+`Versionen/v2.1.0 - Preisalter-Voreinstellungen und echtes Verzauberungs-Icon/`.
+Commit + Push wie ueblich.
 
 ---
 
-**Vorheriger Stand (v2.0.0, "Komplettes visuelles Redesign Albion-Theme")
-und alles davor** unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md`
-ausgelagert (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v2.0.1, "Eigenpreis-Kandidatenliste auf echte
+Crafting-Zutaten eingeschraenkt") und alles davor** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
 
 ## Dateistruktur
 

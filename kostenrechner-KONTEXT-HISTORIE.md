@@ -7,6 +7,86 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt, 06.09.2026, v2.0.1)
+
+**Auftrag:** die Eigenpreis-Pflegeliste (`REZEPTGRAPH.nichtHandelbareKandidaten`,
+zuletzt 365 Eintraege) enthielt Item-Familien ohne jeden Bezug zu echtem
+Spieler-Crafting, vom Nutzer per Screenshot gezeigt: Sieg-Emote-Aufladungen
+("Aufladung des Sieg-Emotes Controllerbanner/Hammer/Hoellentor/
+Mobilversionbanner/Schwert" usw.). Ursache: `build_graph()` in
+`build_graph.py` waehlte als Graph-Wurzeln (`roots`) **jedes** Item mit
+eigenem Rezeptfeld (`has_own_recipe()`), unabhaengig davon, ob es sich um
+echtes Crafting oder um kosmetische/interne Sondermechaniken handelt. Von
+dort zieht die transitive Huelle deren Zutaten in den Graph, und
+`find_non_tradeable_candidates()` markiert sie als Eigenpreis-Kandidat.
+
+**Empirisch am Dump geprueft (nicht geraten):** alle vom Nutzer genannten
+Beispiele tragen `@shopcategory="vanity"` und `@shopsubcategory1="killemotes"`.
+Dieselbe `vanity`-Kategorie deckt zusaetzlich weitere rein kosmetische
+Familien ab (Avatare, Avatarrahmen, kosmetische Ruestungs-/Waffen-/
+Reittier-/Umhang-Skins), 270 von 4.054 bisherigen Graph-Wurzeln insgesamt.
+Gegenprobe: keines dieser `vanity`-Items wird von irgendeinem verbleibenden
+Rezept als Zutat referenziert, sie verschwinden also vollstaendig aus dem
+Graph statt nur als Wurzel zu fehlen und ueber eine Zutatenreferenz wieder
+hereinzukommen. Zusaetzlich ausgeschlossen: interne Gamemaster-/Debug-Items
+(Uniquename enthaelt `GAMEMASTER`, 4 Stueck, z. B.
+`UNIQUE_INTERNAL_HEAD_GAMEMASTER`), ebenfalls nie von einem echten Rezept
+referenziert.
+
+**Umgesetzt in `build_graph.py`:** neue Funktion `is_excluded_root(name, entry)`
+(shopcategory in `ROOT_EXCLUDE_SHOPCATEGORIES = {"vanity"}` oder Name enthaelt
+`GAMEMASTER`), in `build_graph()` als zusaetzliche Bedingung neben
+`has_own_recipe()` bei der Wurzel-Auswahl verankert. Bewusst **nicht** an
+`find_non_tradeable_candidates()` oder an jedem erreichbaren Knoten
+angesetzt, nur an der Wurzel-Liste, damit Zutaten ohne eigene
+`craftingcategory`, die aber echte Zutaten in einem gueltigen Rezept sind
+(Fischsauce-Analogon, z. B. `QUESTITEM_TOKEN_ROYAL_T4`), nicht mit
+verschwinden. `rezepte.js` neu erzeugt: Knotenzahl 4.242 → 3.965,
+Eigenpreis-Kandidaten 365 → **118**. Stichprobe der verbleibenden 118 rein
+plausible echte Nicht-Markt-Zutaten (Fraktionsmarken, GvG-Marke, Community-
+Token, Fashion-Umhang-Freischaltungen, Kampagnientruhen-Token, Tierhaltungs-
+Jungtiere, Skillbooks). `run_self_checks()` weiterhin gruen, insbesondere
+`T4_HEAD_CLOTH_ROYAL`/`QUESTITEM_TOKEN_ROYAL_T4` unveraendert im Graph.
+
+**Getestet:** eigener Node-Harness (wie in frueheren Zyklen: `vm.createContext`,
+`document`/`localStorage`/`fetch`/`performance`-Stub, laedt `rezepte.js`/
+`js/*.js`/den Inline-Testblock aus `tests/test.html` cachefrei von der Platte)
+meldet **273 von 273 gruen**, unveraendert gegenueber v2.0.0 (die Pruefung
+auf die Kandidatenzahl vergleicht dynamisch gegen
+`REZEPTGRAPH.nichtHandelbareKandidaten.length`, kein Test war auf die
+Zahl 365 hartkodiert; nur die beschreibende Testbezeichnung in
+`tests/test.html` wurde von "365" auf einen zahlenunabhaengigen Wortlaut
+korrigiert). Zusaetzlich direkt gegen `rezepte.js` geprueft:
+`T1_KILL_EMOTE_FLAG_CONTROLLER_CHARGES_NONTRADABLE` (das vom Nutzer gezeigte
+Beispiel) ist verschwunden, `QUESTITEM_TOKEN_ROYAL_T4`/`T4_HEAD_CLOTH_ROYAL`
+weiterhin vorhanden, `QUESTITEM_TOKEN_ARENA_CRYSTAL`/`QUESTITEM_TOKEN_ADC_FRAME`
+weiterhin korrekt als Eigenpreis-Kandidat gelistet.
+
+**Haerten:** `spieldaten-pruefer` und `oberflaechen-pruefer` konnten **nicht**
+angefordert werden, `SendMessage`/`Agent` standen in dieser Sitzung nicht zur
+Verfuegung (wie schon in mehreren Vorgaenger-Zyklen). Ersatzweise die
+Dump-Analyse selbst grundlegend und mit mehreren Gegenproben durchgefuehrt
+(s. oben), keine reine Behauptung uebernommen. Kein Browser-Werkzeug
+verfuegbar; ersatzweise `UI.gefilterteEigenpreisKandidaten("")` ueber
+denselben Node-Harness aufgerufen und die ersten 25 von 118 Eintraegen
+(alphabetisch, deutsche Namen) durchgesehen: ausschliesslich plausible
+Nicht-Markt-Zutaten, keine Emotes/Kosmetik/Debug-Items mehr darunter. Eine
+echte visuelle Pruefung im Browser steht noch aus.
+
+**Offene Frage, bewusst nicht entschieden (im Zweifel drin gelassen):** von
+den verbliebenen 118 Kandidaten sind 16 Tierhaltungs-/Zucht-Jungtiere
+(`T5_FARM_*_BABY`/`T8_FARM_*_BABY`, shopcategory `farming`) und mehrere
+Season-/Kampagnen-Kosmetikfamilien (z. B. `UNIQUE_LOOTCHEST_FACTIONCAMPAIGN_*`,
+Avalon-Umhang-Freischaltungen). Ob diese ebenfalls raus sollen oder als
+legitime Eigenpreis-Faelle bleiben sollen, war nicht eindeutig zu entscheiden
+und wurde deshalb **nicht** entfernt.
+
+Versions-Schnappschuss unter `Versionen/v2.0.1 - Eigenpreis-Kandidatenliste
+auf echte Crafting-Zutaten eingeschraenkt/` angelegt. Git-Commit und Push wie
+im Projekt ueblich (s. `../CLAUDE.md`, "Versionskontrolle").
+
+---
+
 ## Aktueller Stand (Komplettes visuelles Redesign, Albion-Theme, 06.09.2026, v2.0.0)
 
 **Auftrag:** die gesamte Oberfläche (Suche/Filter, Hero-Ergebnis, Bauplan
