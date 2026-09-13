@@ -35,6 +35,18 @@ NAMES_CACHE = os.path.join(CACHE_DIR, "items_formatted.json")
 
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rezepte.js")
 
+# App-Fusion (13.09.2026): der Preisvergleich-Reiter (migriert aus dem
+# ehemals eigenstaendigen Eintopf-Rechner) braucht ALLE Items aus dem
+# Namensdump, nicht nur die ~4200 Knoten des Rezeptgraphen - er ist eine
+# reine Marktabfrage auch fuer Rohstoffe, Reittiere und Kosmetik, die nie
+# Teil eines Rezepts sind. Deshalb ein zweiter, unabhaengiger Output.
+# Qualitaetsstufen-Erkennung wie im Eintopf-Rechner belegt (13.09.2026, Dump
+# UND Live-API gegengeprueft, s. ../KONTEXT.md): nur die drei Top-Level-
+# Kategorien equipmentitem/weapon/transformationweapon kennen echte,
+# unterschiedliche Preise je Qualitaetsstufe.
+QUALITAETS_KATEGORIEN = {"equipmentitem", "weapon", "transformationweapon"}
+ITEM_NAMEN_OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "item-namen.js")
+
 # Heuristik fuer Zutaten ohne echte Marktaussicht (Arena, GvG, Fraktionen).
 # Nur eine Kandidatenliste fuer die manuelle Pruefung in P6, keine harte Wahrheit.
 NON_TRADEABLE_NAME_PATTERNS = [
@@ -521,6 +533,45 @@ def find_non_tradeable_candidates(index, nodes):
     return sorted(candidates)
 
 
+def build_item_namen_liste(names_dump, group_of):
+    """Alle Items aus dem Namensdump, je mit deutschem Namen (Fallback Englisch,
+    sonst die ID selbst) und einem Merker q=1, falls das Item Qualitaetsstufen
+    kennt. Portiert 1:1 aus der ehemaligen item_liste_holen() des eigenstaendigen
+    Eintopf-Rechners (eintopf_update.py), s. kostenrechner-KONTEXT.md."""
+    quali_ids = {uname for uname, gruppe in group_of.items() if gruppe in QUALITAETS_KATEGORIEN}
+    alle = []
+    for it in names_dump:
+        uid = it.get("UniqueName")
+        if not uid:
+            continue
+        localized = it.get("LocalizedNames") or {}
+        name = localized.get("DE-DE") or localized.get("EN-US") or uid
+        eintrag = {"id": uid, "n": name}
+        if uid in quali_ids:
+            eintrag["q"] = 1
+        alle.append(eintrag)
+    alle.sort(key=lambda x: x["n"])
+    return alle
+
+
+def write_item_namen(liste, meta):
+    payload = {"meta": meta, "alle": liste}
+    json_text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    header = (
+        "// Erzeugt von build_graph.py. Nicht von Hand bearbeiten, Aenderungen gehen beim naechsten Lauf verloren.\n"
+        f"// Stand: {meta['generated']}\n"
+        "// Komplette Namensliste ALLER Items aus dem Client-Dump (nicht nur der Rezeptgraph),\n"
+        "// fuer den Preisvergleich-Reiter (js/preisvergleich.js). q=1 markiert Items mit echten\n"
+        "// Qualitaetsstufen-Preisen, s. kostenrechner-KONTEXT.md.\n"
+    )
+    with open(ITEM_NAMEN_OUTPUT_PATH, "w", encoding="utf-8") as f:
+        f.write(header)
+        f.write("const ITEM_NAMEN = ")
+        f.write(json_text)
+        f.write(";\n")
+    return os.path.getsize(ITEM_NAMEN_OUTPUT_PATH)
+
+
 def load_names(names_dump):
     names = {}
     for entry in names_dump:
@@ -641,6 +692,28 @@ def run_self_checks(nodes):
     return ok
 
 
+def run_item_namen_self_checks(liste):
+    ok = True
+
+    def check(label, condition):
+        nonlocal ok
+        status = "OK" if condition else "FEHLER"
+        print(f"[{status}] {label}")
+        if not condition:
+            ok = False
+
+    by_id = {e["id"]: e for e in liste}
+    check("item-namen.js hat deutlich mehr als 10.000 Eintraege", len(liste) > 10000)
+    check("T4_BAG (Ausruestung) hat q=1 (kennt Qualitaetsstufen)", by_id.get("T4_BAG", {}).get("q") == 1)
+    check("T8_MEAL_STEW (Speise) hat kein q-Feld (keine Qualitaetsstufen)", "q" not in by_id.get("T8_MEAL_STEW", {}))
+    check("T4_WOOD (Rohstoff) hat kein q-Feld", "q" not in by_id.get("T4_WOOD", {}))
+    check(
+        "Liste ist nach Namen sortiert",
+        all(liste[i]["n"] <= liste[i + 1]["n"] for i in range(len(liste) - 1)),
+    )
+    return ok
+
+
 def main():
     force_refresh = "--refresh" in sys.argv
     start = time.time()
@@ -653,7 +726,7 @@ def main():
     with open(NAMES_CACHE, encoding="utf-8") as f:
         names_dump = json.load(f)
 
-    index, _group_of = load_item_index(dump)
+    index, group_of = load_item_index(dump)
     print(f"Item-Index geladen: {len(index)} Items ueber alle Gruppen")
 
     nodes, missing = build_graph(index)
@@ -685,8 +758,9 @@ def main():
     names = load_names(names_dump)
     print(f"Namenstabelle geladen: {len(names)} deutsche Namen mit EN-US Rueckfall")
 
+    generated = time.strftime("%Y-%m-%dT%H:%M:%S")
     meta = {
-        "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "generated": generated,
         "nodeCount": len(nodes),
         "recipeNodeCount": recipe_node_count,
     }
@@ -694,7 +768,13 @@ def main():
     size = write_output(nodes, names, missing, candidates, meta)
     print(f"rezepte.js geschrieben: {size / 1024:.1f} KB, {len(nodes)} Knoten")
 
+    item_namen_liste = build_item_namen_liste(names_dump, group_of)
+    item_namen_meta = {"generated": generated, "count": len(item_namen_liste)}
+    item_namen_size = write_item_namen(item_namen_liste, item_namen_meta)
+    print(f"item-namen.js geschrieben: {item_namen_size / 1024:.1f} KB, {len(item_namen_liste)} Items")
+
     ok = run_self_checks(nodes)
+    ok = ok and run_item_namen_self_checks(item_namen_liste)
     ok = ok and not cycles
     elapsed = time.time() - start
     print(f"Laufzeit: {elapsed:.1f} s")

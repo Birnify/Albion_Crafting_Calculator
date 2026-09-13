@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-06 · Version: v2.1.3 · Artefaktgiesserei-Gambling-Rezept ausgeschlossen
+Stand: 2026-09-13 · Version: v3.0.0 · App-Fusion Paket A+B: Reiterumschaltung + Preisvergleich migriert
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -12,117 +12,108 @@ Stand: 2026-09-06 · Version: v2.1.3 · Artefaktgiesserei-Gambling-Rezept ausges
 
 ## Was ist das?
 
-Eine Web-App, die für ein beliebiges craftbares Albion-Item auf einer beliebigen
+**Seit v3.0.0 eine App mit drei Bereichen** ("Albion Werkzeuge", sichtbarer
+Titel in der Oberfläche, Ordner-/Repo-Name bleibt bewusst `Kostenrechner`, s.
+Nutzer-Entscheidung unten): oben eine Reiterumschaltung
+(Kostenrechner/Eintopf-Rechner/Preisvergleich, `js/tabs.js`). Jeder Bereich
+bleibt fachlich eigenständig (eigener Rechenkern/eigener Zustand), das ist
+Architektur-Zusammenführung, keine inhaltliche Vermischung.
+
+**Bereich 1, Kostenrechner** (der ursprüngliche, unveränderte Auftrag dieser
+Datei): für ein beliebiges craftbares Albion-Item auf einer beliebigen
 Verzauberungsstufe **und Qualitätsstufe** den **günstigsten Beschaffungsweg**
-ermittelt: kaufen, craften, aus einer niedrigeren Stufe hochverzaubern, per Reroll
+ermitteln: kaufen, craften, aus einer niedrigeren Stufe hochverzaubern, per Reroll
 an der Reparaturstation hochqualifizieren, oder eine Mischung daraus über den
 ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
-(seit v1.4.0).
+(seit v1.4.0). Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
+**Bereich 2, Eintopf-Rechner:** noch Platzhalter (Paket C, künftige Sitzung).
+Bis dahin bleibt der eigenständige Eintopf-Rechner im Albion-Wurzelverzeichnis
+(`Eintopf_Rechner.html`, s. `../KONTEXT.md`) unverändert voll funktionsfähig.
 
-## Aktueller Stand (v2.1.0-v2.1.3, mehrere kleine inline Punkte, 06.09.2026)
+**Bereich 3, Preisvergleich** (seit v3.0.0 migriert): beliebige Items aus dem
+kompletten ao-bin-dumps-Namensdump suchen, mehrere auswählen, Live-Preise über
+alle 7 Hauptstädte und alle 5 Qualitätsstufen abrufen. Kein Bezug zum
+Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
+ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
+Abschnitt "Aktueller Stand" unten für Details.
 
-Alle Punkte inline (nicht ueber den Orchestrator) umgesetzt, live im Browser
-geprueft, 275/275 Tests gruen:
+## Aktueller Stand (v3.0.0, App-Fusion Paket A+B, 13.09.2026)
 
-**v2.1.3, Artefaktgiesserei-Gambling faelschlich als Rezept behandelt (echter
-Rechenfehler, nicht nur kosmetisch):** Nutzer-Fund per Bauplan-Screenshot -
-der Rechner bot "Konserviertes Tierfell des Adepten"
-(`T4_ARTEFACT_ARMOR_PLATE_KEEPER`) als craftbar aus 50x Relikt an
-(Stationsgebuehr 0, Rueckgewinnung 0 %), als waere das ein garantiertes
-1:1-Rezept. Per offiziellem Wiki (`Adept's Relic`, Abschnitt
-"Re-rolling/Melding") UND vom Nutzer per Screenshot der Artefaktgiesserei
-im Spiel bestaetigt: 50 Relikte ergeben ZUFAELLIG eines von ~9-10
-moeglichen Artefakten einer Klasse (Krieger/Magier/Jaeger), kein
-garantierter Tausch. Der Spieldump kodiert dieses Gluecksspiel als
-normales `craftingrequirements`-Feld auf JEDEM der ~38 moeglichen
-Artefakte je Tier - `has_own_recipe()` las das bisher als echtes Rezept.
-Neue Funktion `is_gambling_recipe()` in `build_graph.py` erkennt das Muster
-(Name enthaelt "ARTEFACT", genau eine Zutat `*_RELIC`) und filtert es beim
-Knotenaufbau heraus, 190 betroffene Rezepte (38 je Tier T4-T8), ausnahmslos.
-Die "Transmute"-Aufwertung (5 Relikte einer Stufe zu 1 der naechsten, laut
-Wiki deterministisch, Menge 5 statt 50, kein "ARTEFACT" im Namen) bleibt
-unangetastet - Gegenprobe gezogen. Betroffene Artefakte bleiben als
-kaufbare Marktzutat im Graph (echte AODP-Preise vorhanden), verlieren nur
-die falsche Craften-Option. Live nachgerechnet an "Rechtssprecherruestung
-des Adepten.3": vorher faelschlich "Craften + Reroll" 127.939 Silber
-guenstigster Weg, jetzt korrekt "Verzaubern" 151.414 Silber
-(Craften+Reroll steigt auf 170.869, weil das Artefakt jetzt zum echten
-Marktpreis 68.781 statt der erfundenen 22.500 eingerechnet wird).
+**Auftrag:** erstes von mehreren Paketen der Feature "App-Fusion: eine Web-App,
+drei Bereiche" (Nutzer-Vorentscheidungen: Kostenrechner-Codebasis ist die
+Basis, komplette Fusion aller drei Bereiche, Ordner/Repo-Name bleibt
+`Kostenrechner`, nur der sichtbare Titel wird "Albion Werkzeuge"). Paket A+B
+umfasst: Grundgerüst (Reiterumschaltung) + Preisvergleich-Reiter migrieren.
+Paket C (Eintopf-Rechenkern migrieren, **auf Nutzer-Entscheidung komplett auf
+Live-Fetch im Browser umgestellt statt Python-Vorablauf**, s. unten) und
+Paket D+E (Tests/Härtung/Altdateien archivieren) folgen in künftigen, frischen
+Orchestrator-Sitzungen.
 
-**Dabei entdeckt, separat und NICHT behoben:** die "Craften #1/#2, mit/ohne
-Fokus"-Zeilen in "Alle Wege" (reiner Craft-Pfad, erzwingt Craften auf jeder
-Ebene statt Kaufen) liefern fuer T4.3-Plattenruestung astronomische Werte
-(z. B. 4,6-10,9 Mio. Silber, 274.710-600.958 Fokus) - Faktor 30-70 teurer
-als Verzaubern/Craften+Reroll fuer dasselbe Item. Gegenprobe an einem
-voellig unbeteiligten Item (Soldatenruestung des Adepten, keine
-Artefakt-/Relikt-Zutat) zeigt **exakt dieselben** Fokus-Werte
-(600.958,4 / 274.710,3) - das ist also ein eigener, vom heutigen Fix
-unabhaengiger Bug, vermutlich irgendwo tief in der rekursiven
-"immer craften, nie kaufen"-Traversierung (Rune/Seele/Relikt-Craft-
-Rekursion oder Ore->Barren-Kette). Noch nicht untersucht, s. Backlog unten.
+**Umgesetzt:**
 
-**v2.1.2, PROTOTYPE-Items ausgeschlossen:** Nutzer-Fund "HEAD_CLOTH_PROTOTYPE"
-als rohe ID statt Name in den Spezialisierungsknoten (cloth_helmet).
-`is_excluded_root()` in `build_graph.py` um "PROTOTYPE" im Namen erweitert -
-betrifft 14 Items (9 T8_*_CLOTH/LEATHER/PLATE_PROTOTYPE, 5
-UNIQUE_WEAPONMASTER_*_PROTOTYPE), empirisch als interne Test-/Platzhalter-
-Eintraege verifiziert (LocalizedNames komplett null, geliehenes Mesh, 0
-Stationsgebuehr, Spell "PROTOTYPE_CD_PENALTY"), keines als Zutat referenziert.
-Knotenzahl 3965 → 3951. **Noch offen, bewusst zurueckgestellt:** dieselbe
-Untersuchung zeigte 549 Graph-Wurzeln komplett ohne Namen (deutsch UND
-englisch) quer durch viele Item-Familien (Quest-Items, Karawanen-Handelspakete
-etc.) - deutlich groesser als die 14 PROTOTYPE-Faelle und braucht sorgfaeltige
-Fallunterscheidung wie beim vanity-Filter aus v2.0.1, dafuer als naechstes
-Orchestrator-Paket eingereiht (s. Backlog unten), nicht mit der schmaleren
-PROTOTYPE-Regel mit erledigt.
+- **Reiterumschaltung** (`js/tabs.js`, neu, keine Rechenlogik): drei Buttons
+  oben (Kostenrechner/Eintopf-Rechner/Preisvergleich), `role="tablist"`/`"tab"`/
+  `"tabpanel"` plus `aria-selected`/`aria-controls`/`aria-labelledby` gesetzt.
+  Bewusst **keine** volle WAI-ARIA-Tabs-Pattern-Tastatursteuerung (Pfeiltasten,
+  roving tabindex) - für dieses Ein-Personen-Werkzeug unverhältnismäßig, alle
+  drei Buttons sind aber ganz normal per Tab/Enter/Leertaste erreichbar und
+  bedienbar.
+- **Preisvergleich-Reiter migriert** (`js/preisvergleich.js`, neu, ~350 Zeilen):
+  1:1 aus dem ehemals eigenständigen Eintopf-Rechner portiert (Suche über den
+  kompletten Namensdump, Mehrfachauswahl, Live-Preise über alle 7 Städte und
+  5 Qualitätsstufen in einem Request). Rechenlogik unverändert, nur die
+  Datenquelle angepasst: `ITEM_NAMEN.alle` (neu erzeugt, s. u.) statt eines
+  von Python vorab geholten `DATEN.alleItems`. **Bewusst kein gemeinsamer Code
+  mit `js/preise.js`**: eigene Realm-Konstante, eigener Retry-Mechanismus,
+  eigener localStorage-Schlüssel (`albion_kostenrechner_preisvergleich_v1`,
+  NICHT der alte Schlüssel `eintopf_preisvergleich_v1` - beide Apps bleiben
+  bis Paket C parallel mit getrennter Auswahl benutzbar). Etwas Codeverdopplung
+  (Blockbildung, 429-Backoff) bewusst in Kauf genommen, s. Kommentar am
+  Dateianfang - entspricht der bestehenden Praxis, REALM in jeder App/jedem
+  Modul unabhängig zu verdrahten.
+- **`build_graph.py` erzeugt zusätzlich `item-namen.js`** (neu, 887,9 KB,
+  12.237 Items): komplette Namensliste ALLER Items aus dem Client-Dump (nicht
+  nur der ~4.200 Rezeptgraph-Knoten), inkl. `q`-Merker für Items mit echten
+  Qualitätsstufen-Preisen (`equipmentitem`/`weapon`/`transformationweapon`,
+  Logik 1:1 aus dem Eintopf-Rechner übernommen, dort am 13.09.2026 gegen Dump
+  UND Live-API belegt). Nutzt bereits vorhandene Downloads (kein
+  zusätzlicher Netzzugriff), `rezepte.js` inhaltlich byte-identisch bis auf
+  den Zeitstempel (per Diff geprüft).
+- **Eintopf-Rechner-Reiter:** Platzhalter mit Hinweistext, kein Code.
+- **App-Titel** in der Oberfläche auf "Albion Werkzeuge" geändert (`<title>`,
+  `.banner-brand`, `<h1 class="sr-only">`). Ordner- und Repo-Name bewusst
+  unverändert (Nutzer-Entscheidung).
 
-**v2.1.1, T4.3-Badge in Stufenfarbe:** nachdem der eigene Icon-Rahmen in
-v2.1.0 entfernt wurde, sollte das "T4.3"-Badge selbst die Stufenfarbe tragen
-(0 grau .. 4 gold). Badge-Hintergrund per `--ic-lvl-color` (neue CSS-Variable
-`--blue` ergaenzt, die anderen Stufenfarben wiederverwenden `--green`/
-`--purple`/`--gold`/`--dim`).
+**Getestet:** `tests/test.html` selbst im Browser (headless Chrome, `--dump-dom`)
+laufen lassen, nicht nur behauptet: **296/296 Tests grün** (275 vorher + 21 neu,
+`PREISVERGLEICH.selbsttest()`: Namensauflösung, Qualifizierbarkeit, Suche,
+URL-Bau, Zeilenverarbeitung, Datumslogik). End-to-End zusätzlich per headless
+Chrome gegen die echte Datei geprüft (nicht nur Unit-Tests): Reiterwechsel,
+Suche, Hinzufügen, echter Live-Preisabruf über alle 7 Städte, "beste
+Stadt"-Markierung, Preisalter-Färbung - alles funktioniert, mit Screenshots
+bestätigt.
 
-**v2.1.0:**
+**Gehärtet:** `oberflaechen-pruefer` war in dieser Sitzung nicht verfügbar
+(Harness-Fehler "Agent type not found", nicht behoben trotz zweitem Versuch
+nach dem vorherigen Preisvergleich-Paket - wirkt wie ein sitzungsweites
+Problem, nicht wie ein einmaliger Ausrutscher). Stattdessen selbst geprüft:
+ARIA-Struktur der Reiter nachgerüstet (s. oben), CSS gegen `design.md`
+abgeglichen (nutzt ausschließlich vorhandene Tokens, keine neue Farbpalette),
+Preisvergleich-Suche hat **bewusst keine** Tastaturnavigation der
+Vorschlagsliste (Pfeiltasten/Escape) wie das Haupt-Suchfeld des Kostenrechners
+- das ist keine neue Lücke, sondern 1:1 aus dem ursprünglichen Eintopf-Rechner
+übernommenes Verhalten (Backlog-Punkt, falls gewünscht).
 
-- **Eigenpreis-Pflege-Text korrigiert:** die statische Beschreibung nannte
-  nach der Bereinigung in v2.0.1 (365 → 118 Kandidaten) noch "365
-  Kandidaten". Live entdeckt, Zahl aus dem Satz entfernt.
-- **Preisalter-Voreinstellungen:** Buttons (10 Min./1/4/8/24/48/72 Std.)
-  neben dem Zahlenfeld "Preise hoechstens", setzen den Wert und markieren
-  sich passend zum aktuellen Feldwert als aktiv, auch nach manueller
-  Eingabe. Erster Versuch vergass, den aktiven Button nach Preset-Klick
-  neu zu markieren (nur der "input"-Pfad war verdrahtet, nicht der
-  programmatische Preset-Klick) - beim Live-Test gefunden und behoben.
-- **Echtes Verzauberungs-Icon im grafischen Bauplan:** `itemIconUrl()`
-  haengt jetzt `@<Stufe>` an die Item-ID. Live gegen den Render-Dienst
-  geklaert (Nutzer-Frage "kommst du an die farbigen Rauten/den Schimmer
-  ran?"): der `quality`-Parameter faerbt nur den INNEREN Rahmen
-  (Gegenstandsqualitaet), das `@<Stufe>`-Suffix liefert unabhaengig davon
-  den ECHTEN spielinternen Verzauberungs-Farbschimmer plus gefuellte
-  Rauten direkt im Bild. Der bisherige selbst gebaute CSS-Rahmen
-  (`--lvl0`..`--lvl4`, aus v1.9.0) ist deshalb entfernt - Nutzer-Entscheidung:
-  "echtes Icon + nur Stueckzahl-Badge", spaeter praezisiert auf "T4.3"-Badge
-  bleibt, nur der Rahmen war ueberfluessig. `size` von 48 auf 128 erhoeht
-  (sichtbar unscharf bei der 64px-Anzeigeflaeche mit Zoom-Crop).
-  **Live gefundene Ausnahme:** Zutaten mit eigenem `el`-Feld (Materialien
-  wie `T4_CLOTH_LEVEL3`, deren Stufe schon im Namen steckt, s. `marktId()`
-  in `preise.js`) liefern mit zusaetzlichem `@3`-Suffix HTTP 502 vom
-  Render-Dienst (der Markt-Dienst AODP akzeptiert dieselbe Kombination
-  durchaus, ist aber ein anderer Dienst mit anderer Konvention). Fuer
-  Items mit `el`-Feld haengt `itemIconUrl()` deshalb keinen Suffix an.
-
-`design.md` und `tests/test.html` entsprechend nachgezogen (Icon-Kachel-
-Abschnitt umgeschrieben, `itemIconUrl`-Tests auf die neue 3-Parameter-
-Signatur und das `el`-Verhalten erweitert). Versions-Schnappschuss unter
-`Versionen/v2.1.0 - Preisalter-Voreinstellungen und echtes Verzauberungs-Icon/`.
-Commit + Push wie ueblich.
+**Nebenbefund, nicht Teil dieses Pakets:** beim Lesen des Git-Logs aufgefallen,
+dass der Commit `def8109` ("v2.1.4, Kaufen-Blattknoten ohne täuschenden
+Aufklapp-Pfeil", 06.09.2026) nie in diese Kontextdatei aufgenommen wurde,
+obwohl er vollständig dokumentiert und committet ist. Backfill in
+`kostenrechner-KONTEXT-HISTORIE.md` nachgetragen.
 
 ---
 
-**Vorheriger Stand (v2.0.1, "Eigenpreis-Kandidatenliste auf echte
-Crafting-Zutaten eingeschraenkt") und alles davor** unverkürzt nach
+**Vorheriger Stand (v2.1.0-v2.1.4 und alles davor)** unverkürzt nach
 `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
 "Entwicklungsweise / Mitarbeit" unten).
 
@@ -150,15 +141,23 @@ Rechenkern-/Regeln-/Preise-Code geaendert, keine neuen Dateien) plus
 `tests/test.html` unveraendert, neue Dateien `design.md`/`assets/`) plus
 "Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt"
 (v2.0.1, nur `build_graph.py`/`rezepte.js` (neu erzeugt)/`tests/test.html`
-(eine Testbezeichnung angepasst), kein Rechenkern-/Regeln-/UI-Code geaendert):
+(eine Testbezeichnung angepasst), kein Rechenkern-/Regeln-/UI-Code geaendert)
+plus "App-Fusion Paket A+B: Reiterumschaltung + Preisvergleich migriert"
+(v3.0.0, neue Dateien `item-namen.js` (von `build_graph.py` zusaetzlich
+erzeugt)/`js/tabs.js`/`js/preisvergleich.js`, `Kostenrechner.html`/
+`tests/test.html` erweitert, kein Rechenkern-/Regeln-Code geaendert):
 
 ```
 Kostenrechner/
   build_graph.py            fertig (P1, P2: el-Feld ergaenzt); Root-Filter
                               is_excluded_root() gegen kosmetische/interne
                               Nicht-Crafting-Items (vanity-Shopkategorie,
-                              GAMEMASTER-Items) v2.0.1
+                              GAMEMASTER-Items) v2.0.1; erzeugt zusaetzlich
+                              item-namen.js fuer den Preisvergleich-Reiter v3.0.0
   rezepte.js                erzeugt (P1, P2, v2.0.1 neu erzeugt), nicht von Hand bearbeiten
+  item-namen.js             neu v3.0.0, erzeugt von build_graph.py: ALLE 12.237
+                              Items aus dem Namensdump (nicht nur der Rezeptgraph),
+                              q-Merker fuer Items mit Qualitaetsstufen-Preisen
   Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0; Fokus-Regel-
                               Tabelle + Fokus-Schalter im Bauplan v1.2.0; Qualitaet-Dropdown
                               + Qualitaets-Chancenpunkte-Block v1.4.0; Schicksalsbrett-
@@ -169,9 +168,18 @@ Kostenrechner/
                               v1.8.0; Icon-Kachel-Farbwerte/-Badges v1.9.0; komplettes
                               CSS + Banner-/`.gp-panel`-Markup auf das dunkle Albion-Theme
                               aus design.md umgestellt, IDs/JS-Klassennamen unveraendert
-                              v2.0.0): Suche, Hero,
+                              v2.0.0; Reiterumschaltung (.tabs/.tabbtn), Eintopf-Platzhalter-
+                              Reiter, Preisvergleich-Reiter-Markup (.pv-*), App-Titel
+                              "Albion Werkzeuge" v3.0.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
+    tabs.js                  neu v3.0.0, keine Rechenlogik: Reiterumschaltung
+                              zwischen den drei Bereichen, aria-selected mitgezogen
+    preisvergleich.js        neu v3.0.0, migriert 1:1 aus dem ehemals eigenstaendigen
+                              Eintopf-Rechner (Reiter "Preisvergleich"): Suche ueber
+                              ITEM_NAMEN.alle, Live-Preise ueber alle Staedte/Qualitaeten,
+                              eigener Realm/Retry/localStorage-Schluessel (bewusst kein
+                              gemeinsamer Code mit preise.js), PREISVERGLEICH.selbsttest()
     preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
                               Cache-Schluessel + sammleQualitaetsMarktIds() v1.4.0, Schema auf 3);
                               volumenAbrufen()/normalisiereHistorieZeile() gegen history/,
@@ -246,9 +254,11 @@ Kostenrechner/
   Versionen/v1.9.0 - Icon-Kachel im grafischen Bauplan ueberarbeitet/
   Versionen/v2.0.0 - Visuelles Redesign Albion-Theme/
   Versionen/v2.0.1 - Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt/
-  tests/test.html           273 Tests, Offline-Selbsttests + 2 Live-Abschnitte; Testrahmen/
-                              -logik unveraendert seit v1.7.0, v2.0.1 nur eine Testbezeichnung
-                              von "365" auf einen zahlenunabhaengigen Wortlaut korrigiert
+  Versionen/v2.1.0 - v2.1.4 - siehe kostenrechner-KONTEXT-HISTORIE.md/
+  Versionen/v3.0.0 - App-Fusion Paket A+B, Reiterumschaltung und Preisvergleich migriert/
+  tests/test.html           296 Tests (275 + 21 neu fuer preisvergleich.js), Offline-
+                              Selbsttests + 2 Live-Abschnitte; Testrahmen/-logik
+                              unveraendert seit v1.7.0
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -297,6 +307,26 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
   zu raten.
 
 ## Backlog / Mögliche nächste Schritte
+
+**Nächstes Orchestrator-Paket (höchste Priorität): Paket C der App-Fusion,
+Eintopf-Rechenkern migrieren.** Nutzer-Entscheidung (13.09.2026): komplett auf
+Live-Fetch im Browser umstellen wie der Kostenrechner (auch Tagesumsatz/
+Stundenprofile über `/history`), NICHT den bisherigen Python-Vorablauf
+(`eintopf_update.py`) beibehalten. Das ist mehr als eine reine Portierung -
+die `/history`-Stundenprofil-Logik existiert im Kostenrechner bisher nicht
+und muss neu für den Browser gebaut werden. Der JS-Rechenkern aus dem
+`TEMPLATE`-String von `eintopf_update.py` wandert nach `js/eintopf-rechenkern.js`
+o.ä. Nach Paket C: Paket D+E (Tests für den Eintopf-Rechenkern in
+`tests/test.html` ergänzen - bisher **null** automatisierte Tests dort, nur
+Handrechnungen; danach `Eintopf_Rechner.html`/`eintopf_update.py`/
+`Eintopf-Rechner aktualisieren.bat` in einen Archivordner verschieben, nicht
+löschen).
+
+**`oberflaechen-pruefer` war in dieser UND der vorherigen Sitzung nicht
+verfügbar** (Harness-Fehler "Agent type 'oberflaechen-pruefer' not found").
+Wirkt wie ein sitzungsweites/Harness-Problem, nicht wie ein Einzelfall - falls
+das in einer künftigen Sitzung weiterhin auftritt, lohnt sich eine Prüfung der
+Agenten-Registrierung selbst statt eines erneuten Versuchs.
 
 Die Arbeitspakete stehen in `kostenrechner-PLAN.md`, Abschnitt 6, alle sechs
 (P1-P7) sind abgeschlossen. Hier nur, was darüber hinaus offen ist. Die

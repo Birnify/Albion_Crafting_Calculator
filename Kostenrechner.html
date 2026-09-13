@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kostenrechner</title>
+<title>Albion Werkzeuge</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Manrope:wght@500;600;700;800&display=swap');
 :root{
@@ -313,17 +313,62 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 .spezknoten .meister{display:flex;align-items:end;gap:8px;margin-bottom:8px}
 .spezknoten .meister .feld{min-height:auto;min-width:160px;flex:0 0 auto}
 .spezknoten .summe{font-size:11.5px;color:var(--dim);margin-top:6px}
+
+/* App-Fusion (13.09.2026): Reiterumschaltung zwischen den drei Bereichen,
+   s. js/tabs.js. */
+.tabs{display:flex;gap:8px;margin-bottom:18px}
+.tabbtn{padding:9px 18px;border:1px solid var(--line);border-radius:6px;
+        background:var(--panel);color:var(--text);font:700 13px/1 "Manrope",inherit;
+        cursor:pointer}
+.tabbtn:hover{background:var(--accent-soft);border-color:var(--gold-dim)}
+.tabbtn.active{background:var(--gold);color:oklch(0.2 0.03 60);border-color:var(--gold)}
+
+/* Preisvergleich-Reiter (js/preisvergleich.js), migriert aus dem ehemals
+   eigenstaendigen Eintopf-Rechner. */
+.pv-suche{position:relative;max-width:460px}
+.pv-vorschlaege{display:none;position:absolute;z-index:5;top:100%;left:0;right:0;
+  margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  max-height:300px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.pv-vorschlaege div{padding:7px 11px;cursor:pointer;font-size:13px}
+.pv-vorschlaege div:hover{background:var(--accent-soft)}
+.pv-vorschlaege div.leer{cursor:default;color:var(--dim)}
+.pv-item{border:1px solid var(--line);background:var(--panel);border-radius:8px;
+         padding:14px 16px;margin-bottom:14px}
+.pv-item-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:11px}
+.pv-item-head strong{font-size:15px}
+.pv-item-head select{width:auto;padding:5px 8px}
+.cp{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+    margin-left:2px;padding:0;border:1px solid var(--line);border-radius:4px;
+    background:transparent;color:var(--dim);font-size:11px;line-height:1;cursor:pointer;
+    vertical-align:middle;flex:none}
+.cp:hover{background:var(--accent-soft);color:var(--gold);border-color:var(--gold-dim)}
+.cp.ok{background:var(--good-bg);color:var(--good);border-color:var(--good)}
+.miss{color:var(--bad);font-weight:600}
+.stale{color:var(--warn);font-weight:700;background:var(--warn-bg);padding:1px 5px;border-radius:3px}
+#pvStatus{font-size:12.5px;color:var(--dim)}
+#pvStatus.err{color:var(--red);font-weight:700}
+#pvStatus.ok{color:var(--green);font-weight:700}
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<h1 class="sr-only">Kostenrechner</h1>
+<h1 class="sr-only">Albion Werkzeuge</h1>
 <div class="banner" role="img" aria-label="Lymhurst, Albion Online">
   <div class="banner-bg"></div>
   <div class="banner-fade"></div>
-  <div class="banner-brand">Kostenrechner</div>
+  <div class="banner-brand">Albion Werkzeuge</div>
 </div>
+<div class="sub">Kostenrechner, Eintopf-Rechner und Preisvergleich in einer App.</div>
+
+<div class="tabs" role="tablist" aria-label="Bereich">
+  <button type="button" id="tabbtn-kostenrechner" class="tabbtn active" data-tab="kostenrechner" role="tab" aria-selected="true" aria-controls="tab-kostenrechner">Kostenrechner</button>
+  <button type="button" id="tabbtn-eintopf" class="tabbtn" data-tab="eintopf" role="tab" aria-selected="false" aria-controls="tab-eintopf">Eintopf-Rechner</button>
+  <button type="button" id="tabbtn-preisvergleich" class="tabbtn" data-tab="preisvergleich" role="tab" aria-selected="false" aria-controls="tab-preisvergleich">Preisvergleich</button>
+</div>
+
+<div id="tab-kostenrechner" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-kostenrechner">
+
 <div class="sub">Guenstigster Beschaffungsweg fuer ein craftbares Item auf einer Verzauberungsstufe: kaufen, craften oder hochverzaubern, ueber den ganzen Rezeptbaum.</div>
 
 <div class="panel gp-panel">
@@ -568,12 +613,41 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 
 </div>
 
+</div><!-- /tab-kostenrechner -->
+
+<div id="tab-eintopf" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-eintopf" style="display:none">
+<div class="hero leer">Der Eintopf-Rechner wird in einem folgenden Ausbauschritt hier ergaenzt (App-Fusion, Paket C). Bis dahin weiterhin eigenstaendig nutzbar: <code>Eintopf_Rechner.html</code> im Albion-Wurzelverzeichnis.</div>
+</div>
+
+<div id="tab-preisvergleich" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-preisvergleich" style="display:none">
+
+<div class="sub">Beliebige Items suchen und live vergleichen, wo sie aktuell am günstigsten gehandelt werden. Eigenständig, unabhängig vom Kostenrechner.</div>
+
+<div class="bar">
+  <button type="button" id="pvRefresh">Preise aktualisieren</button>
+  <span id="pvStatus"></span>
+</div>
+
+<div class="panel gp-panel">
+<h2>Item hinzufügen</h2>
+<div class="pv-suche">
+  <input type="text" id="pvSuche" autocomplete="off" placeholder="Item suchen, z. B. Kürbis, Hammer, Wolfsumhang ...">
+  <div id="pvVorschlaege" class="pv-vorschlaege"></div>
+</div>
+<div id="pvAuswahl" style="margin-top:14px"></div>
+</div>
+
+</div><!-- /tab-preisvergleich -->
+
 </div>
 
 <script src="rezepte.js"></script>
+<script src="item-namen.js"></script>
 <script src="js/preise.js"></script>
 <script src="js/regeln.js"></script>
 <script src="js/rechenkern.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/tabs.js"></script>
+<script src="js/preisvergleich.js"></script>
 </body>
 </html>

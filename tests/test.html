@@ -63,10 +63,13 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 </section>
 
 <script src="../rezepte.js"></script>
+<script src="../item-namen.js"></script>
 <script src="../js/preise.js"></script>
 <script src="../js/regeln.js"></script>
 <script src="../js/rechenkern.js"></script>
 <script src="../js/ui.js"></script>
+<script src="../js/tabs.js"></script>
+<script src="../js/preisvergleich.js"></script>
 <script>
   "use strict";
 
@@ -86,6 +89,9 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 
   // ---- js/regeln.js ----
   REGELN.selbsttest().forEach((e) => pruefe("regeln: " + e.name, e.ok, e.details));
+
+  // ---- js/preisvergleich.js (App-Fusion, Paket A+B, 13.09.2026) ----
+  PREISVERGLEICH.selbsttest().forEach((e) => pruefe("preisvergleich: " + e.name, e.ok, e.details));
 
   // ---- js/rechenkern.js: Kein Preis => Weg gesperrt, NIEMALS Kosten 0 ----
   (function () {

@@ -7,6 +7,116 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v2.1.0-v2.1.4, mehrere kleine inline Punkte, 06.09.2026)
+
+**Nachtrag beim Auslagern (13.09.2026):** diese Kontextdatei blieb nach v2.1.3
+stehen und wurde fuer v2.1.4 nie aktualisiert, obwohl der Commit existiert und
+vollstaendig dokumentiert ist. Backfill aus dem Commit selbst:
+
+**v2.1.4, Kaufen-Blattknoten im Text-Baum ohne taeuschenden Aufklapp-Pfeil
+(06.09.2026):** Nutzer-Fund: nachdem der Fokus-Schalter fuer einen Knoten auf
+"nie" gesetzt wurde, wechselte der guenstigste Weg zu "Kaufen" - dieser
+Blattknoten trug aber weiterhin den `<details>`-Aufklapp-Pfeil der
+Craften/Reroll-Knoten, obwohl er keine Unterknoten hat. Klicken darauf war ein
+verwirrender Leerlauf-Effekt ("ich bekomme hier nichts wieder aufgeklappt").
+`baueKnoten()` im "kaufen"-Zweig baut jetzt eine reine `<div>` statt
+`<details>`/`<summary>`, neue CSS-Klasse `.kn-blatt` uebernimmt 1:1 die
+bisherige Rahmen-/Hintergrund-/Padding-Optik, nur ohne den Pfeil. Live gegen
+echten Fokus-Schalter-Fund nachgestellt, 275/275 Tests gruen.
+
+**v2.1.3, Artefaktgiesserei-Gambling faelschlich als Rezept behandelt (echter
+Rechenfehler, nicht nur kosmetisch):** Nutzer-Fund per Bauplan-Screenshot -
+der Rechner bot "Konserviertes Tierfell des Adepten"
+(`T4_ARTEFACT_ARMOR_PLATE_KEEPER`) als craftbar aus 50x Relikt an
+(Stationsgebuehr 0, Rueckgewinnung 0 %), als waere das ein garantiertes
+1:1-Rezept. Per offiziellem Wiki (`Adept's Relic`, Abschnitt
+"Re-rolling/Melding") UND vom Nutzer per Screenshot der Artefaktgiesserei
+im Spiel bestaetigt: 50 Relikte ergeben ZUFAELLIG eines von ~9-10
+moeglichen Artefakten einer Klasse (Krieger/Magier/Jaeger), kein
+garantierter Tausch. Der Spieldump kodiert dieses Gluecksspiel als
+normales `craftingrequirements`-Feld auf JEDEM der ~38 moeglichen
+Artefakten je Tier - `has_own_recipe()` las das bisher als echtes Rezept.
+Neue Funktion `is_gambling_recipe()` in `build_graph.py` erkennt das Muster
+(Name enthaelt "ARTEFACT", genau eine Zutat `*_RELIC`) und filtert es beim
+Knotenaufbau heraus, 190 betroffene Rezepte (38 je Tier T4-T8), ausnahmslos.
+Die "Transmute"-Aufwertung (5 Relikte einer Stufe zu 1 der naechsten, laut
+Wiki deterministisch, Menge 5 statt 50, kein "ARTEFACT" im Namen) bleibt
+unangetastet - Gegenprobe gezogen. Betroffene Artefakte bleiben als
+kaufbare Marktzutat im Graph (echte AODP-Preise vorhanden), verlieren nur
+die falsche Craften-Option. Live nachgerechnet an "Rechtssprecherruestung
+des Adepten.3": vorher faelschlich "Craften + Reroll" 127.939 Silber
+guenstigster Weg, jetzt korrekt "Verzaubern" 151.414 Silber
+(Craften+Reroll steigt auf 170.869, weil das Artefakt jetzt zum echten
+Marktpreis 68.781 statt der erfundenen 22.500 eingerechnet wird).
+
+**Dabei entdeckt, separat und NICHT behoben:** die "Craften #1/#2, mit/ohne
+Fokus"-Zeilen in "Alle Wege" (reiner Craft-Pfad, erzwingt Craften auf jeder
+Ebene statt Kaufen) liefern fuer T4.3-Plattenruestung astronomische Werte
+(z. B. 4,6-10,9 Mio. Silber, 274.710-600.958 Fokus) - Faktor 30-70 teurer
+als Verzaubern/Craften+Reroll fuer dasselbe Item. Gegenprobe an einem
+voellig unbeteiligten Item (Soldatenruestung des Adepten, keine
+Artefakt-/Relikt-Zutat) zeigt **exakt dieselben** Fokus-Werte
+(600.958,4 / 274.710,3) - das ist also ein eigener, vom heutigen Fix
+unabhaengiger Bug, vermutlich irgendwo tief in der rekursiven
+"immer craften, nie kaufen"-Traversierung (Rune/Seele/Relikt-Craft-
+Rekursion oder Ore->Barren-Kette). Noch nicht untersucht (Backlog).
+
+**v2.1.2, PROTOTYPE-Items ausgeschlossen:** Nutzer-Fund "HEAD_CLOTH_PROTOTYPE"
+als rohe ID statt Name in den Spezialisierungsknoten (cloth_helmet).
+`is_excluded_root()` in `build_graph.py` um "PROTOTYPE" im Namen erweitert -
+betrifft 14 Items (9 T8_*_CLOTH/LEATHER/PLATE_PROTOTYPE, 5
+UNIQUE_WEAPONMASTER_*_PROTOTYPE), empirisch als interne Test-/Platzhalter-
+Eintraege verifiziert (LocalizedNames komplett null, geliehenes Mesh, 0
+Stationsgebuehr, Spell "PROTOTYPE_CD_PENALTY"), keines als Zutat referenziert.
+Knotenzahl 3965 → 3951. Noch offen, bewusst zurueckgestellt: dieselbe
+Untersuchung zeigte 549 Graph-Wurzeln komplett ohne Namen (deutsch UND
+englisch) quer durch viele Item-Familien (Quest-Items, Karawanen-Handelspakete
+etc.) - deutlich groesser als die 14 PROTOTYPE-Faelle und braucht sorgfaeltige
+Fallunterscheidung wie beim vanity-Filter aus v2.0.1.
+
+**v2.1.1, T4.3-Badge in Stufenfarbe:** nachdem der eigene Icon-Rahmen in
+v2.1.0 entfernt wurde, sollte das "T4.3"-Badge selbst die Stufenfarbe tragen
+(0 grau .. 4 gold). Badge-Hintergrund per `--ic-lvl-color` (neue CSS-Variable
+`--blue` ergaenzt, die anderen Stufenfarben wiederverwenden `--green`/
+`--purple`/`--gold`/`--dim`).
+
+**v2.1.0:**
+
+- **Eigenpreis-Pflege-Text korrigiert:** die statische Beschreibung nannte
+  nach der Bereinigung in v2.0.1 (365 → 118 Kandidaten) noch "365
+  Kandidaten". Live entdeckt, Zahl aus dem Satz entfernt.
+- **Preisalter-Voreinstellungen:** Buttons (10 Min./1/4/8/24/48/72 Std.)
+  neben dem Zahlenfeld "Preise hoechstens", setzen den Wert und markieren
+  sich passend zum aktuellen Feldwert als aktiv, auch nach manueller
+  Eingabe. Erster Versuch vergass, den aktiven Button nach Preset-Klick
+  neu zu markieren (nur der "input"-Pfad war verdrahtet, nicht der
+  programmatische Preset-Klick) - beim Live-Test gefunden und behoben.
+- **Echtes Verzauberungs-Icon im grafischen Bauplan:** `itemIconUrl()`
+  haengt jetzt `@<Stufe>` an die Item-ID. Live gegen den Render-Dienst
+  geklaert (Nutzer-Frage "kommst du an die farbigen Rauten/den Schimmer
+  ran?"): der `quality`-Parameter faerbt nur den INNEREN Rahmen
+  (Gegenstandsqualitaet), das `@<Stufe>`-Suffix liefert unabhaengig davon
+  den ECHTEN spielinternen Verzauberungs-Farbschimmer plus gefuellte
+  Rauten direkt im Bild. Der bisherige selbst gebaute CSS-Rahmen
+  (`--lvl0`..`--lvl4`, aus v1.9.0) ist deshalb entfernt - Nutzer-Entscheidung:
+  "echtes Icon + nur Stueckzahl-Badge", spaeter praezisiert auf "T4.3"-Badge
+  bleibt, nur der Rahmen war ueberfluessig. `size` von 48 auf 128 erhoeht
+  (sichtbar unscharf bei der 64px-Anzeigeflaeche mit Zoom-Crop).
+  **Live gefundene Ausnahme:** Zutaten mit eigenem `el`-Feld (Materialien
+  wie `T4_CLOTH_LEVEL3`, deren Stufe schon im Namen steckt, s. `marktId()`
+  in `preise.js`) liefern mit zusaetzlichem `@3`-Suffix HTTP 502 vom
+  Render-Dienst (der Markt-Dienst AODP akzeptiert dieselbe Kombination
+  durchaus, ist aber ein anderer Dienst mit anderer Konvention). Fuer
+  Items mit `el`-Feld haengt `itemIconUrl()` deshalb keinen Suffix an.
+
+`design.md` und `tests/test.html` entsprechend nachgezogen (Icon-Kachel-
+Abschnitt umgeschrieben, `itemIconUrl`-Tests auf die neue 3-Parameter-
+Signatur und das `el`-Verhalten erweitert). Versions-Schnappschuss unter
+`Versionen/v2.1.0 - Preisalter-Voreinstellungen und echtes Verzauberungs-Icon/`.
+Commit + Push wie ueblich.
+
+---
+
 ## Aktueller Stand (Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt, 06.09.2026, v2.0.1)
 
 **Auftrag:** die Eigenpreis-Pflegeliste (`REZEPTGRAPH.nichtHandelbareKandidaten`,
