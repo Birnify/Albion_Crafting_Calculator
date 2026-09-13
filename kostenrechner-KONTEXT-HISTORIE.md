@@ -7,6 +7,81 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.0.0, App-Fusion Paket A+B, 13.09.2026)
+
+**Auftrag:** erstes von mehreren Paketen der Feature "App-Fusion: eine Web-App,
+drei Bereiche" (Nutzer-Vorentscheidungen: Kostenrechner-Codebasis ist die
+Basis, komplette Fusion aller drei Bereiche, Ordner/Repo-Name bleibt
+`Kostenrechner`, nur der sichtbare Titel wird "Albion Werkzeuge"). Paket A+B
+umfasst: Grundgerüst (Reiterumschaltung) + Preisvergleich-Reiter migrieren.
+Paket C (Eintopf-Rechenkern migrieren, **auf Nutzer-Entscheidung komplett auf
+Live-Fetch im Browser umgestellt statt Python-Vorablauf**, s. unten) und
+Paket D+E (Tests/Härtung/Altdateien archivieren) folgen in künftigen, frischen
+Orchestrator-Sitzungen.
+
+**Umgesetzt:**
+
+- **Reiterumschaltung** (`js/tabs.js`, neu, keine Rechenlogik): drei Buttons
+  oben (Kostenrechner/Eintopf-Rechner/Preisvergleich), `role="tablist"`/`"tab"`/
+  `"tabpanel"` plus `aria-selected`/`aria-controls`/`aria-labelledby` gesetzt.
+  Bewusst **keine** volle WAI-ARIA-Tabs-Pattern-Tastatursteuerung (Pfeiltasten,
+  roving tabindex) - für dieses Ein-Personen-Werkzeug unverhältnismäßig, alle
+  drei Buttons sind aber ganz normal per Tab/Enter/Leertaste erreichbar und
+  bedienbar.
+- **Preisvergleich-Reiter migriert** (`js/preisvergleich.js`, neu, ~350 Zeilen):
+  1:1 aus dem ehemals eigenständigen Eintopf-Rechner portiert (Suche über den
+  kompletten Namensdump, Mehrfachauswahl, Live-Preise über alle 7 Städte und
+  5 Qualitätsstufen in einem Request). Rechenlogik unverändert, nur die
+  Datenquelle angepasst: `ITEM_NAMEN.alle` (neu erzeugt, s. u.) statt eines
+  von Python vorab geholten `DATEN.alleItems`. **Bewusst kein gemeinsamer Code
+  mit `js/preise.js`**: eigene Realm-Konstante, eigener Retry-Mechanismus,
+  eigener localStorage-Schlüssel (`albion_kostenrechner_preisvergleich_v1`,
+  NICHT der alte Schlüssel `eintopf_preisvergleich_v1` - beide Apps bleiben
+  bis Paket C parallel mit getrennter Auswahl benutzbar). Etwas Codeverdopplung
+  (Blockbildung, 429-Backoff) bewusst in Kauf genommen, s. Kommentar am
+  Dateianfang - entspricht der bestehenden Praxis, REALM in jeder App/jedem
+  Modul unabhängig zu verdrahten.
+- **`build_graph.py` erzeugt zusätzlich `item-namen.js`** (neu, 887,9 KB,
+  12.237 Items): komplette Namensliste ALLER Items aus dem Client-Dump (nicht
+  nur der ~4.200 Rezeptgraph-Knoten), inkl. `q`-Merker für Items mit echten
+  Qualitätsstufen-Preisen (`equipmentitem`/`weapon`/`transformationweapon`,
+  Logik 1:1 aus dem Eintopf-Rechner übernommen, dort am 13.09.2026 gegen Dump
+  UND Live-API belegt). Nutzt bereits vorhandene Downloads (kein
+  zusätzlicher Netzzugriff), `rezepte.js` inhaltlich byte-identisch bis auf
+  den Zeitstempel (per Diff geprüft).
+- **Eintopf-Rechner-Reiter:** Platzhalter mit Hinweistext, kein Code.
+- **App-Titel** in der Oberfläche auf "Albion Werkzeuge" geändert (`<title>`,
+  `.banner-brand`, `<h1 class="sr-only">`). Ordner- und Repo-Name bewusst
+  unverändert (Nutzer-Entscheidung).
+
+**Getestet:** `tests/test.html` selbst im Browser (headless Chrome, `--dump-dom`)
+laufen lassen, nicht nur behauptet: **296/296 Tests grün** (275 vorher + 21 neu,
+`PREISVERGLEICH.selbsttest()`: Namensauflösung, Qualifizierbarkeit, Suche,
+URL-Bau, Zeilenverarbeitung, Datumslogik). End-to-End zusätzlich per headless
+Chrome gegen die echte Datei geprüft (nicht nur Unit-Tests): Reiterwechsel,
+Suche, Hinzufügen, echter Live-Preisabruf über alle 7 Städte, "beste
+Stadt"-Markierung, Preisalter-Färbung - alles funktioniert, mit Screenshots
+bestätigt.
+
+**Gehärtet:** `oberflaechen-pruefer` war in dieser Sitzung nicht verfügbar
+(Harness-Fehler "Agent type not found", nicht behoben trotz zweitem Versuch
+nach dem vorherigen Preisvergleich-Paket - wirkt wie ein sitzungsweites
+Problem, nicht wie ein einmaliger Ausrutscher). Stattdessen selbst geprüft:
+ARIA-Struktur der Reiter nachgerüstet (s. oben), CSS gegen `design.md`
+abgeglichen (nutzt ausschließlich vorhandene Tokens, keine neue Farbpalette),
+Preisvergleich-Suche hat **bewusst keine** Tastaturnavigation der
+Vorschlagsliste (Pfeiltasten/Escape) wie das Haupt-Suchfeld des Kostenrechners
+- das ist keine neue Lücke, sondern 1:1 aus dem ursprünglichen Eintopf-Rechner
+übernommenes Verhalten (Backlog-Punkt, falls gewünscht).
+
+**Nebenbefund, nicht Teil dieses Pakets:** beim Lesen des Git-Logs aufgefallen,
+dass der Commit `def8109` ("v2.1.4, Kaufen-Blattknoten ohne täuschenden
+Aufklapp-Pfeil", 06.09.2026) nie in diese Kontextdatei aufgenommen wurde,
+obwohl er vollständig dokumentiert und committet ist. Backfill in
+`kostenrechner-KONTEXT-HISTORIE.md` nachgetragen.
+
+---
+
 ## Aktueller Stand (v2.1.0-v2.1.4, mehrere kleine inline Punkte, 06.09.2026)
 
 **Nachtrag beim Auslagern (13.09.2026):** diese Kontextdatei blieb nach v2.1.3

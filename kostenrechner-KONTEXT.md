@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-13 · Version: v3.0.0 · App-Fusion Paket A+B: Reiterumschaltung + Preisvergleich migriert
+Stand: 2026-09-13 · Version: v3.1.0 · App-Fusion Paket C: Eintopf-Rechenkern live migriert
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -27,9 +27,14 @@ an der Reparaturstation hochqualifizieren, oder eine Mischung daraus über den
 ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 (seit v1.4.0). Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
 
-**Bereich 2, Eintopf-Rechner:** noch Platzhalter (Paket C, künftige Sitzung).
-Bis dahin bleibt der eigenständige Eintopf-Rechner im Albion-Wurzelverzeichnis
-(`Eintopf_Rechner.html`, s. `../KONTEXT.md`) unverändert voll funktionsfähig.
+**Bereich 2, Eintopf-Rechner** (seit v3.1.0 migriert): Profitrechner für den
+Rindfleischeintopf (T8, Stufen .0-.3), komplett auf Live-Fetch im Browser
+umgestellt (Preise, Handelsvolumen, Stundenprofil - kein Python-Vorablauf
+mehr, anders als ursprünglich für dieses Paket erwartet, s. "Aktueller Stand"
+unten). Der eigenständige Eintopf-Rechner im Albion-Wurzelverzeichnis
+(`Eintopf_Rechner.html`, `eintopf_update.py`, s. `../KONTEXT.md`) bleibt
+bewusst unangetastet als Referenz/Fallback bestehen, bis Paket E ihn
+archiviert.
 
 **Bereich 3, Preisvergleich** (seit v3.0.0 migriert): beliebige Items aus dem
 kompletten ao-bin-dumps-Namensdump suchen, mehrere auswählen, Live-Preise über
@@ -38,78 +43,112 @@ Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
 
-## Aktueller Stand (v3.0.0, App-Fusion Paket A+B, 13.09.2026)
+## Aktueller Stand (v3.1.0, App-Fusion Paket C, 13.09.2026)
 
-**Auftrag:** erstes von mehreren Paketen der Feature "App-Fusion: eine Web-App,
-drei Bereiche" (Nutzer-Vorentscheidungen: Kostenrechner-Codebasis ist die
-Basis, komplette Fusion aller drei Bereiche, Ordner/Repo-Name bleibt
-`Kostenrechner`, nur der sichtbare Titel wird "Albion Werkzeuge"). Paket A+B
-umfasst: Grundgerüst (Reiterumschaltung) + Preisvergleich-Reiter migrieren.
-Paket C (Eintopf-Rechenkern migrieren, **auf Nutzer-Entscheidung komplett auf
-Live-Fetch im Browser umgestellt statt Python-Vorablauf**, s. unten) und
-Paket D+E (Tests/Härtung/Altdateien archivieren) folgen in künftigen, frischen
-Orchestrator-Sitzungen.
+**Vorheriger Stand (v3.0.0, App-Fusion Paket A+B)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
 
-**Umgesetzt:**
+**Auftrag:** zweites Paket der Feature "App-Fusion: eine Web-App, drei
+Bereiche" - den Eintopf-Rechner-Platzhalter mit dem echten Rechenkern füllen.
+**Nutzer-Entscheidung, die den ursprünglichen Plan bewusst übersteuert:** statt
+den bisherigen Python-Vorablauf (`eintopf_update.py`: `preise_holen()`/
+`volumen_holen()`/`absatzzeiten_holen()`) beizubehalten, holt die App jetzt
+Preise, Tagesumsatz und Stundenprofil komplett live im Browser, wie es der
+Kostenrechner für seine eigene Preisschicht (`js/preise.js`) und der
+Preisvergleich-Reiter (`js/preisvergleich.js`) bereits tun. Das ist mehr als
+reine Portierung, aber machbar geworden, weil das alte
+`Eintopf_Rechner.html`-TEMPLATE bereits einen Browser-Live-Refresh-Knopf
+(`aktualisieren()`) enthielt (Ersatz für einen erneuten Python-Lauf) - dessen
+Fetch-/Retry-Logik wurde fast unverändert zur einzigen Datenquelle gemacht,
+nicht neu erfunden. Paket D+E (Tests in `tests/test.html` ergänzen,
+`Eintopf_Rechner.html`/`eintopf_update.py`/`.bat` archivieren) folgt in
+künftigen, frischen Orchestrator-Sitzungen.
 
-- **Reiterumschaltung** (`js/tabs.js`, neu, keine Rechenlogik): drei Buttons
-  oben (Kostenrechner/Eintopf-Rechner/Preisvergleich), `role="tablist"`/`"tab"`/
-  `"tabpanel"` plus `aria-selected`/`aria-controls`/`aria-labelledby` gesetzt.
-  Bewusst **keine** volle WAI-ARIA-Tabs-Pattern-Tastatursteuerung (Pfeiltasten,
-  roving tabindex) - für dieses Ein-Personen-Werkzeug unverhältnismäßig, alle
-  drei Buttons sind aber ganz normal per Tab/Enter/Leertaste erreichbar und
-  bedienbar.
-- **Preisvergleich-Reiter migriert** (`js/preisvergleich.js`, neu, ~350 Zeilen):
-  1:1 aus dem ehemals eigenständigen Eintopf-Rechner portiert (Suche über den
-  kompletten Namensdump, Mehrfachauswahl, Live-Preise über alle 7 Städte und
-  5 Qualitätsstufen in einem Request). Rechenlogik unverändert, nur die
-  Datenquelle angepasst: `ITEM_NAMEN.alle` (neu erzeugt, s. u.) statt eines
-  von Python vorab geholten `DATEN.alleItems`. **Bewusst kein gemeinsamer Code
-  mit `js/preise.js`**: eigene Realm-Konstante, eigener Retry-Mechanismus,
-  eigener localStorage-Schlüssel (`albion_kostenrechner_preisvergleich_v1`,
-  NICHT der alte Schlüssel `eintopf_preisvergleich_v1` - beide Apps bleiben
-  bis Paket C parallel mit getrennter Auswahl benutzbar). Etwas Codeverdopplung
-  (Blockbildung, 429-Backoff) bewusst in Kauf genommen, s. Kommentar am
-  Dateianfang - entspricht der bestehenden Praxis, REALM in jeder App/jedem
-  Modul unabhängig zu verdrahten.
-- **`build_graph.py` erzeugt zusätzlich `item-namen.js`** (neu, 887,9 KB,
-  12.237 Items): komplette Namensliste ALLER Items aus dem Client-Dump (nicht
-  nur der ~4.200 Rezeptgraph-Knoten), inkl. `q`-Merker für Items mit echten
-  Qualitätsstufen-Preisen (`equipmentitem`/`weapon`/`transformationweapon`,
-  Logik 1:1 aus dem Eintopf-Rechner übernommen, dort am 13.09.2026 gegen Dump
-  UND Live-API belegt). Nutzt bereits vorhandene Downloads (kein
-  zusätzlicher Netzzugriff), `rezepte.js` inhaltlich byte-identisch bis auf
-  den Zeitstempel (per Diff geprüft).
-- **Eintopf-Rechner-Reiter:** Platzhalter mit Hinweistext, kein Code.
-- **App-Titel** in der Oberfläche auf "Albion Werkzeuge" geändert (`<title>`,
-  `.banner-brand`, `<h1 class="sr-only">`). Ordner- und Repo-Name bewusst
-  unverändert (Nutzer-Entscheidung).
+**Umgesetzt** (4 neue Dateien, keine bestehende Kostenrechner-Datei
+inhaltlich verändert außer `Kostenrechner.html` selbst):
 
-**Getestet:** `tests/test.html` selbst im Browser (headless Chrome, `--dump-dom`)
-laufen lassen, nicht nur behauptet: **296/296 Tests grün** (275 vorher + 21 neu,
-`PREISVERGLEICH.selbsttest()`: Namensauflösung, Qualifizierbarkeit, Suche,
-URL-Bau, Zeilenverarbeitung, Datumslogik). End-to-End zusätzlich per headless
-Chrome gegen die echte Datei geprüft (nicht nur Unit-Tests): Reiterwechsel,
-Suche, Hinzufügen, echter Live-Preisabruf über alle 7 Städte, "beste
-Stadt"-Markierung, Preisalter-Färbung - alles funktioniert, mit Screenshots
-bestätigt.
+- **`js/eintopf-daten.js`** (neu): die vormals in Python gehaltenen
+  Rezeptdaten (`STEWS`/`SAUCE`/`FISH`/`ITEM_VALUE`/`ZUTAT_NAMEN`,
+  Rindfleischeintopf T8_MEAL_STEW) 1:1 nach JS übertragen. Reine
+  Sprachumstellung, keine Werteänderung - fest hinterlegt wie zuvor, nicht aus
+  dem Rezeptgraphen des Kostenrechners abgeleitet (anderes System, craftbare
+  Ausrüstung statt Speisen).
+- **`js/eintopf-preise.js`** (neu): Live-Fetch-Schicht. `/prices` für alle
+  ~50 benötigten Item-IDs über alle 7 Städte, `/history` mit `time-scale=24`
+  für Handelsvolumen (Mischkalkulations-Grundlage) und `time-scale=1` nur für
+  den Eintopf selbst (Stundenprofil, wie im alten Python-Skript). Block zu 50,
+  1,5 s Pause, 429-Retry mit wachsender Wartezeit (identisches Muster wie
+  `js/preise.js`/`js/preisvergleich.js`). Eigener, neuer localStorage-
+  Schlüssel `albion_kostenrechner_eintopf_preise_v1` (Schema 1) - **nicht**
+  der alte Schlüssel `eintopf_rechner_v2` der eigenständigen App, beide bleiben
+  unabhängig nutzbar. Bewusst kein gemeinsamer Code mit `js/preise.js` (wie
+  bei `preisvergleich.js` bereits etabliert).
+- **`js/eintopf-rechenkern.js`** (neu): alle Rechenfunktionen aus dem
+  KONTEXT.md-Funktionsverzeichnis unverändert übernommen (`bezugsarten`,
+  `bestChopQuelle`, `billigste`, `sauceWege`, `verkaufswege`, `strategien`,
+  `gerade`, `entscheidungsleiter`, `schmerzgrenze`, `guete`), nur die
+  Datenquelle darunter getauscht (`EINTOPF_PREISE.sell()/buy()/volOf()/
+  avgOf()` statt eines von Python eingebetteten Objekts). Belegte Konstanten
+  RET_OHNE=0,152/RET_MIT=0,435/ORDERGEB=0,025/FEFF=2192/2353 unverändert aus
+  `../CLAUDE.md`.
+- **`js/eintopf-ui.js`** (neu): Rendering/DOM-Verdrahtung, ebenfalls 1:1 aus
+  dem alten TEMPLATE (`render()`/`heroZeichnen()`/`tagesZeichnen()`/
+  `kippZeichnen()`/`saucenZeichnen()`/`fischeZeichnen()`/`zeitenZeichnen()`/
+  `rohpreiseZeichnen()` usw.) übernommen. Alle Element-IDs tragen das Präfix
+  `et` (`etCraftStadt`, `etHaupt`, ...), weil einzelne Namen sonst mit dem
+  Kostenrechner-Reiter kollidiert hätten (z. B. gab es dort schon `#premium`).
+  Alle `document.querySelectorAll()`-Aufrufe, die früher das ganze Dokument
+  erfassten (Einstellungen speichern, Listener anhängen), sind jetzt auf
+  `#tab-eintopf` eingeschränkt - sonst hätten sie in der fusionierten Seite
+  auch Felder des Kostenrechner-/Preisvergleich-Reiters erfasst.
+- **Automatischer Erstabruf:** beim ersten Öffnen des Eintopf-Reiters je
+  Sitzung wird automatisch live abgerufen, sofern kein Cache vorliegt oder er
+  älter als 30 Minuten ist (Nutzer-Entscheidung, Rückfrage vom 13.09.2026);
+  danach nur noch per Klick auf "Preise aktualisieren". Solange keine Daten
+  vorliegen, zeigt der Reiter einen klaren Platzhalter statt irreführender
+  "kein Gewinn"-Meldungen.
+- **`Kostenrechner.html`:** Eintopf-Platzhalter durch das vollständige Markup
+  ersetzt (Einstellungen, Haupttabelle, Fischsauce, Tagesertrag, Faustregel,
+  Absatzzeiten, Fisch-Rangliste, Rohpreise - alle Panels aus der alten App).
+  Neue CSS-Klassen `.tag`/`.staedte`/`.stunden`/`.legend` ergänzt, ausschließlich
+  mit vorhandenen `design.md`-Tokens (keine neue Farbpalette).
 
-**Gehärtet:** `oberflaechen-pruefer` war in dieser Sitzung nicht verfügbar
-(Harness-Fehler "Agent type not found", nicht behoben trotz zweitem Versuch
-nach dem vorherigen Preisvergleich-Paket - wirkt wie ein sitzungsweites
-Problem, nicht wie ein einmaliger Ausrutscher). Stattdessen selbst geprüft:
-ARIA-Struktur der Reiter nachgerüstet (s. oben), CSS gegen `design.md`
-abgeglichen (nutzt ausschließlich vorhandene Tokens, keine neue Farbpalette),
-Preisvergleich-Suche hat **bewusst keine** Tastaturnavigation der
-Vorschlagsliste (Pfeiltasten/Escape) wie das Haupt-Suchfeld des Kostenrechners
-- das ist keine neue Lücke, sondern 1:1 aus dem ursprünglichen Eintopf-Rechner
-übernommenes Verhalten (Backlog-Punkt, falls gewünscht).
+**Getestet:** `tests/test.html` weiterhin **296/296 grün** (unverändert, da
+Paket C keine der dort geprüften Dateien anfasst). Zusätzlich, weil Paket D
+(automatisierte Tests für den Eintopf-Rechenkern) erst noch aussteht:
+`rechenkern-pruefer` angefordert, hat alle 10 migrierten Funktionen sowie die
+Datenkonstanten unabhängig nachgerechnet und keine Abweichung gefunden
+(Stationsgebühr, Rückgewinnung, FEFF, Steuer/Einstellungsgebühr,
+Gewinngeraden/Entscheidungsleiter). Eigene, unabhängige Gegenprobe in Python
+gegen die rohen API-Daten (Kürbis/Brot/Fleisch in Lymhurst): 39.277,80 Silber
+Kosten mit Fokus, exakt identisch zum JS-Ergebnis. Vollständiger Live-E2E-Test
+per headless Chrome gegen die echte Datei (echte AODP-Abrufe, kein Mock):
+Reiterwechsel, automatischer Erstabruf, alle Panels befüllt (Hero,
+Haupttabelle, Fischsauce, Faustregel, Absatzzeiten, Fisch-Rangliste,
+Rohpreise, 7 Städte-Checkboxen je Einkauf/Verkauf), keine JS-Fehler, Wechsel
+zurück zum Kostenrechner-Tab weiterhin fehlerfrei bedienbar (Scoping-Prüfung).
 
-**Nebenbefund, nicht Teil dieses Pakets:** beim Lesen des Git-Logs aufgefallen,
-dass der Commit `def8109` ("v2.1.4, Kaufen-Blattknoten ohne täuschenden
-Aufklapp-Pfeil", 06.09.2026) nie in diese Kontextdatei aufgenommen wurde,
-obwohl er vollständig dokumentiert und committet ist. Backfill in
-`kostenrechner-KONTEXT-HISTORIE.md` nachgetragen.
+**Gehärtet:** `spieldaten-pruefer` und `oberflaechen-pruefer` waren laut
+Vorgabe für diese Sitzung nicht anzufordern (in den vorherigen Paketen
+wiederholt als "Agent type not found" gescheitert, s. Historie). Stattdessen
+selbst geprüft: Screenshot der gerenderten Seite (nicht nur Code gelesen) -
+dunkles Albion-Theme wird korrekt übernommen, Reiterwechsel funktioniert,
+Einstellungen-Panel und Städte-Checkboxen sehen stimmig aus, keine
+Farb-/Kontrastprobleme gegenüber den bestehenden Panels. Bekannte, unveränderte
+Einschränkung aus der alten App 1:1 übernommen (keine neue Lücke): der
+`<select>` für "Preisbasis beim Sofortkauf" schneidet lange Optionstexte ab,
+wie auch andernorts in der App bereits üblich.
+
+**Datenqualität-Nebenbefund, kein Code-Fehler:** beim Testen mit einem sehr
+hohen `Preise höchstens (Tage)`-Wert (90 statt der Vorgabe 7) tauchten für den
+unverzauberten Eintopf (T8.0) Verkaufspreise im zweistelligen Millionenbereich
+auf - ein einzelnes, offenkundig nicht ernst gemeintes Alt-Angebot am Markt.
+Mit der **Standardeinstellung von 7 Tagen fällt dieser Ausreißer korrekt aus
+dem Ergebnis** (per Live-Test bestätigt: mit Standardwerten zeigt die Hero-
+Kachel einen plausiblen Gewinn von 13.180 Silber für T8.1). Bestätigt, dass
+`frisch()`/`maxage` genau die Funktion erfüllt, für die sie gedacht ist - kein
+Fehler, keine Änderung nötig.
 
 ---
 
@@ -145,7 +184,13 @@ Rechenkern-/Regeln-/Preise-Code geaendert, keine neuen Dateien) plus
 plus "App-Fusion Paket A+B: Reiterumschaltung + Preisvergleich migriert"
 (v3.0.0, neue Dateien `item-namen.js` (von `build_graph.py` zusaetzlich
 erzeugt)/`js/tabs.js`/`js/preisvergleich.js`, `Kostenrechner.html`/
-`tests/test.html` erweitert, kein Rechenkern-/Regeln-Code geaendert):
+`tests/test.html` erweitert, kein Rechenkern-/Regeln-Code geaendert) plus
+"App-Fusion Paket C: Eintopf-Rechenkern live migriert" (v3.1.0, neue Dateien
+`js/eintopf-daten.js`/`js/eintopf-preise.js`/`js/eintopf-rechenkern.js`/
+`js/eintopf-ui.js`, `Kostenrechner.html` erweitert (Eintopf-Platzhalter durch
+echtes Markup ersetzt, neue CSS-Klassen), kein bestehendes
+Kostenrechner-/Preisvergleich-Modul und `tests/test.html` nicht geaendert -
+Tests fuer den Eintopf-Rechenkern sind Paket D):
 
 ```
 Kostenrechner/
@@ -170,7 +215,11 @@ Kostenrechner/
                               aus design.md umgestellt, IDs/JS-Klassennamen unveraendert
                               v2.0.0; Reiterumschaltung (.tabs/.tabbtn), Eintopf-Platzhalter-
                               Reiter, Preisvergleich-Reiter-Markup (.pv-*), App-Titel
-                              "Albion Werkzeuge" v3.0.0): Suche, Hero,
+                              "Albion Werkzeuge" v3.0.0; Eintopf-Platzhalter durch echtes
+                              Markup ersetzt (Einstellungen/Haupttabelle/Fischsauce/
+                              Tagesertrag/Faustregel/Absatzzeiten/Fisch-Rangliste/Rohpreise,
+                              IDs mit et-Praefix), neue CSS-Klassen .tag/.staedte/.stunden/
+                              .legend v3.1.0): Suche, Hero,
                               Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
   js/
     tabs.js                  neu v3.0.0, keine Rechenlogik: Reiterumschaltung
@@ -180,6 +229,23 @@ Kostenrechner/
                               ITEM_NAMEN.alle, Live-Preise ueber alle Staedte/Qualitaeten,
                               eigener Realm/Retry/localStorage-Schluessel (bewusst kein
                               gemeinsamer Code mit preise.js), PREISVERGLEICH.selbsttest()
+    eintopf-daten.js          neu v3.1.0, migriert aus eintopf_update.py (STEWS/SAUCE/FISH/
+                              ITEM_VALUE, Rindfleischeintopf T8_MEAL_STEW), reine
+                              Sprachumstellung Python->JS, keine Werteaenderung
+    eintopf-preise.js         neu v3.1.0, Live-Fetch-Schicht (/prices + /history
+                              time-scale=24/1), eigener localStorage-Schluessel
+                              albion_kostenrechner_eintopf_preise_v1 (Schema 1), bewusst
+                              kein gemeinsamer Code mit preise.js/preisvergleich.js
+    eintopf-rechenkern.js     neu v3.1.0, alle Rechenfunktionen unveraendert aus dem alten
+                              Eintopf_Rechner.html-TEMPLATE uebernommen (bezugsarten/
+                              billigste/bestChopQuelle/sauceWege/verkaufswege/strategien/
+                              gerade/entscheidungsleiter/schmerzgrenze/guete), nur
+                              Datenquelle auf EINTOPF_PREISE/EINTOPF_DATEN umgestellt;
+                              RET_OHNE/RET_MIT/ORDERGEB/FEFF unveraendert aus ../CLAUDE.md
+    eintopf-ui.js             neu v3.1.0, Rendering/DOM-Verdrahtung 1:1 aus dem alten
+                              TEMPLATE, IDs mit et-Praefix, alle querySelectorAll auf
+                              #tab-eintopf eingeschraenkt; automatischer Erstabruf beim
+                              ersten Reiter-Oeffnen je Sitzung (Cache leer oder >30 Min. alt)
     preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
                               Cache-Schluessel + sammleQualitaetsMarktIds() v1.4.0, Schema auf 3);
                               volumenAbrufen()/normalisiereHistorieZeile() gegen history/,
@@ -256,9 +322,11 @@ Kostenrechner/
   Versionen/v2.0.1 - Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt/
   Versionen/v2.1.0 - v2.1.4 - siehe kostenrechner-KONTEXT-HISTORIE.md/
   Versionen/v3.0.0 - App-Fusion Paket A+B, Reiterumschaltung und Preisvergleich migriert/
+  Versionen/v3.1.0 - App-Fusion Paket C, Eintopf-Rechenkern live migriert/
   tests/test.html           296 Tests (275 + 21 neu fuer preisvergleich.js), Offline-
                               Selbsttests + 2 Live-Abschnitte; Testrahmen/-logik
-                              unveraendert seit v1.7.0
+                              unveraendert seit v1.7.0 (Eintopf-Rechenkern-Tests folgen
+                              in Paket D, noch keine automatisierten Tests dafuer)
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
@@ -308,25 +376,30 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
 
 ## Backlog / Mögliche nächste Schritte
 
-**Nächstes Orchestrator-Paket (höchste Priorität): Paket C der App-Fusion,
-Eintopf-Rechenkern migrieren.** Nutzer-Entscheidung (13.09.2026): komplett auf
-Live-Fetch im Browser umstellen wie der Kostenrechner (auch Tagesumsatz/
-Stundenprofile über `/history`), NICHT den bisherigen Python-Vorablauf
-(`eintopf_update.py`) beibehalten. Das ist mehr als eine reine Portierung -
-die `/history`-Stundenprofil-Logik existiert im Kostenrechner bisher nicht
-und muss neu für den Browser gebaut werden. Der JS-Rechenkern aus dem
-`TEMPLATE`-String von `eintopf_update.py` wandert nach `js/eintopf-rechenkern.js`
-o.ä. Nach Paket C: Paket D+E (Tests für den Eintopf-Rechenkern in
-`tests/test.html` ergänzen - bisher **null** automatisierte Tests dort, nur
-Handrechnungen; danach `Eintopf_Rechner.html`/`eintopf_update.py`/
-`Eintopf-Rechner aktualisieren.bat` in einen Archivordner verschieben, nicht
-löschen).
+**Nächstes Orchestrator-Paket (höchste Priorität): Paket D+E der App-Fusion.**
+Paket C (Eintopf-Rechenkern live migrieren) ist mit v3.1.0 abgeschlossen, s.
+"Aktueller Stand" oben. Offen:
+- **Paket D:** automatisierte Tests für den Eintopf-Rechenkern in
+  `tests/test.html` ergänzen - bisher **null** automatisierte Tests dafür, nur
+  die Live-Handrechnung/Python-Gegenprobe aus dem v3.1.0-Zyklus. Sinnvoller
+  Ansatz: analog zu `PREISVERGLEICH.selbsttest()` ein `EINTOPF_RECHENKERN`-
+  bzw. `EINTOPF_UI`-Selbsttest mit festen Beispielpreisen (kein Live-Abruf
+  nötig für die reine Formelprüfung).
+- **Paket E:** `Eintopf_Rechner.html`/`eintopf_update.py`/
+  `Eintopf-Rechner aktualisieren.bat` im Albion-Wurzelverzeichnis in einen
+  Archivordner verschieben, nicht löschen (Nutzer-Entscheidung, s.
+  `../KONTEXT.md`). Erst nach Paket D, damit bis dahin eine getestete
+  Referenz-Implementierung bestehen bleibt.
 
-**`oberflaechen-pruefer` war in dieser UND der vorherigen Sitzung nicht
-verfügbar** (Harness-Fehler "Agent type 'oberflaechen-pruefer' not found").
-Wirkt wie ein sitzungsweites/Harness-Problem, nicht wie ein Einzelfall - falls
-das in einer künftigen Sitzung weiterhin auftritt, lohnt sich eine Prüfung der
-Agenten-Registrierung selbst statt eines erneuten Versuchs.
+**`oberflaechen-pruefer` und `spieldaten-pruefer` waren über mehrere
+Sitzungen hinweg nicht verfügbar** (Harness-Fehler "Agent type ... not found").
+Im v3.1.0-Zyklus deshalb auf Anweisung gar nicht erst angefordert, stattdessen
+durchgehend selbst geprüft (Screenshot der gerenderten Seite, eigene
+Python-Gegenprobe). `rechenkern-pruefer` war im selben Zyklus dagegen
+problemlos erreichbar. Wirkt wie ein selektives Harness-Problem bei genau
+diesen beiden Agenten, nicht wie ein generelles Subagenten-Problem - falls das
+weiterhin auftritt, lohnt sich eine Prüfung der Agenten-Registrierung dieser
+beiden speziell.
 
 Die Arbeitspakete stehen in `kostenrechner-PLAN.md`, Abschnitt 6, alle sechs
 (P1-P7) sind abgeschlossen. Hier nur, was darüber hinaus offen ist. Die

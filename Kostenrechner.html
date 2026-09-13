@@ -348,6 +348,26 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 #pvStatus{font-size:12.5px;color:var(--dim)}
 #pvStatus.err{color:var(--red);font-weight:700}
 #pvStatus.ok{color:var(--green);font-weight:700}
+
+/* Eintopf-Rechner-Reiter (js/eintopf-*.js), migriert aus dem ehemals
+   eigenstaendigen Eintopf-Rechner (Paket C der App-Fusion, 13.09.2026). */
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;background:var(--accent-soft);
+     color:var(--gold);font-size:11px;font-weight:700;white-space:nowrap}
+.staedte{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:18px;padding-top:16px;
+         border-top:1px solid var(--line)}
+.staedte .t{width:100%;font-size:11px;color:var(--dim);font-weight:700;
+            text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:12px}
+.staedte label{display:flex;align-items:center;gap:7px;margin:0;text-transform:none;
+               font-size:13px;color:var(--text);font-weight:400;letter-spacing:0;cursor:pointer}
+.staedte input{width:auto}
+.staedte .leer{color:var(--dim);text-decoration:line-through}
+.stunden{display:grid;grid-template-columns:repeat(24,1fr);gap:3px;margin-top:6px}
+.stunden div{border-radius:3px;background:var(--gold-dim);min-height:6px}
+.stunden span{font-size:9px;color:var(--dim);text-align:center;font-variant-numeric:tabular-nums}
+.legend{font-size:12px;color:var(--dim);margin-top:10px;line-height:1.5}
+#etStatus{font-size:12.5px;color:var(--dim)}
+#etStatus.err{color:var(--red);font-weight:700}
+#etStatus.ok{color:var(--green);font-weight:700}
 </style>
 </head>
 <body>
@@ -616,8 +636,231 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 </div><!-- /tab-kostenrechner -->
 
 <div id="tab-eintopf" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-eintopf" style="display:none">
-<div class="hero leer">Der Eintopf-Rechner wird in einem folgenden Ausbauschritt hier ergaenzt (App-Fusion, Paket C). Bis dahin weiterhin eigenstaendig nutzbar: <code>Eintopf_Rechner.html</code> im Albion-Wurzelverzeichnis.</div>
+
+<div class="sub">Profitrechner für den Rindfleischeintopf (T8, Stufen .0&ndash;.3): welche Verzauberungsstufe sich lohnt, wo Fisch eingekauft und wo verkauft wird, bis zu welchem Fischpreis das noch trägt. Live-Marktdaten, eigenständig vom Kostenrechner.</div>
+
+<div class="bar">
+  <button type="button" id="etRefresh">Preise aktualisieren</button>
+  <button type="button" id="etReset" class="mini" title="Alle Einstellungen auf Voreinstellung zurücksetzen">Einstellungen zurücksetzen</button>
+  <span id="etStatus"></span>
 </div>
+<div class="sub" id="etStand" style="margin-top:-10px"></div>
+
+<div class="hero leer" id="etHero">Noch keine Marktdaten geladen.</div>
+
+<div class="panel gp-panel">
+<h2>Einstellungen</h2>
+
+<div class="sek">
+<div class="sek-t">Charakter &amp; Station</div>
+<div class="grid">
+  <div class="feld">
+    <label for="etCraftStadt" title="Wo du craftest - Grundzutaten (Kürbis, Brot, Fleisch) werden dort eingekauft, die Station steht dort. Fisch, Stückchen, Seegras und Saucen kannst du unabhängig davon woanders einkaufen (siehe Beschaffung), verkauft wird in den unten gewählten Städten.">Craft-Stadt</label>
+    <select id="etCraftStadt"></select>
+  </div>
+  <div class="feld">
+    <label for="etPremium">Premium</label>
+    <select id="etPremium"><option value="1">Ja &mdash; 4 % Steuer</option><option value="0">Nein &mdash; 8 % Steuer</option></select>
+  </div>
+  <div class="feld">
+    <label title="Prozent der Roh-Fokuskosten aus dem Client-Dump. Im Spiel abgelesen: T8.3 kostet 2.192 Fokus statt der 2.353 Rohkosten, also 93,16 %.">Fokus</label>
+    <div class="opts"><label for="etFokus"><input type="checkbox" id="etFokus" checked>einsetzen</label></div>
+  </div>
+  <div class="feld">
+    <label for="etFokusbudget" title="Wie viel Fokus dir pro Tag zur Verfügung steht - die tägliche Regeneration, nicht der Vorrat. Daraus errechnet sich, wie viele Batches du am Tag schaffst und was dabei herauskommt.">Fokus je Tag</label>
+    <input type="number" id="etFokusbudget" value="10000" step="500" min="0">
+  </div>
+  <div class="feld">
+    <label for="etStation" title="Beispiel T8 Küche des Ältesten: 380 Silber je 100 Nahrung. Ein Batch verbraucht 648 Nahrung (144 Materialien x ItemValue 40 x 0,1125). Fischsauce hat ItemValue 0 und erhöht die Gebühr nicht.">Stationsgebühr</label>
+    <input type="number" id="etStation" value="380" step="10" min="0">
+  </div>
+</div>
+</div>
+
+<div class="sek">
+<div class="sek-t">Handel</div>
+<div class="grid">
+  <div class="feld">
+    <label>Zutaten einkaufen</label>
+    <div class="opts">
+      <label for="etBezSofort" title="Zahlt das niedrigste Verkaufsangebot. Sofort verfügbar, aber teurer."><input type="checkbox" id="etBezSofort" checked>Sofortkauf</label>
+      <label for="etBezOrder" title="Eigene Kauforder auf Höhe des besten bestehenden Gebots. Günstiger, kostet aber Einstellungsgebühr und füllt sich erst mit der Zeit - oder gar nicht."><input type="checkbox" id="etBezOrder">Kauforder</label>
+    </div>
+  </div>
+  <div class="feld">
+    <label>Eintöpfe verkaufen</label>
+    <div class="opts">
+      <label for="etVkSofort" title="Sofort in bestehende Kauforders verkaufen. Nur Steuer, keine Einstellungsgebühr - dafür der deutlich niedrigere Kaufordersatz."><input type="checkbox" id="etVkSofort">Sofortverkauf</label>
+      <label for="etVkOrder" title="Eigene Verkaufsorder auf Höhe des günstigsten bestehenden Angebots. Steuer plus Einstellungsgebühr, dafür der weit höhere Preis."><input type="checkbox" id="etVkOrder" checked>Verkaufsorder</label>
+    </div>
+  </div>
+</div>
+<div id="etVkStaedte" class="staedte"></div>
+</div>
+
+<div class="sek">
+<div class="sek-t">Beschaffung</div>
+<div class="grid">
+  <div class="feld">
+    <label for="etEigenerPreis" title="Du kaufst keine Fischstückchen, sondern Fische und wandelst sie um. Hier steht, was dir das im Maximum je Stückchen wert ist - dieser Wert treibt die gesamte Gewinnrechnung. 0 schaltet die Vorgabe ab.">Max. Silber je Fischstückchen</label>
+    <input type="number" id="etEigenerPreis" value="0" step="5" min="0">
+    <div class="hint" id="etStueckchenRef"></div>
+  </div>
+  <div class="feld">
+    <label for="etBasis" title="Zum Bestpreis liegen oft nur eine Handvoll Stück im Orderbuch. Wer mehr kauft, arbeitet sich nach oben und zahlt nie weniger als das beste Angebot. Konservativ rechnet deshalb mit dem höheren Wert aus Bestpreis und 7-Tage-Durchschnitt.">Preisbasis beim Sofortkauf</label>
+    <select id="etBasis">
+      <option value="avg">Konservativ &mdash; höherer Wert aus Bestpreis und &Oslash; 7 Tage</option>
+      <option value="best">Nur Bestpreis &mdash; realistisch nur für wenige Stück</option>
+    </select>
+  </div>
+  <div class="feld">
+    <label for="etKriterium" title="Wonach die Rangfolge gebildet wird. Gewinn je Batch zählt, wenn Kapital und Absatz frei sind. Gewinn je Fokus zählt, wenn dein Fokus der Engpass ist.">Rangfolge nach</label>
+    <select id="etKriterium">
+      <option value="fokus">Gewinn je Fokus &mdash; Fokus ist der Engpass</option>
+      <option value="batch">Gewinn je Batch &mdash; absolut</option>
+    </select>
+  </div>
+  <div class="feld">
+    <label for="etAnteil" title="Wie viel Prozent des täglichen Handelsvolumens du selbst wegkaufen kannst. Begrenzt, wie viel von einem günstigen Fisch realistisch beschaffbar ist.">Marktanteil (%)</label>
+    <input type="number" id="etAnteil" value="25" step="5" min="1" max="100">
+  </div>
+  <div class="feld">
+    <label for="etTage" title="Über wie viele Tage du den Bedarf einsammelst. Mehr Tage heißt mehr verfügbare Menge zum günstigen Preis.">Beschaffungstage</label>
+    <input type="number" id="etTage" value="1" step="1" min="1" max="30">
+  </div>
+  <div class="feld">
+    <label for="etMaxage" title="Ältere Angebote gelten als nicht vorhanden. Preise älter als eine Stunde werden ohnehin gelb markiert.">Preise höchstens (Tage)</label>
+    <input type="number" id="etMaxage" value="7" step="1" min="1" max="90">
+  </div>
+</div>
+<div id="etStaedte" class="staedte"></div>
+</div>
+</div>
+
+<div class="panel gp-panel">
+<h2>Beste Strategie je Verzauberungsstufe</h2>
+<div class="tblwrap">
+<table id="etHaupt">
+<thead><tr>
+  <th class="l">Eintopf</th><th class="l">Beste Strategie</th>
+  <th title="Einkauf aller Zutaten für einen Batch von 10 Eintöpfen, nach Rückgewinnung und inklusive Stationsgebühr.">Kosten / Batch</th>
+  <th title="Verkauf von 10 Eintöpfen in bestehende Kauforders, abzüglich Steuer.">Erlös / Batch</th>
+  <th title="Erlös minus Kosten für einen Batch von 10 Eintöpfen.">Gewinn / Batch</th>
+  <th title="Gewinn eines Batches geteilt durch die dafür eingesetzten Fokuspunkte. Ist dein Fokus der Engpass, gehört er in die Stufe mit dem höchsten Wert.">Gewinn / Fokus</th>
+  <th title="Abstand zwischen Verkaufsangebot und Kauforder. Ab 30 Prozent ist der Markt dünn.">Spanne</th>
+  <th title="Klick auf die Zeile zeigt alle Strategien und die Einkaufsliste.">Signal</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
+</div>
+
+<div class="panel gp-panel">
+<h2>Fischsauce &mdash; kaufen oder selbst machen?</h2>
+<div class="tblwrap">
+<table id="etSaucen">
+<thead><tr>
+  <th class="l">Sauce</th><th>Rezept je Sauce</th>
+  <th title="Wie viele Saucen ein Batch von 10 Eintöpfen braucht.">Saucen / Batch</th>
+  <th title="Was du dafür insgesamt einkaufen musst.">Bedarf gesamt</th>
+  <th title="Fertige Sauce am Markt kaufen, günstigste der gewählten Städte.">Kaufen</th>
+  <th title="Sauce selbst craften, Fischstückchen zum oben eingetragenen eigenen Höchstpreis.">Selbst (eigener Preis)</th>
+  <th class="l">Günstigster Weg</th>
+  <th title="Unterschied zwischen teuerstem und günstigstem beschaffbaren Weg, hochgerechnet auf den ganzen Batch.">Ersparnis / Batch</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
+</div>
+
+<div class="panel gp-panel">
+<h2>Tagesertrag &mdash; was bringt dein Fokus?</h2>
+<div class="tblwrap">
+<table id="etTages">
+<thead><tr>
+  <th class="l">Eintopf</th>
+  <th title="Fokus für einen Batch von 10 Stück.">Fokus / Batch</th>
+  <th title="Wie viele volle Batches dein Tagesbudget hergibt.">Batches / Tag</th>
+  <th title="Gewinn eines Batches geteilt durch die Fokuspunkte.">Gewinn / Fokus</th>
+  <th title="Batches mal Gewinn je Batch - was am Tag herauskommt.">Gewinn / Tag</th>
+  <th title="Silber, das du dafür vorstrecken musst.">Kapital / Tag</th>
+  <th title="Wie viele Stück du am Tag absetzen musst, gemessen am tatsächlichen Tagesumsatz des Marktes.">Absatz / Markt</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
+<div class="legend" id="etTagesHinweis"></div>
+</div>
+
+<div class="panel gp-panel">
+<h2>Faustregel &mdash; welche Stufe lohnt sich?</h2>
+<div id="etKipp"></div>
+</div>
+
+<div class="panel gp-panel">
+<h2>Absatzzeiten &mdash; wann wird tatsächlich gekauft?</h2>
+<div id="etZeiten"></div>
+</div>
+
+<div class="panel gp-panel">
+<h2>Fisch-Rangliste &mdash; Silber je Fischstückchen</h2>
+<div class="grid" style="max-width:460px;margin-bottom:18px">
+  <div class="feld">
+    <label for="etGrenzeStufe" title="Welche Stufe du zu craften vorhast. Die Tabelle zeigt dann je Fisch, bis zu welchem Preis sich das lohnt.">Ich will craften</label>
+    <select id="etGrenzeStufe">
+      <option value="auto">Beste Stufe &mdash; automatisch</option>
+      <option value="1">T8.1</option>
+      <option value="2">T8.2</option>
+      <option value="3">T8.3</option>
+    </select>
+  </div>
+  <div class="feld">
+    <label>Fische zeigen</label>
+    <div class="opts">
+      <label for="etFischSelten" title="Seltene Fische - schneller zu fangen, dafür weniger Stückchen je Fisch."><input type="checkbox" id="etFischSelten" checked>Seltene</label>
+      <label for="etFischUebrig" title="Alle übrigen (nicht seltenen) Fische."><input type="checkbox" id="etFischUebrig" checked>Übrige</label>
+    </div>
+  </div>
+</div>
+<div class="tblwrap">
+<table id="etFische">
+<thead><tr>
+  <th class="l">Fisch</th><th>Tier</th><th class="l">Gruppe</th>
+  <th class="l" title="Günstigste der von dir gewählten Städte.">Stadt</th>
+  <th class="l" title="Günstigste Bezugsart. Kauforder-Preise enthalten die Einstellungsgebühr.">Bezug</th>
+  <th title="Wie viele Fischstückchen ein Fisch dieser Stufe ergibt.">Stückchen / Fisch</th>
+  <th>Preis</th>
+  <th title="Fischpreis geteilt durch die Anzahl Stückchen.">Silber / Stückchen</th>
+  <th title="Positiv heißt günstiger als der Direktkauf von Zerkleinertem Fisch.">Ersparnis / Stückchen</th>
+  <th class="l" id="etGrenzeSpalte" title="So viel darf dieser Fisch kosten, solange die oben gewählte Stufe die beste Wahl bleibt.">Lohnt bis</th>
+  <th title="Aktuell günstigstes Angebot gegen mengengewichteten Durchschnitt der letzten 7 Tage.">Bestpreis / &Oslash; 7 T.</th>
+  <th title="Tatsächlich gehandelte Stückzahl pro Tag, Schnitt der letzten 7 Tage.">Umsatz / Tag</th>
+  <th>Stand</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
+</div>
+
+<details class="gp-panel">
+<summary>Rohpreise &amp; Handelsvolumen</summary>
+<div class="body">
+<div class="tblwrap">
+<table id="etRohpreise">
+<thead><tr>
+  <th class="l">Item</th><th class="l">Stadt</th><th class="l">ID</th>
+  <th title="Niedrigstes Verkaufsangebot - was du beim Sofortkauf zahlst.">Sofortkauf</th>
+  <th title="Höchste Kauforder - was du beim Sofortverkauf bekommst.">Kauforder</th>
+  <th title="Tatsächlich gehandelte Stückzahl pro Tag, Schnitt der letzten 7 Tage.">Umsatz / Tag</th>
+  <th>Stand</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
+</div>
+</details>
+
+</div><!-- /tab-eintopf -->
 
 <div id="tab-preisvergleich" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-preisvergleich" style="display:none">
 
@@ -647,6 +890,10 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 <script src="js/regeln.js"></script>
 <script src="js/rechenkern.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/eintopf-daten.js"></script>
+<script src="js/eintopf-preise.js"></script>
+<script src="js/eintopf-rechenkern.js"></script>
+<script src="js/eintopf-ui.js"></script>
 <script src="js/tabs.js"></script>
 <script src="js/preisvergleich.js"></script>
 </body>
