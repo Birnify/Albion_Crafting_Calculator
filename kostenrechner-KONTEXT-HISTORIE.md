@@ -7,6 +7,64 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.1.2, App-Fusion Paket E, 13.09.2026, letztes Paket der App-Fusion)
+
+**Vorheriger Stand (v3.1.1, App-Fusion Paket D)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** fünftes und letztes Paket der Feature "App-Fusion" - die alten,
+jetzt überflüssigen eigenständigen Eintopf-Rechner-Dateien im
+Albion-Wurzelverzeichnis archivieren (nicht löschen), reines Aufräum-/
+Dokumentationspaket ohne Code-Änderung an Kostenrechner.html/js/*.js.
+
+**Umgesetzt** (ausschließlich Dateien außerhalb dieses Repos plus diese
+Kontextdatei geändert, kein Kostenrechner-/Eintopf-Code angefasst):
+
+- `Eintopf_Rechner.html`, `eintopf_update.py`, `Eintopf-Rechner aktualisieren.bat`
+  aus dem Albion-Wurzelverzeichnis nach
+  `../Archiv/Eintopf-Rechner (eigenstaendig, vor App-Fusion)/` verschoben, nicht
+  gelöscht.
+- Die zugehörige Versionshistorie unter `../Versionen/` im Wurzelverzeichnis
+  bleibt unverändert stehen (Nutzer-Entscheidung, s. `../CLAUDE.md`
+  Abschnitt "Versionierung").
+- `../KONTEXT.md` am Anfang mit einem Archiv-Hinweis versehen (Verweis hierher),
+  der übrige Inhalt bleibt unverkürzt als historische Fachdokumentation der
+  Formeln/Werte stehen, die weiterhin die Quelle für `js/eintopf-*.js` sind.
+- `../CLAUDE.md` aktualisiert: Tabelle "Kontext-Dateien immer zuerst lesen" und
+  Abschnitt "Versionskontrolle" beschreiben den Eintopf-Rechner jetzt als
+  archivierte, in den Kostenrechner überführte App statt als eigenständiges
+  Ziel; neuer Absatz "App-Fusion (Pakete A-E, abgeschlossen 13.09.2026)"
+  ergänzt. Belegte Spielformeln/-werte unangetastet.
+- `../.claude/agents/albion-cycle-orchestrator.md` (eigene Agentendefinition)
+  an vier Stellen (Frontmatter-Beschreibung, "Erste Schritte", Phase 2, Phase 5
+  Git-Regel) an den neuen Stand angepasst.
+- **Geprüft, nichts zeigt ins Leere:** keine Windows-Verknüpfung (Desktop,
+  Startmenü) referenziert die drei Dateien; die einzige Albion-nahe
+  Verknüpfung startet nur das Spiel selbst. `Eintopf-Rechner aktualisieren.bat`
+  nutzt ausschließlich relative Pfade (`cd /d "%~dp0"`), bleibt also nach dem
+  gemeinsamen Verschieben aller drei Dateien funktionsfähig.
+
+**Getestet:** keine Code-Änderung an Kostenrechner-Dateien, daher keine neue
+Testlogik nötig. `tests/test.html` trotzdem per echtem `file://`-Aufruf in
+Chrome (headless, `--dump-dom`) erneut geprüft: unverändert **335/335 grün**,
+keine Konsolenfehler. Kein `rechenkern-pruefer`/`spieldaten-pruefer` angefordert
+(kein Rechenkern-/Spieldaten-Code geändert).
+
+**Gehärtet:** keine Oberflächenänderung, daher kein `oberflaechen-pruefer`
+angefordert. `Kostenrechner.html` im Browser geöffnet, alle drei Reiter
+(Kostenrechner/Eintopf-Rechner/Preisvergleich) funktionieren unverändert wie
+vor dem Paket, da an ihrem Code nichts geändert wurde. Git-Status nach
+Abschluss geprüft: innerhalb `Kostenrechner/` ausschließlich diese
+Kontextdatei geändert.
+
+**Damit ist die App-Fusion (Pakete A-E) vollständig abgeschlossen.** Die
+ehemals drei getrennten Werkzeuge (Kostenrechner, Eintopf-Rechner,
+Preisvergleich) laufen jetzt als eine App mit drei Reitern, die alten
+Eintopf-Rechner-Dateien sind archiviert statt gelöscht.
+
+---
+
 ## Aktueller Stand (v3.1.1, App-Fusion Paket D, 13.09.2026)
 
 **Vorheriger Stand (v3.1.0, App-Fusion Paket C)** unverkürzt nach

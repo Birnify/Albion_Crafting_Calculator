@@ -257,16 +257,29 @@ const REGELN = (function () {
   // -----------------------------------------------------------------------
 
   const SPEZ_TYP = {
-    // Ruestungs-/Waffenknoten und Veredeln teilen dieselben Werte (250/30 je
-    // Stufe, plus eigener Meisterschaftsknoten mit 30 je Stufe).
+    // Ruestungs-/Waffenknoten: 250 Unique/Stufe, 30 Mutual/Stufe (WIRKT AUCH
+    // AUF DEN EIGENEN KNOTEN, s. fceAusSpezialisierungsknoten()-Kommentar),
+    // plus eigener Meisterschaftsknoten mit 30 FCE je Stufe. Belegt, Wiki
+    // "Crafting", Uebersichtstabelle, Zeile "weapon/armor crafting nodes":
+    // "Total bonus of a node" 280 (=250+30) je Stufe, "Total bonus with
+    // level 100 mastery" 43.000 (Waffen) bzw. 47.500 (Ruestung) bei 100/100.
     waffen_ruestung: { unique: 250, mutual: 30, mastery: 30, einFeld: false },
-    veredeln: { unique: 250, mutual: 30, mastery: 30, einFeld: false },
     umhang: { unique: 370, mutual: 0, mastery: 30, einFeld: false },
     tasche: { unique: 340, mutual: 0, mastery: 30, einFeld: false },
     // Uebrige Werkzeuge: Meisterschaft und Spezialisierung sind zu EINEM
     // Knoten verschmolzen ("fused"), kein getrennter Meisterschaftsknoten,
     // s. CLAUDE.md "Fokuskosten"/Wiki Specializations.
     werkzeug_fused: { unique: 250, mutual: 60, mastery: 0, einFeld: true },
+    // Veredeln: KEIN getrennter Meisterschaftsknoten (anders als vorher hier
+    // angenommen, Fehler behoben 13.09.2026, Audit-Befund 3). Wiki
+    // "Specializations", Abschnitt Refining, woertlich: "All refining
+    // specialization nodes are their own crafting mastery nodes." Jede Stufe
+    // eines Veredeln-Knotens IST bereits die Meisterschaft, kein zweites Feld
+    // noetig - modelliert wie werkzeug_fused (einFeld: true, mastery: 0), nur
+    // mit eigenen Unique-/Mutual-Werten (250/30 statt 250/60). Gegenprobe:
+    // 5 Knoten (T4-T8) je Stufe 100 -> 25.000u + 5x100x30m = 40.000 FCE,
+    // exakt der Wiki-Endwert.
+    veredeln: { unique: 250, mutual: 30, mastery: 0, einFeld: true },
     // Speisen (Koch) und Traenke (Alchemist): gleiche Struktur wie Waffen/
     // Ruestung (250/30 + eigene Meisterschaft 30 je Stufe), nur
     // unterschiedliche Anzahl Spezialisierungsknoten (Koch 9, Alchemist 8)
@@ -363,10 +376,18 @@ const REGELN = (function () {
   /**
    * FCE fuer einen Spezialisierungsknoten (Gruppe `gruppenSchluessel`)
    * innerhalb der Kategorie `cc`: eigener Unique-Anteil (Stufe dieses
-   * Knotens) + Mutual-Anteil ALLER ANDEREN Knoten derselben Kategorie (deren
-   * Stufe x Mutual je Stufe) + bei getrenntem Meisterschaftsknoten dessen
-   * Anteil (Meisterschaftsstufe x 30). 0, wenn die Kategorie hier nicht
-   * abgebildet ist (s. KATEGORIE_ZU_SPEZTYP).
+   * Knotens) + Mutual-Anteil ALLER Knoten derselben Kategorie EINSCHLIESSLICH
+   * DES EIGENEN (deren Stufe x Mutual je Stufe) + bei getrenntem
+   * Meisterschaftsknoten dessen Anteil (Meisterschaftsstufe x typ.mastery).
+   * 0, wenn die Kategorie hier nicht abgebildet ist (s. KATEGORIE_ZU_SPEZTYP).
+   *
+   * Der eigene Mutual-Anteil war bis 13.09.2026 ein Fehler: die Formel liess
+   * ihn aus (nur "alle ANDEREN Knoten"), Audit-Befund 2. Wiki "Crafting",
+   * Uebersichtstabelle, Spalte "Total bonus of a node" (je Stufe): 280 fuer
+   * Waffen/Ruestung/Veredeln/Gathergear = 250 Unique + 30 Mutual DESSELBEN
+   * Knotens, nicht nur Unique. Gegenprobe unveraendert gueltig: Ruestung mit
+   * allen Knoten auf Stufe 100 (inkl. Meisterschaft) ergibt jetzt korrekt
+   * 47.500 FCE (vorher hoechstens 44.500 erreichbar).
    * @param {string} cc
    * @param {string} gruppenSchluessel Gruppe des Zielknotens
    * @param {Object<string,number>} knotenStufen gruppenSchluessel -> Stufe (>= 0)
@@ -378,7 +399,7 @@ const REGELN = (function () {
     const stufen = knotenStufen || {};
     let fce = Math.max(0, stufen[gruppenSchluessel] || 0) * typ.unique;
     Object.keys(stufen).forEach((k) => {
-      if (k !== gruppenSchluessel) fce += Math.max(0, stufen[k] || 0) * typ.mutual;
+      fce += Math.max(0, stufen[k] || 0) * typ.mutual; // inkl. des eigenen Knotens (Befund 2)
     });
     if (!typ.einFeld) fce += Math.max(0, meisterschaftsstufe || 0) * typ.mastery;
     return fce;
@@ -785,22 +806,33 @@ const REGELN = (function () {
 
     (function () {
       // waffen_ruestung: unique 250, mutual 30, mastery 30. Knoten A Stufe 10,
-      // Knoten B Stufe 5 (wirkt nur als Mutual auf A), Meisterschaft 3.
+      // Knoten B Stufe 5, Meisterschaft 3. Mutual wirkt seit dem Fix (Befund 2,
+      // 13.09.2026) auf ALLE Knoten inkl. des eigenen (A selbst).
       const stufen = { A: 10, B: 5 };
-      const erwartet = 10 * 250 + 5 * 30 + 3 * 30; // 2.500 + 150 + 90 = 2.740
+      const erwartet = 10 * 250 + (10 + 5) * 30 + 3 * 30; // 2.500 + 450 + 90 = 3.040
       pruefe(
-        "fceAusSpezialisierungsknoten (Waffen/Ruestung): eigener Unique + fremder Mutual + Meisterschaft",
+        "fceAusSpezialisierungsknoten (Waffen/Ruestung): eigener Unique + Mutual ALLER Knoten (inkl. eigener) + Meisterschaft",
         fceAusSpezialisierungsknoten("sword", "A", stufen, 3) === erwartet,
         fceAusSpezialisierungsknoten("sword", "A", stufen, 3) + " vs " + erwartet
       );
+      // Gegenprobe Wiki "Crafting"-Uebersichtstabelle, woertlich: "Total bonus
+      // of a node" (ein einzelner Knoten fuer sich, ohne andere Knoten, ohne
+      // Meisterschaft) = 280 je Stufe = 250 Unique + 30 Mutual DESSELBEN
+      // Knotens - das ist genau der mit Befund 2 behobene fehlende Anteil.
+      const einzelnerKnoten = fceAusSpezialisierungsknoten("plate_armor", "A", { A: 1 }, 0);
+      pruefe(
+        "fceAusSpezialisierungsknoten (Ruestung): ein einzelner Knoten fuer sich (Stufe 1, keine Meisterschaft) ergibt 280 FCE (Wiki 'Total bonus of a node')",
+        einzelnerKnoten === 280,
+        String(einzelnerKnoten)
+      );
     })();
     (function () {
-      // umhang: mutual 0 -> der fremde Knoten B traegt NICHTS bei, nur eigener
-      // Unique (370/Stufe) und die eigene Meisterschaft (30/Stufe).
+      // umhang: mutual 0 -> kein Mutual-Anteil, auch nicht vom eigenen Knoten,
+      // nur eigener Unique (370/Stufe) und die eigene Meisterschaft (30/Stufe).
       const stufen = { A: 4, B: 9 };
-      const erwartet = 4 * 370 + 9 * 0 + 2 * 30; // 1.480 + 0 + 60 = 1.540
+      const erwartet = 4 * 370 + (4 + 9) * 0 + 2 * 30; // 1.480 + 0 + 60 = 1.540
       pruefe(
-        "fceAusSpezialisierungsknoten (Umhaenge): kein Mutual-Anteil von anderen Knoten (370/0)",
+        "fceAusSpezialisierungsknoten (Umhaenge): kein Mutual-Anteil (370/0), unveraendert durch den Mutual-Fix",
         fceAusSpezialisierungsknoten("cape", "A", stufen, 2) === erwartet,
         fceAusSpezialisierungsknoten("cape", "A", stufen, 2) + " vs " + erwartet
       );
@@ -808,13 +840,37 @@ const REGELN = (function () {
     (function () {
       // werkzeug_fused: unique 250, mutual 60, KEINE getrennte Meisterschaft -
       // ein uebergebener Meisterschaftswert wird ignoriert (einFeld: true).
+      // Mutual wirkt seit dem Fix auch hier auf den eigenen Knoten (A).
       const stufen = { A: 5, B: 2 };
-      const erwartet = 5 * 250 + 2 * 60; // 1.250 + 120 = 1.370, ohne Meisterschaftsanteil
+      const erwartet = 5 * 250 + (5 + 2) * 60; // 1.250 + 420 = 1.670, ohne Meisterschaftsanteil
       const mitIgnorierterMeisterschaft = fceAusSpezialisierungsknoten("tools", "A", stufen, 100);
       pruefe(
-        "fceAusSpezialisierungsknoten (uebrige Werkzeuge, fused): Meisterschaftsparameter wird ignoriert",
+        "fceAusSpezialisierungsknoten (uebrige Werkzeuge, fused): eigener Mutual-Anteil zaehlt mit, Meisterschaftsparameter wird ignoriert",
         mitIgnorierterMeisterschaft === erwartet,
         mitIgnorierterMeisterschaft + " vs " + erwartet
+      );
+    })();
+    (function () {
+      // veredeln: seit Befund 3 (13.09.2026) wie werkzeug_fused KEIN
+      // getrennter Meisterschaftsknoten (Wiki: "All refining specialization
+      // nodes are their own crafting mastery nodes"), aber eigene Unique-/
+      // Mutual-Werte (250/30 statt 250/60). Ein uebergebener Meisterschafts-
+      // wert wird ignoriert.
+      const stufen = { A: 5, B: 2 };
+      const erwartet = 5 * 250 + (5 + 2) * 30; // 1.250 + 210 = 1.460, ohne Meisterschaftsanteil
+      const mitIgnorierterMeisterschaft = fceAusSpezialisierungsknoten("fiber", "A", stufen, 100);
+      pruefe(
+        "fceAusSpezialisierungsknoten (Veredeln): kein getrennter Meisterschaftsknoten, Parameter wird ignoriert",
+        mitIgnorierterMeisterschaft === erwartet,
+        mitIgnorierterMeisterschaft + " vs " + erwartet
+      );
+      // Gegenprobe Wiki: 5 Veredeln-Knoten (T4-T8 derselben Kette) je Stufe 100
+      // ergeben den belegten Endwert 40.000 FCE (25.000 Unique + 15.000 Mutual).
+      const voll100 = fceAusSpezialisierungsknoten("fiber", "A", { A: 100, B: 100, C: 100, D: 100, E: 100 }, 999);
+      pruefe(
+        "fceAusSpezialisierungsknoten (Veredeln): voll ausgebaute Kette (5 Knoten je Stufe 100) ergibt den belegten Endwert 40.000 FCE",
+        voll100 === 40000,
+        String(voll100)
       );
     })();
     pruefe(

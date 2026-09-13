@@ -1393,10 +1393,16 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       ergebnisse.every((r) => Math.abs(r.silber - ergebnisse[0].silber) < 0.01),
       JSON.stringify(ergebnisse.map((r) => r.silber))
     );
-    // Exakte Gegenprobe des gemeldeten NACH-Werts (05.09.2026).
+    // Exakte Gegenprobe des gemeldeten NACH-Werts (05.09.2026). Wert am
+    // 13.09.2026 auf 1.087,45 neu berechnet (vorher 1.233,50): Befund 2/3 aus
+    // AUDIT-2026-09-13.md korrigierten fceAusSpezialisierungsknoten() (eigener
+    // Mutual-Anteil ergaenzt, Veredeln ohne getrennten Meisterschaftsknoten),
+    // das aendert die FCE fuer cloth_helmet UND fiber in diesem Szenario und
+    // damit den erwarteten Fokuswert - keine Regression, sondern die neue,
+    // wiki-belegte korrekte Zahl fuer dieselbe Eingabe.
     pruefe(
-      "Regressionstest Fokus-Monotonie: NACH-Schritt (Nutzerwerte) exakt 1.233,50 Fokus (Gegenprobe der gemeldeten Reproduktion)",
-      nahe(ergebnisse[3].fokus, 1233.5021946275801, 0.01),
+      "Regressionstest Fokus-Monotonie: NACH-Schritt (Nutzerwerte) exakt 1.087,45 Fokus (Gegenprobe der gemeldeten Reproduktion, Wert nach Befund-2/3-Fix)",
+      nahe(ergebnisse[3].fokus, 1087.4519111198806, 0.01),
       String(ergebnisse[3].fokus)
     );
   })();

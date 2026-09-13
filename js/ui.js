@@ -34,10 +34,12 @@ const UI = (function () {
       // Schicksalsbrett-Knotenliste je Kategorie"): craftingcategory -> { meisterschaft, knoten }.
       // knoten ist gruppenSchluessel (REGELN.gruppenSchluesselVonItem) -> Stufe.
       // meisterschaft gilt nur fuer Kategorien mit getrenntem Meisterschaftsknoten
-      // (REGELN.SPEZ_TYP[...].einFeld === false); bei "uebrige Werkzeuge" (fused)
-      // bleibt es ungenutzt. Ersetzt die fruehere fceAusSchicksalsbrett()-Quick-
-      // Konvertierung (Meisterschaft x 30 + EINE Spezialisierung x 250), die den
-      // Mutual-Anteil anderer Knoten ignorierte, s. regeln.js fuer die Herleitung.
+      // (REGELN.SPEZ_TYP[...].einFeld === false); bei "uebrige Werkzeuge" und
+      // Veredeln (beide fused, kein getrennter Meisterschaftsknoten, s.
+      // regeln.js SPEZ_TYP) bleibt es ungenutzt. Ersetzt die fruehere
+      // fceAusSchicksalsbrett()-Quick-Konvertierung (Meisterschaft x 30 + EINE
+      // Spezialisierung x 250), die den Mutual-Anteil anderer Knoten ignorierte,
+      // s. regeln.js fuer die Herleitung.
       spezialisierung: {},
       // Fokuseinsatz steuerbar machen (Feature 05.09.2026): fokusRegelJeKategorie
       // (craftingcategory -> "immer"|"nie") gilt fuer JEDES Vorkommen dieser
@@ -1988,7 +1990,7 @@ const UI = (function () {
         thead.innerHTML =
           "<tr><th>Knoten</th><th>" +
           (typ.einFeld ? "Knotenstufe" : "Spezialisierungsstufe") +
-          "</th><th title='Eigener Unique-Anteil + Mutual-Anteil aller anderen Knoten dieser Kategorie + ggf. Meisterschaft'>FCE</th></tr>";
+          "</th><th title='Eigener Unique-Anteil + Mutual-Anteil ALLER Knoten dieser Kategorie (inkl. des eigenen) + ggf. Meisterschaft'>FCE</th></tr>";
         table.appendChild(thead);
         const tbody = document.createElement("tbody");
         gruppen.forEach((g) => {

@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-13 · Version: v3.1.2 · App-Fusion Paket E: alte eigenständige Eintopf-Rechner-Dateien archiviert, App-Fusion (Pakete A-E) damit vollständig abgeschlossen
+Stand: 2026-09-13 · Version: v3.1.3 · Bugfix Spezialisierungsknoten-FCE-Formel (eigener Mutual-Anteil ergänzt, Veredeln ohne getrennten Meisterschaftsknoten), Audit-Befund 2/3
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -45,61 +45,77 @@ Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
 
-## Aktueller Stand (v3.1.2, App-Fusion Paket E, 13.09.2026, letztes Paket der App-Fusion)
+## Aktueller Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel, 13.09.2026)
 
-**Vorheriger Stand (v3.1.1, App-Fusion Paket D)** unverkürzt nach
+**Vorheriger Stand (v3.1.2, App-Fusion Paket E)** unverkürzt nach
 `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
 "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** fünftes und letztes Paket der Feature "App-Fusion" - die alten,
-jetzt überflüssigen eigenständigen Eintopf-Rechner-Dateien im
-Albion-Wurzelverzeichnis archivieren (nicht löschen), reines Aufräum-/
-Dokumentationspaket ohne Code-Änderung an Kostenrechner.html/js/*.js.
+**Auftrag:** zwei durch das offizielle Wiki belegte Rechenfehler aus einem
+Code-Audit (`AUDIT-2026-09-13.md`, Befund 2 und 3) beheben:
 
-**Umgesetzt** (ausschließlich Dateien außerhalb dieses Repos plus diese
-Kontextdatei geändert, kein Kostenrechner-/Eintopf-Code angefasst):
+1. `fceAusSpezialisierungsknoten()` ließ den Mutual-Anteil des eigenen
+   Zielknotens aus (nur "alle ANDEREN Knoten"). Wiki "Crafting",
+   Übersichtstabelle, wörtlich: "Total bonus of a node" = 280 je Stufe für
+   Waffen/Rüstung/Veredeln/Gathergear, also 250 Unique **+ 30 Mutual
+   desselben Knotens**, nicht nur Unique. Bis zu 3.000 FCE zu wenig, bis zu
+   23 % zu hohe Fokuskosten.
+2. `SPEZ_TYP.veredeln` führte fälschlich einen getrennten
+   Meisterschaftsknoten (`mastery: 30, einFeld: false`). Wiki
+   "Specializations", Abschnitt Refining, wörtlich: "All refining
+   specialization nodes are their own crafting mastery nodes" - es gibt dort
+   **keinen** getrennten Meisterschaftsknoten. Bis zu 3.000 FCE zu viel, bis
+   zu 19 % zu niedrige Fokuskosten beim Veredeln.
 
-- `Eintopf_Rechner.html`, `eintopf_update.py`, `Eintopf-Rechner aktualisieren.bat`
-  aus dem Albion-Wurzelverzeichnis nach
-  `../Archiv/Eintopf-Rechner (eigenstaendig, vor App-Fusion)/` verschoben, nicht
-  gelöscht.
-- Die zugehörige Versionshistorie unter `../Versionen/` im Wurzelverzeichnis
-  bleibt unverändert stehen (Nutzer-Entscheidung, s. `../CLAUDE.md`
-  Abschnitt "Versionierung").
-- `../KONTEXT.md` am Anfang mit einem Archiv-Hinweis versehen (Verweis hierher),
-  der übrige Inhalt bleibt unverkürzt als historische Fachdokumentation der
-  Formeln/Werte stehen, die weiterhin die Quelle für `js/eintopf-*.js` sind.
-- `../CLAUDE.md` aktualisiert: Tabelle "Kontext-Dateien immer zuerst lesen" und
-  Abschnitt "Versionskontrolle" beschreiben den Eintopf-Rechner jetzt als
-  archivierte, in den Kostenrechner überführte App statt als eigenständiges
-  Ziel; neuer Absatz "App-Fusion (Pakete A-E, abgeschlossen 13.09.2026)"
-  ergänzt. Belegte Spielformeln/-werte unangetastet.
-- `../.claude/agents/albion-cycle-orchestrator.md` (eigene Agentendefinition)
-  an vier Stellen (Frontmatter-Beschreibung, "Erste Schritte", Phase 2, Phase 5
-  Git-Regel) an den neuen Stand angepasst.
-- **Geprüft, nichts zeigt ins Leere:** keine Windows-Verknüpfung (Desktop,
-  Startmenü) referenziert die drei Dateien; die einzige Albion-nahe
-  Verknüpfung startet nur das Spiel selbst. `Eintopf-Rechner aktualisieren.bat`
-  nutzt ausschließlich relative Pfade (`cd /d "%~dp0"`), bleibt also nach dem
-  gemeinsamen Verschieben aller drei Dateien funktionsfähig.
+Diese Sitzung ohne den `albion-cycle-orchestrator` umgesetzt: der Agent war
+über das Agent-Tool nicht aufrufbar (`Agent type 'albion-cycle-orchestrator'
+not found`, ebenso `oberflaechen-pruefer`/`spieldaten-pruefer` - dasselbe seit
+mehreren Sitzungen bekannte selektive Harness-Problem, s. Backlog unten). Nach
+Rückfrage hat der Nutzer die Inline-Umsetzung im Hauptgespräch gewählt statt
+zu warten oder abzubrechen.
 
-**Getestet:** keine Code-Änderung an Kostenrechner-Dateien, daher keine neue
-Testlogik nötig. `tests/test.html` trotzdem per echtem `file://`-Aufruf in
-Chrome (headless, `--dump-dom`) erneut geprüft: unverändert **335/335 grün**,
-keine Konsolenfehler. Kein `rechenkern-pruefer`/`spieldaten-pruefer` angefordert
-(kein Rechenkern-/Spieldaten-Code geändert).
+**Umgesetzt** (`js/regeln.js`, `js/ui.js`, `tests/test.html`, kein
+Rechenkern-/Preise-Code geändert):
 
-**Gehärtet:** keine Oberflächenänderung, daher kein `oberflaechen-pruefer`
-angefordert. `Kostenrechner.html` im Browser geöffnet, alle drei Reiter
-(Kostenrechner/Eintopf-Rechner/Preisvergleich) funktionieren unverändert wie
-vor dem Paket, da an ihrem Code nichts geändert wurde. Git-Status nach
-Abschluss geprüft: innerhalb `Kostenrechner/` ausschließlich diese
-Kontextdatei geändert.
+- `js/regeln.js`: `SPEZ_TYP.veredeln` auf `{ unique: 250, mutual: 30,
+  mastery: 0, einFeld: true }` geändert (wie `werkzeug_fused` modelliert,
+  eigene Unique-/Mutual-Werte). `fceAusSpezialisierungsknoten()`: der
+  Mutual-Anteil wird jetzt über ALLE Knoten summiert, den eigenen
+  eingeschlossen, statt nur über die anderen.
+- `js/ui.js`: keine Logikänderung - das Meisterschaftsfeld für Veredeln
+  verschwindet automatisch über die bereits vorhandene
+  `!typ.einFeld`-Bedingung. Nur zwei Kommentare/eine Tooltip-Beschriftung
+  ("Eigener Unique-Anteil + Mutual-Anteil ALLER Knoten ... inkl. des
+  eigenen") aktualisiert.
+- `tests/test.html`: bestehender Fokus-Monotonie-Regressionstest (v1.5.2)
+  nutzt `fiber` (Veredeln) mit einem Meisterschaftswert im Testfall - der
+  hartkodierte Erwartungswert ändert sich dadurch von 1.233,50 auf 1.087,45
+  Fokus (keine Regression, sondern die neue korrekte Zahl für dieselbe
+  Eingabe, s. Kommentar dort). Kommentar ergänzt, der das erklärt.
 
-**Damit ist die App-Fusion (Pakete A-E) vollständig abgeschlossen.** Die
-ehemals drei getrennten Werkzeuge (Kostenrechner, Eintopf-Rechner,
-Preisvergleich) laufen jetzt als eine App mit drei Reitern, die alten
-Eintopf-Rechner-Dateien sind archiviert statt gelöscht.
+**Getestet:** `js/regeln.js`: drei bestehende Tests an die neue Formel
+angepasst (waffen_ruestung-Testfall neu 3.040 statt 2.740, werkzeug_fused neu
+1.670 statt 1.370, jeweils mit erklärendem Kommentar), zwei neue Tests ergänzt
+(einzelner Ruestungsknoten = 280 FCE laut Wiki "Total bonus of a node";
+Veredeln-Kette mit 5 Knoten je Stufe 100 = 40.000 FCE laut Wiki-Endwert,
+Meisterschaftsparameter wird nachweislich ignoriert). Vorher unabhängig in
+einem Node-Skript im Scratchpad gegengerechnet, bevor die Tests geschrieben
+wurden. `tests/test.html` über den lokalen Server (`.claude/launch.json`,
+nicht `file://`) im Browser ausgeführt: **338/338 grün** (335 + 3 neue),
+keine Konsolenfehler.
+
+**Gehärtet:** live in der Oberfläche geprüft (`Kostenrechner.html` über den
+lokalen Server): das Meisterschaftsfeld fehlt jetzt korrekt bei `fiber`
+("Knotenstufe" statt "Spezialisierungsstufe"), bleibt korrekt erhalten bei
+`sword` ("Meisterschaftsstufe" + "Spezialisierungsstufe"). Testeingabe an
+zwei fiber-Knoten (je Stufe 10) ergab live 3.100 FCE (250×10 + 30×20) bzw.
+600 FCE für einen unbenutzten Knoten (30×20) - exakt die erwartete Rechnung.
+Kein `rechenkern-pruefer`/`oberflaechen-pruefer` angefordert (Formel-Tests
+und Browser-Gegenprobe bereits selbst durchgeführt).
+
+Die weiteren Audit-Befunde (Befund 1: Fokus-Bezugsgröße je Charge/Stück,
+ungeklärt und schwerwiegend; Befund 4-12) sind eigene, spätere Pakete, s.
+`AUDIT-2026-09-13.md`.
 
 ---
 
@@ -148,7 +164,11 @@ keine der drei Eintopf-Dateien geaendert, Option A) plus "App-Fusion Paket E:
 alte eigenstaendige Eintopf-Rechner-Dateien archiviert" (v3.1.2, reines
 Aufraeum-/Dokumentationspaket, KEINE Kostenrechner-Code-Datei geaendert, nur
 diese Kontextdatei; die drei archivierten Dateien und die Doku ausserhalb
-dieses Repos s. "Aktueller Stand"; App-Fusion Pakete A-E damit abgeschlossen):
+dieses Repos s. "Aktueller Stand"; App-Fusion Pakete A-E damit abgeschlossen)
+plus Bugfix "Spezialisierungsknoten-FCE-Formel" (v3.1.3, `js/regeln.js`
+(SPEZ_TYP.veredeln, fceAusSpezialisierungsknoten()) + `tests/test.html`
+(drei Tests angepasst, zwei neu) geaendert, `js/ui.js` nur Kommentare/
+Tooltip-Text, s. "Aktueller Stand" und `AUDIT-2026-09-13.md` Befund 2/3):
 
 ```
 Kostenrechner/
@@ -213,11 +233,14 @@ Kostenrechner/
     regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0; Qualitaetswurf/Reroll-Kette
                               v1.4.0; SPEZ_TYP/KATEGORIE_ZU_SPEZTYP/spezialisierungsGruppen()/
                               fceAusSpezialisierungsknoten() v1.5.0; gruppenSchluesselVonItem(item,cc)
-                              Bugfix v1.5.1, s. "Aktueller Stand"): itemWert, RRR, Stationsgebuehr
+                              Bugfix v1.5.1; Bugfix fceAusSpezialisierungsknoten() (eigener Mutual-
+                              Anteil ergaenzt) + SPEZ_TYP.veredeln (kein getrennter Meisterschafts-
+                              knoten mehr) v3.1.3, s. "Aktueller Stand" und AUDIT-2026-09-13.md
+                              Befund 2/3): itemWert, RRR, Stationsgebuehr
                               (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
                               rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
-                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1).
-                              Unveraendert seit v1.5.1.
+                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1/v3.1.3).
+                              Unveraendert seit v3.1.3.
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
                               Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
                               fceFuer() um Knoten-Ebene erweitert v1.5.0, reicht cc an
@@ -246,7 +269,10 @@ Kostenrechner/
                               v1.7.0; itemIconUrl()/bgBadgeInfo()/bgTooltipFuer()/bgCard()/
                               baueKnotenGrafisch()/renderBauplanGrafisch() (alle Modul-Ebene
                               bzw. im boot()-Scope wie baueKnoten()), einstellungen.bauplanAnsicht
-                              (Text/Grafisch, localStorage-persistiert) v1.8.0):
+                              (Text/Grafisch, localStorage-persistiert) v1.8.0; FCE-Spalten-
+                              Tooltip + Kommentar praezisiert, keine Logikaenderung
+                              (Meisterschaftsfeld-Sichtbarkeit haengt schon vorher an
+                              typ.einFeld) v3.1.3, s. AUDIT-2026-09-13.md Befund 3):
                               Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
@@ -283,8 +309,11 @@ Kostenrechner/
   Versionen/v3.1.0 - App-Fusion Paket C, Eintopf-Rechenkern live migriert/
   Versionen/v3.1.1 - App-Fusion Paket D, Eintopf-Rechenkern automatisierte Tests ergaenzt/
   Versionen/v3.1.2 - App-Fusion Paket E, alte eigenstaendige Eintopf-Rechner-Dateien archiviert/
-  tests/test.html           335 Tests (296 bisherige + 39 neu fuer eintopf-rechenkern.js/
-                              eintopf-daten.js, v3.1.1, App-Fusion Paket D). Offline-
+  tests/test.html           338 Tests (335 bisherige + 3 neu/angepasst fuer
+                              fceAusSpezialisierungsknoten(), v3.1.3, Bugfix
+                              Spezialisierungsknoten-FCE-Formel; 296 davon + 39 fuer
+                              eintopf-rechenkern.js/eintopf-daten.js, v3.1.1, App-Fusion
+                              Paket D). Offline-
                               Selbsttests + 2 Live-Abschnitte; Testrahmen/-logik sonst
                               unveraendert seit v1.7.0. Die 39 neuen Tests binden
                               js/eintopf-daten.js/eintopf-preise.js/eintopf-rechenkern.js
