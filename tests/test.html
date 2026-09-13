@@ -70,6 +70,9 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 <script src="../js/ui.js"></script>
 <script src="../js/tabs.js"></script>
 <script src="../js/preisvergleich.js"></script>
+<script src="../js/eintopf-daten.js"></script>
+<script src="../js/eintopf-preise.js"></script>
+<script src="../js/eintopf-rechenkern.js"></script>
 <script>
   "use strict";
 
@@ -1826,6 +1829,334 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       "defaultEinstellungen: bauplanAnsicht startet auf 'text' (bisheriges Fliesstext-Verhalten bleibt Standard, Grafisch ist Opt-in)",
       UI.defaultEinstellungen().bauplanAnsicht === "text"
     );
+  })();
+
+  // -----------------------------------------------------------------------
+  // App-Fusion Paket D (13.09.2026): Eintopf-Rechenkern (js/eintopf-rechenkern.js)
+  // und Eintopf-Daten (js/eintopf-daten.js). Bisher KEINE automatisierten Tests
+  // dafuer, nur eine einmalige externe Pruefung durch rechenkern-pruefer beim
+  // v3.1.0-Zyklus (s. kostenrechner-KONTEXT.md). Nutzer-Entscheidung
+  // 13.09.2026: keine Aenderung an eintopf-rechenkern.js/eintopf-daten.js,
+  // alles bleibt hier in test.html (Option A) - EINTOPF_RECHENKERN liest
+  // Preise ausschliesslich ueber EINTOPF_PREISE.sell()/buy()/volOf()/avgOf(),
+  // die hier je Testblock per Monkey-Patching temporaer durch synthetische
+  // Fixtures ersetzt und danach wieder hergestellt werden. Kein Netzzugriff,
+  // keine der drei eintopf-*.js-Dateien wird angefasst.
+  // -----------------------------------------------------------------------
+  (function () {
+    const D = EINTOPF_DATEN;
+    const K = EINTOPF_RECHENKERN;
+    const stew = D.STEWS[0]; // Rindfleischeintopf T8_MEAL_STEW
+
+    // Ersetzt EINTOPF_PREISE.sell/buy/volOf/avgOf fuer die Dauer von fn()
+    // durch Nachschlagefunktionen gegen eine synthetische Fixture, stellt die
+    // Originale danach zuverlaessig wieder her (auch bei einer Exception).
+    function mitFixture(preiseFix, volumenFix, fn) {
+      const alt = { sell: EINTOPF_PREISE.sell, buy: EINTOPF_PREISE.buy, volOf: EINTOPF_PREISE.volOf, avgOf: EINTOPF_PREISE.avgOf };
+      function nachschlagen(map, feld, id, stadt) {
+        const s = stadt || EINTOPF_PREISE.getHome();
+        return ((map[id] || {})[s] || {})[feld] || 0;
+      }
+      EINTOPF_PREISE.sell = (id, stadt) => nachschlagen(preiseFix, "sell", id, stadt);
+      EINTOPF_PREISE.buy = (id, stadt) => nachschlagen(preiseFix, "buy", id, stadt);
+      EINTOPF_PREISE.volOf = (id, stadt) => nachschlagen(volumenFix || {}, "d7", id, stadt);
+      EINTOPF_PREISE.avgOf = (id, stadt) => nachschlagen(volumenFix || {}, "avg", id, stadt);
+      try { fn(); } finally {
+        EINTOPF_PREISE.sell = alt.sell; EINTOPF_PREISE.buy = alt.buy;
+        EINTOPF_PREISE.volOf = alt.volOf; EINTOPF_PREISE.avgOf = alt.avgOf;
+      }
+    }
+
+    function opts(overrides) {
+      return Object.assign({
+        station: 380,
+        bez: { sofort: true, order: false },
+        vk: { sofort: false, order: true },
+        staedte: ["Lymhurst"], vkStaedte: ["Lymhurst"],
+        basis: "best", tax: 0.04, eigenerPreis: 0,
+        tage: 7, anteil: 1, kriterium: "gewinn",
+      }, overrides || {});
+    }
+
+    EINTOPF_PREISE.setHome("Lymhurst");
+
+    // ---- eintopf-daten.js: Datenkonstanten (kein Monkey-Patching noetig,
+    // reine Werteabfrage) ----
+    pruefe("eintopf-daten: 38 Fische hinterlegt", D.FISH.length === 38, D.FISH.length);
+    pruefe(
+      "eintopf-daten: Rindfleischeintopf hat Kuerbis/Brot/Fleisch als Basiszutaten",
+      stew.base.map((b) => b[0]).sort().join(",") === "T4_BREAD,T8_MEAT,T8_PUMPKIN"
+    );
+    pruefe(
+      "eintopf-daten: ItemValue der Koch-Grundzutaten ist 40 (CLAUDE.md 'Belegte Spielformeln')",
+      D.ITEM_VALUE.T8_PUMPKIN === 40 && D.ITEM_VALUE.T4_BREAD === 40 && D.ITEM_VALUE.T8_MEAT === 40
+    );
+    pruefe(
+      "eintopf-daten: Fischsauce hat ItemValue 0 auf allen drei Stufen (reine Umwandlung, keine craftingcategory)",
+      D.ITEM_VALUE.T1_FISHSAUCE_LEVEL1 === 0 && D.ITEM_VALUE.T1_FISHSAUCE_LEVEL2 === 0 && D.ITEM_VALUE.T1_FISHSAUCE_LEVEL3 === 0
+    );
+    pruefe(
+      "eintopf-daten: Fokus-Rohwerte aus dem Dump (551/752/1152/2353 je Stufe)",
+      stew.focus0 === 551 && stew.ench[1].focus === 752 && stew.ench[2].focus === 1152 && stew.ench[3].focus === 2353,
+      JSON.stringify({ focus0: stew.focus0, e1: stew.ench[1].focus, e2: stew.ench[2].focus, e3: stew.ench[3].focus })
+    );
+    pruefe(
+      "eintopf-daten: Nahrung je Batch ist auf allen vier Stufen gleich 648 (Sauce mit ItemValue 0 erhoeht die Gebuehr nicht)",
+      nahe(stew.nahrung[0], 648, 1e-9) && nahe(stew.nahrung[1], 648, 1e-9) && nahe(stew.nahrung[2], 648, 1e-9) && nahe(stew.nahrung[3], 648, 1e-9),
+      JSON.stringify(stew.nahrung)
+    );
+
+    // ---- eintopf-rechenkern.js: belegte Konstanten ----
+    pruefe("eintopf-rechenkern: RET_OHNE = 0,152 (Craft-Fenster ohne Fokus)", K.RET_OHNE === 0.152);
+    pruefe("eintopf-rechenkern: RET_MIT = 0,435 (Craft-Fenster mit Fokus)", K.RET_MIT === 0.435);
+    pruefe("eintopf-rechenkern: ORDERGEB = 0,025 (Einstellungsgebuehr eigener Orders)", K.ORDERGEB === 0.025);
+    pruefe("eintopf-rechenkern: FEFF = 2192/2353 (93,16 % Fokus-Effizienz)", nahe(K.FEFF, 2192 / 2353, 1e-9));
+    pruefe(
+      "eintopf-rechenkern: FEFF rekonstruiert den im Craft-Fenster abgelesenen Fokus 2.192 aus dem Rohwert 2.353 (T8.3)",
+      nahe(stew.ench[3].focus * K.FEFF, 2192, 0.01),
+      stew.ench[3].focus * K.FEFF
+    );
+
+    // ---- Stationsgebuehr: Referenzwert 2.462 Silber bei Satz 380 (CLAUDE.md
+    // "Rindfleischeintopf: ... 648 Nahrung je Batch", Craft-Fenster 2.462) ----
+    (function () {
+      const gebuehrErwartet = stew.nahrung[0] * 380 / 100;
+      pruefe(
+        "eintopf-rechenkern: Stationsgebuehr bei Satz 380 entspricht dem belegten Referenzwert 2.462 Silber",
+        nahe(gebuehrErwartet, 2462.4, 0.01),
+        gebuehrErwartet
+      );
+
+      const preiseFix = { T8_PUMPKIN: { Lymhurst: { sell: 100 } }, T4_BREAD: { Lymhurst: { sell: 50 } }, T8_MEAT: { Lymhurst: { sell: 80 } } };
+      const basis = 36 * 100 + 36 * 50 + 72 * 80; // 11.160
+      mitFixture(preiseFix, {}, () => {
+        const resOhne = K.strategien(stew, 0, opts(), false);
+        const resMit = K.strategien(stew, 0, opts(), true);
+        pruefe(
+          "eintopf-rechenkern: strategien(ench=0) zieht die Stationsgebuehr exakt einmal ab, unabhaengig von der Ruecklaufrate",
+          resOhne.length > 0 && nahe(resOhne[0].kosten - basis * (1 - K.RET_OHNE), gebuehrErwartet, 0.01),
+          resOhne.length ? resOhne[0].kosten : "kein Ergebnis"
+        );
+        pruefe(
+          "eintopf-rechenkern: mit Fokus (RET_MIT) sind die Nettokosten niedriger als ohne Fokus (RET_OHNE), hoehere Ruecklaufrate senkt den Materialeinsatz",
+          resOhne.length > 0 && resMit.length > 0 && resMit[0].kosten < resOhne[0].kosten,
+          JSON.stringify({ ohne: resOhne[0] && resOhne[0].kosten, mit: resMit[0] && resMit[0].kosten })
+        );
+      });
+    })();
+
+    // ---- Steuer/Einstellungsgebuehr: Sofortverkauf (nur Steuer) vs.
+    // Verkaufsorder (Steuer + Einstellungsgebuehr), Referenzwerte aus CLAUDE.md
+    // "Handelskonventionen" (8 x 218.898 => 70.047 Steuer, 43.780 Gebuehr) ----
+    (function () {
+      const gesamt = 8 * 218898;
+      pruefe(
+        "eintopf-rechenkern: 4 % Steuer auf 8 x 218.898 entspricht dem am Marktfenster belegten Wert 70.047",
+        Math.round(gesamt * 0.04) === 70047,
+        Math.round(gesamt * 0.04)
+      );
+      pruefe(
+        "eintopf-rechenkern: 2,5 % Einstellungsgebuehr auf 8 x 218.898 entspricht dem am Marktfenster belegten Wert 43.780",
+        Math.round(gesamt * K.ORDERGEB) === 43780,
+        Math.round(gesamt * K.ORDERGEB)
+      );
+
+      const preiseFix = { T_STEUERTEST: { Lymhurst: { sell: 218898, buy: 218898 } } };
+      mitFixture(preiseFix, {}, () => {
+        const wege = K.verkaufswege("T_STEUERTEST", opts({ vk: { sofort: true, order: true } }));
+        const sofort = wege.find((w) => w.art === "Sofortverkauf");
+        const order = wege.find((w) => w.art === "Verkaufsorder");
+        pruefe(
+          "eintopf-rechenkern: Sofortverkauf zieht nur die Steuer ab (218.898 x 0,96)",
+          sofort && nahe(sofort.netto, 218898 * 0.96, 0.01),
+          sofort && sofort.netto
+        );
+        pruefe(
+          "eintopf-rechenkern: Verkaufsorder zieht Steuer UND Einstellungsgebuehr ab (218.898 x 0,935)",
+          order && nahe(order.netto, 218898 * 0.935, 0.01),
+          order && order.netto
+        );
+        pruefe(
+          "eintopf-rechenkern: verkaufswege() sortiert absteigend nach Netto, bei gleichem Bruttopreis gewinnt Sofortverkauf (niedrigere Abzuege)",
+          wege[0].art === "Sofortverkauf",
+          wege.map((w) => w.art + ":" + w.netto.toFixed(2)).join(", ")
+        );
+      });
+    })();
+
+    // ---- Gewinngeraden (K0/B/A) und Schmerzgrenze: bei der Schmerzgrenze
+    // muss der Gewinn exakt 0 sein (etablierte Gegenprobe, s.
+    // kostenrechner-KONTEXT.md "Entwicklungsweise") ----
+    (function () {
+      const preiseFix = {
+        T8_PUMPKIN: { Lymhurst: { sell: 100 } }, T4_BREAD: { Lymhurst: { sell: 50 } }, T8_MEAT: { Lymhurst: { sell: 80 } },
+        T1_SEAWEED: { Lymhurst: { sell: 20 } },
+        "T8_MEAL_STEW@1": { Lymhurst: { sell: 5200, buy: 5000 } },
+      };
+      mitFixture(preiseFix, {}, () => {
+        const o = opts({ vk: { sofort: true, order: true } });
+        const g = K.gerade(stew, 1, o, false);
+        pruefe(
+          "eintopf-rechenkern: gerade() liefert K0/B/A passend zur Handrechnung (K0~13.452,48, B~1.144,80, A~35.167,52)",
+          g && nahe(g.K0, 13452.48, 0.5) && nahe(g.B, 1144.8, 0.5) && nahe(g.A, 35167.52, 0.5),
+          g && JSON.stringify({ K0: g.K0, B: g.B, A: g.A })
+        );
+
+        const grenze = K.schmerzgrenze(stew, 1, o, false);
+        pruefe(
+          "eintopf-rechenkern: schmerzgrenze() entspricht der Handrechnung A/B (~30,72 Silber je Fischstueckchen)",
+          nahe(grenze, 30.719357, 0.01),
+          grenze
+        );
+        pruefe(
+          "eintopf-rechenkern: bei der Schmerzgrenze ist der Gewinn exakt 0 (Gegenprobe aus kostenrechner-KONTEXT.md)",
+          g && grenze != null && nahe(g.gewinn(grenze), 0, 0.01),
+          g && grenze != null ? g.gewinn(grenze) : "-"
+        );
+        pruefe(
+          "eintopf-rechenkern: knapp unter der Schmerzgrenze ist der Gewinn positiv, knapp darueber negativ",
+          g && grenze != null && g.gewinn(grenze - 1) > 0 && g.gewinn(grenze + 1) < 0,
+          g && grenze != null ? JSON.stringify({ unter: g.gewinn(grenze - 1), ueber: g.gewinn(grenze + 1) }) : "-"
+        );
+
+        pruefe(
+          "eintopf-rechenkern: schmerzgrenze() liefert null fuer ench=0 (ohne Sauce gibt es keine Fischpreis-Grenze)",
+          K.schmerzgrenze(stew, 0, o, false) === null
+        );
+      });
+    })();
+
+    // ---- Fehlerfall: Preis 0 / kein Angebot darf nicht als echter Preis
+    // durchgerutscht werden (CLAUDE.md, bekannter Fallstrick) ----
+    (function () {
+      mitFixture({}, {}, () => {
+        const o = opts();
+        pruefe(
+          "eintopf-rechenkern: bezugsarten() liefert keinen Sofortkauf-Weg ohne hinterlegten Preis (Preis 0 ist kein echter Preis)",
+          K.bezugsarten("T8_PUMPKIN", "Lymhurst", o).length === 0
+        );
+        pruefe(
+          "eintopf-rechenkern: billigste() liefert null ohne jeden Preis, nicht einen Scheinpreis von 0",
+          K.billigste("T8_PUMPKIN", o) === null
+        );
+        pruefe(
+          "eintopf-rechenkern: gerade() liefert null, wenn die Basiszutaten keinen Preis haben (basis=0)",
+          K.gerade(stew, 1, o, false) === null
+        );
+        pruefe(
+          "eintopf-rechenkern: schmerzgrenze() liefert null unter denselben Bedingungen",
+          K.schmerzgrenze(stew, 1, o, false) === null
+        );
+        pruefe(
+          "eintopf-rechenkern: strategien(ench=0) liefert keine Zeile ohne Basiszutaten-Preise, statt einen 0-Kosten-Weg zu erfinden",
+          K.strategien(stew, 0, o, false).length === 0
+        );
+      });
+
+      const preisExplizitNull = { T_PREIS_NULL: { Lymhurst: { sell: 0, buy: 0 } } };
+      mitFixture(preisExplizitNull, {}, () => {
+        pruefe(
+          "eintopf-rechenkern: verkaufswege() ignoriert einen Preis von exakt 0 (kein Angebot), erzeugt keinen Scheinweg",
+          K.verkaufswege("T_PREIS_NULL", opts({ vk: { sofort: true, order: true } })).length === 0
+        );
+      });
+    })();
+
+    // ---- entscheidungsleiter(): Schnittpunkte zwischen den Verzauberungsstufen.
+    // Fixture so gewaehlt, dass bei niedrigem Fischpreis die hoechste Stufe
+    // gewinnt (hoeherer Verkaufserloes dominiert) und bei steigendem Fischpreis
+    // absteigend die niedrigeren Stufen, bis keine mehr profitabel ist -
+    // Zahlen vorab unabhaengig in Python nachgerechnet. ----
+    (function () {
+      const preiseFix = {
+        T8_PUMPKIN: { Lymhurst: { sell: 100 } }, T4_BREAD: { Lymhurst: { sell: 50 } }, T8_MEAT: { Lymhurst: { sell: 80 } },
+        T1_SEAWEED: { Lymhurst: { sell: 20 } },
+        "T8_MEAL_STEW@1": { Lymhurst: { sell: 3000 } },
+        "T8_MEAL_STEW@2": { Lymhurst: { sell: 4500 } },
+        "T8_MEAL_STEW@3": { Lymhurst: { sell: 7000 } },
+      };
+      mitFixture(preiseFix, {}, () => {
+        const o = opts({ vk: { sofort: false, order: true } });
+        const zonen = K.entscheidungsleiter(stew, o, false);
+
+        pruefe(
+          "eintopf-rechenkern: entscheidungsleiter() liefert 4 Zonen fuer die Test-Fixture",
+          zonen.length === 4,
+          JSON.stringify(zonen)
+        );
+        pruefe(
+          "eintopf-rechenkern: Zonen sind lueckenlos (jede Zone beginnt, wo die vorige endet) und beginnen bei 0",
+          zonen.length > 0 && zonen[0].von === 0 && zonen.every((z, i) => i === 0 || z.von === zonen[i - 1].bis),
+          JSON.stringify(zonen.map((z) => [z.von, z.bis]))
+        );
+        pruefe(
+          "eintopf-rechenkern: letzte Zone ist nach oben offen (bis === null)",
+          zonen.length > 0 && zonen[zonen.length - 1].bis === null
+        );
+        pruefe(
+          "eintopf-rechenkern: bei niedrigem Fischpreis gewinnt Stufe .3 (Zone 1)",
+          zonen[0] && zonen[0].ench === 3,
+          zonen[0] && zonen[0].ench
+        );
+        pruefe(
+          "eintopf-rechenkern: absteigende Reihenfolge .3 -> .2 -> .1 -> keine Stufe profitabel",
+          zonen.length === 4 && zonen[1].ench === 2 && zonen[2].ench === 1 && zonen[3].ench === null,
+          JSON.stringify(zonen.map((z) => z.ench))
+        );
+
+        // Unabhaengige Gegenprobe je Zone: Sieger ueber die oeffentlichen
+        // Funktionen gerade()+guete() neu berechnet, nicht aus
+        // entscheidungsleiter() selbst uebernommen.
+        function siegerUnabhaengig(preis) {
+          let best = null;
+          for (const e of [1, 2, 3]) {
+            const g = K.gerade(stew, e, o, false);
+            if (!g) continue;
+            const gw = g.gewinn(preis), k = g.kosten(preis);
+            if (k <= 0 || gw < 0) continue;
+            const w = K.guete({ gewinn: gw, fokus: g.fokus }, o);
+            if (!best || w > best.w) best = { ench: g.ench, w };
+          }
+          return best ? best.ench : null;
+        }
+        let alleZonenStimmen = true;
+        const abweichungen = [];
+        zonen.forEach((z) => {
+          const probe = z.bis === null ? z.von + 50 : (z.von + z.bis) / 2;
+          const sieger = siegerUnabhaengig(probe);
+          if (sieger !== z.ench) { alleZonenStimmen = false; abweichungen.push({ zone: z, probe, sieger }); }
+        });
+        pruefe(
+          "eintopf-rechenkern: Sieger je Zone stimmt mit einer unabhaengigen Neuberechnung ueber gerade()+guete() ueberein",
+          alleZonenStimmen,
+          JSON.stringify(abweichungen)
+        );
+
+        // An jeder Zonengrenze zwischen zwei profitablen Stufen muessen beide
+        // Gewinngeraden nahezu denselben Gewinn liefern (Definition Schnittpunkt).
+        // Toleranz groesser als bei anderen Tests, weil entscheidungsleiter()
+        // die Grenze auf 2 Nachkommastellen rundet und B hier bis zu ~10.000 ist.
+        for (let i = 0; i < zonen.length - 1; i++) {
+          const grenze = zonen[i].bis;
+          const eA = zonen[i].ench, eB = zonen[i + 1].ench;
+          if (eA == null || eB == null) {
+            const g = K.gerade(stew, eA, o, false);
+            pruefe(
+              `eintopf-rechenkern: an der letzten Grenze (${grenze}) ist der Gewinn der zuletzt profitablen Stufe .${eA} nahe 0`,
+              g && nahe(g.gewinn(grenze), 0, 5),
+              g ? g.gewinn(grenze) : "-"
+            );
+          } else {
+            const gA = K.gerade(stew, eA, o, false), gB = K.gerade(stew, eB, o, false);
+            pruefe(
+              `eintopf-rechenkern: an der Grenze ${grenze} liefern Stufe .${eA} und .${eB} nahezu denselben Gewinn (Schnittpunkt)`,
+              gA && gB && nahe(gA.gewinn(grenze), gB.gewinn(grenze), 60),
+              JSON.stringify({ grenze, gewinnA: gA && gA.gewinn(grenze), gewinnB: gB && gB.gewinn(grenze) })
+            );
+          }
+        }
+      });
+    })();
   })();
 
   // -----------------------------------------------------------------------

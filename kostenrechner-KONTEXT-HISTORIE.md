@@ -7,6 +7,115 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.1.0, App-Fusion Paket C, 13.09.2026)
+
+**Vorheriger Stand (v3.0.0, App-Fusion Paket A+B)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** zweites Paket der Feature "App-Fusion: eine Web-App, drei
+Bereiche" - den Eintopf-Rechner-Platzhalter mit dem echten Rechenkern füllen.
+**Nutzer-Entscheidung, die den ursprünglichen Plan bewusst übersteuert:** statt
+den bisherigen Python-Vorablauf (`eintopf_update.py`: `preise_holen()`/
+`volumen_holen()`/`absatzzeiten_holen()`) beizubehalten, holt die App jetzt
+Preise, Tagesumsatz und Stundenprofil komplett live im Browser, wie es der
+Kostenrechner für seine eigene Preisschicht (`js/preise.js`) und der
+Preisvergleich-Reiter (`js/preisvergleich.js`) bereits tun. Das ist mehr als
+reine Portierung, aber machbar geworden, weil das alte
+`Eintopf_Rechner.html`-TEMPLATE bereits einen Browser-Live-Refresh-Knopf
+(`aktualisieren()`) enthielt (Ersatz für einen erneuten Python-Lauf) - dessen
+Fetch-/Retry-Logik wurde fast unverändert zur einzigen Datenquelle gemacht,
+nicht neu erfunden. Paket D+E (Tests in `tests/test.html` ergänzen,
+`Eintopf_Rechner.html`/`eintopf_update.py`/`.bat` archivieren) folgt in
+künftigen, frischen Orchestrator-Sitzungen.
+
+**Umgesetzt** (4 neue Dateien, keine bestehende Kostenrechner-Datei
+inhaltlich verändert außer `Kostenrechner.html` selbst):
+
+- **`js/eintopf-daten.js`** (neu): die vormals in Python gehaltenen
+  Rezeptdaten (`STEWS`/`SAUCE`/`FISH`/`ITEM_VALUE`/`ZUTAT_NAMEN`,
+  Rindfleischeintopf T8_MEAL_STEW) 1:1 nach JS übertragen. Reine
+  Sprachumstellung, keine Werteänderung - fest hinterlegt wie zuvor, nicht aus
+  dem Rezeptgraphen des Kostenrechners abgeleitet (anderes System, craftbare
+  Ausrüstung statt Speisen).
+- **`js/eintopf-preise.js`** (neu): Live-Fetch-Schicht. `/prices` für alle
+  ~50 benötigten Item-IDs über alle 7 Städte, `/history` mit `time-scale=24`
+  für Handelsvolumen (Mischkalkulations-Grundlage) und `time-scale=1` nur für
+  den Eintopf selbst (Stundenprofil, wie im alten Python-Skript). Block zu 50,
+  1,5 s Pause, 429-Retry mit wachsender Wartezeit (identisches Muster wie
+  `js/preise.js`/`js/preisvergleich.js`). Eigener, neuer localStorage-
+  Schlüssel `albion_kostenrechner_eintopf_preise_v1` (Schema 1) - **nicht**
+  der alte Schlüssel `eintopf_rechner_v2` der eigenständigen App, beide bleiben
+  unabhängig nutzbar. Bewusst kein gemeinsamer Code mit `js/preise.js` (wie
+  bei `preisvergleich.js` bereits etabliert).
+- **`js/eintopf-rechenkern.js`** (neu): alle Rechenfunktionen aus dem
+  KONTEXT.md-Funktionsverzeichnis unverändert übernommen (`bezugsarten`,
+  `bestChopQuelle`, `billigste`, `sauceWege`, `verkaufswege`, `strategien`,
+  `gerade`, `entscheidungsleiter`, `schmerzgrenze`, `guete`), nur die
+  Datenquelle darunter getauscht (`EINTOPF_PREISE.sell()/buy()/volOf()/
+  avgOf()` statt eines von Python eingebetteten Objekts). Belegte Konstanten
+  RET_OHNE=0,152/RET_MIT=0,435/ORDERGEB=0,025/FEFF=2192/2353 unverändert aus
+  `../CLAUDE.md`.
+- **`js/eintopf-ui.js`** (neu): Rendering/DOM-Verdrahtung, ebenfalls 1:1 aus
+  dem alten TEMPLATE (`render()`/`heroZeichnen()`/`tagesZeichnen()`/
+  `kippZeichnen()`/`saucenZeichnen()`/`fischeZeichnen()`/`zeitenZeichnen()`/
+  `rohpreiseZeichnen()` usw.) übernommen. Alle Element-IDs tragen das Präfix
+  `et` (`etCraftStadt`, `etHaupt`, ...), weil einzelne Namen sonst mit dem
+  Kostenrechner-Reiter kollidiert hätten (z. B. gab es dort schon `#premium`).
+  Alle `document.querySelectorAll()`-Aufrufe, die früher das ganze Dokument
+  erfassten (Einstellungen speichern, Listener anhängen), sind jetzt auf
+  `#tab-eintopf` eingeschränkt - sonst hätten sie in der fusionierten Seite
+  auch Felder des Kostenrechner-/Preisvergleich-Reiters erfasst.
+- **Automatischer Erstabruf:** beim ersten Öffnen des Eintopf-Reiters je
+  Sitzung wird automatisch live abgerufen, sofern kein Cache vorliegt oder er
+  älter als 30 Minuten ist (Nutzer-Entscheidung, Rückfrage vom 13.09.2026);
+  danach nur noch per Klick auf "Preise aktualisieren". Solange keine Daten
+  vorliegen, zeigt der Reiter einen klaren Platzhalter statt irreführender
+  "kein Gewinn"-Meldungen.
+- **`Kostenrechner.html`:** Eintopf-Platzhalter durch das vollständige Markup
+  ersetzt (Einstellungen, Haupttabelle, Fischsauce, Tagesertrag, Faustregel,
+  Absatzzeiten, Fisch-Rangliste, Rohpreise - alle Panels aus der alten App).
+  Neue CSS-Klassen `.tag`/`.staedte`/`.stunden`/`.legend` ergänzt, ausschließlich
+  mit vorhandenen `design.md`-Tokens (keine neue Farbpalette).
+
+**Getestet:** `tests/test.html` weiterhin **296/296 grün** (unverändert, da
+Paket C keine der dort geprüften Dateien anfasst). Zusätzlich, weil Paket D
+(automatisierte Tests für den Eintopf-Rechenkern) erst noch aussteht:
+`rechenkern-pruefer` angefordert, hat alle 10 migrierten Funktionen sowie die
+Datenkonstanten unabhängig nachgerechnet und keine Abweichung gefunden
+(Stationsgebühr, Rückgewinnung, FEFF, Steuer/Einstellungsgebühr,
+Gewinngeraden/Entscheidungsleiter). Eigene, unabhängige Gegenprobe in Python
+gegen die rohen API-Daten (Kürbis/Brot/Fleisch in Lymhurst): 39.277,80 Silber
+Kosten mit Fokus, exakt identisch zum JS-Ergebnis. Vollständiger Live-E2E-Test
+per headless Chrome gegen die echte Datei (echte AODP-Abrufe, kein Mock):
+Reiterwechsel, automatischer Erstabruf, alle Panels befüllt (Hero,
+Haupttabelle, Fischsauce, Faustregel, Absatzzeiten, Fisch-Rangliste,
+Rohpreise, 7 Städte-Checkboxen je Einkauf/Verkauf), keine JS-Fehler, Wechsel
+zurück zum Kostenrechner-Tab weiterhin fehlerfrei bedienbar (Scoping-Prüfung).
+
+**Gehärtet:** `spieldaten-pruefer` und `oberflaechen-pruefer` waren laut
+Vorgabe für diese Sitzung nicht anzufordern (in den vorherigen Paketen
+wiederholt als "Agent type not found" gescheitert, s. Historie). Stattdessen
+selbst geprüft: Screenshot der gerenderten Seite (nicht nur Code gelesen) -
+dunkles Albion-Theme wird korrekt übernommen, Reiterwechsel funktioniert,
+Einstellungen-Panel und Städte-Checkboxen sehen stimmig aus, keine
+Farb-/Kontrastprobleme gegenüber den bestehenden Panels. Bekannte, unveränderte
+Einschränkung aus der alten App 1:1 übernommen (keine neue Lücke): der
+`<select>` für "Preisbasis beim Sofortkauf" schneidet lange Optionstexte ab,
+wie auch andernorts in der App bereits üblich.
+
+**Datenqualität-Nebenbefund, kein Code-Fehler:** beim Testen mit einem sehr
+hohen `Preise höchstens (Tage)`-Wert (90 statt der Vorgabe 7) tauchten für den
+unverzauberten Eintopf (T8.0) Verkaufspreise im zweistelligen Millionenbereich
+auf - ein einzelnes, offenkundig nicht ernst gemeintes Alt-Angebot am Markt.
+Mit der **Standardeinstellung von 7 Tagen fällt dieser Ausreißer korrekt aus
+dem Ergebnis** (per Live-Test bestätigt: mit Standardwerten zeigt die Hero-
+Kachel einen plausiblen Gewinn von 13.180 Silber für T8.1). Bestätigt, dass
+`frisch()`/`maxage` genau die Funktion erfüllt, für die sie gedacht ist - kein
+Fehler, keine Änderung nötig.
+
+---
+
 ## Aktueller Stand (v3.0.0, App-Fusion Paket A+B, 13.09.2026)
 
 **Auftrag:** erstes von mehreren Paketen der Feature "App-Fusion: eine Web-App,
