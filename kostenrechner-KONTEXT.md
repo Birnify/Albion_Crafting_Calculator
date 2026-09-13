@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-13 · Version: v3.1.2 · App-Fusion Paket E: alte eigenständige Eintopf-Rechner-Dateien archiviert, App-Fusion (Pakete A-E) damit vollständig abgeschlossen
+Stand: 2026-09-13 · Version: v3.1.2 · App-Fusion Paket E: alte eigenständige Eintopf-Rechner-Dateien archiviert, App-Fusion (Pakete A-E) damit vollständig abgeschlossen · danach Wiki-Audit aller Spielregel-Annahmen (nur Dokumentation, kein Code geändert, s. `kostenrechner-WIKI-AUDIT.md` und Backlog)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -344,6 +344,73 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
 **App-Fusion (Pakete A-E) ist mit v3.1.2 vollständig abgeschlossen**, s.
 "Aktueller Stand" oben. Kein offenes Paket aus diesem Vorhaben mehr. Die
 Backlog-Punkte unten sind eigenständige, davon unabhängige Ideen.
+
+### Befunde aus dem Wiki-Audit (13.09.2026, kein Code geändert)
+
+Vollständige Prüfung aller Spielregel-Annahmen der ganzen App gegen Wiki und
+Client-Dump, Details, Belege und Gegenproben in **`kostenrechner-WIKI-AUDIT.md`**.
+Bestätigt wurden u. a. Stationsgebührformel, Steuer/Einstellgebühr, RRR-Formel
+mit allen Boni (18/15/40/59/10/20), Fokus-Halbierung je 10.000 FCE, die
+Spezialisierungswerte 250/30/370, die Tier-Gruppierung der Veredelungsknoten und
+die Stadtbonus-Listen der Königsstädte. Offen bzw. auffällig ist das Folgende.
+**Wichtig für die nächste Sitzung:** `wiki.albiononline.com` war aus der
+Audit-Sitzung heraus nicht direkt abrufbar (Egress-Sperre), alle Wiki-Belege
+stammen aus Suchauszügen — die Punkte D1/D2 brauchen die gelesene Seite.
+
+Auffälligkeiten mit Rechenwirkung (nach Schwere):
+
+- **A3. 517 craftbare Knoten haben ItemValue 0, dadurch kostet Reroll 0 Silber.**
+  `derive_itemvalues()` bricht ab, sobald EINE Zutat keinen ItemValue hat (86
+  solche Zutaten, 566 Referenzen). `rerollKandidat()` ruft `itemWert()` ohne
+  Rezept auf und bekommt 0 → der Reroll-Weg gewinnt für diese Items jede
+  Qualitätsrechnung mit Kosten null. Zusätzlich Stationsgebühr zu niedrig, weil
+  wertlose Zutaten mit 0 in den ItemValue eingehen. Betroffen u. a. 36
+  Gestaltwandler-Stäbe, 24 Tränke, 5 Tornister der Einsicht.
+- **A1. `shapeshifterstaff` fehlt in `KATEGORIE_ZU_GEBAEUDE`** (41 craftbare
+  Knoten). Kein Gebäude → keine Stationsgebühr UND keine Unvollständig-Warnung
+  (die hängt an `gebaeude != null`). Laut Wiki: Jägerhütte. Fehlt ebenso in
+  `KATEGORIE_ZU_SPEZTYP`.
+- **A2. 141 fokuskostende Rezepte ohne craftingcategory zahlen nie Gebühr**
+  (Reittiere, Möbel, Reparatursätze). Gleiche Mechanik wie A1. Wiki: Reittiere →
+  Sattler, Möbel → Werkzeugmacher. Bei königlichen Items (50 Knoten, auch ohne
+  cc) ist die Null-Rückgewinnung dagegen korrekt.
+- **A4. Eintopf-Reiter rechnet immer mit Lymhurst-Rückgewinnung** (RET 0,152 /
+  0,435 fest verdrahtet), obwohl die Craft-Stadt frei wählbar ist. Caerleon hat
+  Speisen +15 % → 24,8 % / 47,9 %. Tagesbonus fehlt dort ganz.
+- **A5. Drei Fische fehlen in der Eintopf-Fischliste**
+  (`T3/T5/T7_FISH_FRESHWATER_DRAGON_AREA_RARE`, Leyflosse, 10/20/30 Stückchen);
+  der Dump kennt 41, die App 38. Die übrigen 38 stimmen exakt.
+- **A6. Eintopf-Reiter kennt den Aufwertungs-Pfad nicht**, den der Dump führt
+  (9 Fischsaucen je Eintopf als `upgraderequirements`). "Fertige .0 kaufen und
+  aufwerten" wird nie bewertet; beim Aufwerten wirkt zudem keine Rückgewinnung.
+- **A7. `eintopf-preise.js/alterTage()` hängt `Z` bedingungslos an.** Sobald die
+  API eine Zone mitliefert: `Invalid Date` → alle Preise gelten still als nicht
+  vorhanden. Der Kostenrechner löst dasselbe in `parseApiDatumUtc()` sauber.
+- **A8. `FEFF = 2192/2353` im Eintopf-Reiter ist ein persönlicher Messwert**
+  (= 1.022 FCE), kein Spielwert, und ohne Eingabefeld — veraltet still.
+
+Bisher als unbelegt geführt, jetzt belegt:
+
+- **B1. "1 Chancenpunkt = 1 %" ist belegt** (Wiki: "Quality rolls increase by 1
+  for each 100 increase in quality points"). Der Hinweistext in
+  `Kostenrechner.html` und der Kommentar in `regeln.js` nennen es weiterhin eine
+  unbelegte Annahme — überholt.
+- **B2. Kampfhandschuhe → Kriegerschmiede** (Wiki *War Gloves*). Die
+  Platzhaltergruppe "im Wiki keinem Gebäude gelistet" kann entfallen.
+- **B3. Nebenhand teilt sich auf drei Gebäude auf**: Schilde →
+  Kriegerschmiede, Fackeln → Jägerhütte, Folianten → Magierturm.
+- **B4. `meat_*` gehört zum Metzger, nicht zur "Tierhaltung"** — Weide züchtet,
+  Metzger schlachtet; der Nutzer trägt sonst die Gebühr des falschen Gebäudes ein.
+
+Weiterhin offen (Beleg fehlt, nicht entschieden): **D1** Reroll-Übergangstabelle
+und -Faktoren, evtl. vor dem "Quality Reroll Rework" entstanden. **D2** zweite
+Fassung der Qualitäts-Basiszeile im Umlauf (1,1 % statt 1 % für Exzellent).
+**D3** Taschenknoten 340 FCE unbelegt. **D4** ob die letzten 3.000 FCE beim
+Veredeln vom Meisterschaftsknoten oder vom eigenen Mutual-Anteil stammen
+(gleiches Ergebnis nur bei gleicher Stufe). **D5** Brecilien-Stadtboni
+unbestätigt. **D6** +10-%-Rohtier-/Feldfruchtboni fehlen im Modell. **D7** ob die
+Artefaktgießerei beim Verzaubern eine Nutzungsgebühr nimmt. **D8** T1/T2 sind
+laut Wiki gebührenfrei, `stationsgebuehr()` berechnet trotzdem eine Gebühr.
 
 **`oberflaechen-pruefer` und `spieldaten-pruefer` waren über mehrere
 Sitzungen hinweg nicht verfügbar** (Harness-Fehler "Agent type ... not found").
