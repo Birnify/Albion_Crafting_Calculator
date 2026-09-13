@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-13 · Version: v3.1.1 · App-Fusion Paket D: Eintopf-Rechenkern automatisierte Tests ergänzt
+Stand: 2026-09-13 · Version: v3.1.2 · App-Fusion Paket E: alte eigenständige Eintopf-Rechner-Dateien archiviert, App-Fusion (Pakete A-E) damit vollständig abgeschlossen
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -30,11 +30,13 @@ ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
 **Bereich 2, Eintopf-Rechner** (seit v3.1.0 migriert): Profitrechner für den
 Rindfleischeintopf (T8, Stufen .0-.3), komplett auf Live-Fetch im Browser
 umgestellt (Preise, Handelsvolumen, Stundenprofil - kein Python-Vorablauf
-mehr, anders als ursprünglich für dieses Paket erwartet, s. "Aktueller Stand"
-unten). Der eigenständige Eintopf-Rechner im Albion-Wurzelverzeichnis
-(`Eintopf_Rechner.html`, `eintopf_update.py`, s. `../KONTEXT.md`) bleibt
-bewusst unangetastet als Referenz/Fallback bestehen, bis Paket E ihn
-archiviert.
+mehr, anders als ursprünglich für dieses Paket erwartet, s.
+`kostenrechner-KONTEXT-HISTORIE.md` Abschnitt "Aktueller Stand (v3.1.0 ...)").
+Der eigenständige Eintopf-Rechner im Albion-Wurzelverzeichnis ist seit Paket E
+(v3.1.2, 13.09.2026) archiviert (`../Archiv/Eintopf-Rechner (eigenstaendig,
+vor App-Fusion)/`, s. `../KONTEXT.md`), nicht gelöscht, aber kein aktives
+Arbeitsziel mehr. Die App-Fusion (Pakete A-E) ist damit vollständig
+abgeschlossen.
 
 **Bereich 3, Preisvergleich** (seit v3.0.0 migriert): beliebige Items aus dem
 kompletten ao-bin-dumps-Namensdump suchen, mehrere auswählen, Live-Preise über
@@ -43,72 +45,61 @@ Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
 
-## Aktueller Stand (v3.1.1, App-Fusion Paket D, 13.09.2026)
+## Aktueller Stand (v3.1.2, App-Fusion Paket E, 13.09.2026, letztes Paket der App-Fusion)
 
-**Vorheriger Stand (v3.1.0, App-Fusion Paket C)** unverkürzt nach
+**Vorheriger Stand (v3.1.1, App-Fusion Paket D)** unverkürzt nach
 `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
 "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** drittes Paket der Feature "App-Fusion" - automatisierte Tests für
-den in Paket C migrierten Eintopf-Rechenkern ergänzen. Bis dahin gab es dafür
-**keine** automatisierten Tests, nur eine einmalige externe Prüfung durch
-`rechenkern-pruefer` im v3.1.0-Zyklus. Nutzer-Entscheidung vom 13.09.2026:
-keine Änderung an den drei bestehenden Eintopf-Dateien
-(`js/eintopf-daten.js`/`js/eintopf-preise.js`/`js/eintopf-rechenkern.js`),
-alle neuen Tests leben ausschließlich in `tests/test.html` ("Option A").
+**Auftrag:** fünftes und letztes Paket der Feature "App-Fusion" - die alten,
+jetzt überflüssigen eigenständigen Eintopf-Rechner-Dateien im
+Albion-Wurzelverzeichnis archivieren (nicht löschen), reines Aufräum-/
+Dokumentationspaket ohne Code-Änderung an Kostenrechner.html/js/*.js.
 
-**Umgesetzt** (ausschließlich `tests/test.html` geändert, sonst keine Datei):
+**Umgesetzt** (ausschließlich Dateien außerhalb dieses Repos plus diese
+Kontextdatei geändert, kein Kostenrechner-/Eintopf-Code angefasst):
 
-- Drei neue `<script>`-Einbindungen (`js/eintopf-daten.js`/`js/eintopf-preise.js`/
-  `js/eintopf-rechenkern.js`) und **39 neue Tests** in einem eigenen
-  Testblock, nach demselben Ad-hoc-IIFE-Muster wie die bestehenden
-  `rechenkern.js`-Tests (kein modul-eigenes `selbsttest()`, anders als
-  `PREISVERGLEICH.selbsttest()` - das hätte eine Änderung an
-  `eintopf-rechenkern.js` erfordert, war explizit nicht gewünscht).
-- **Datenquelle für synthetische Preise ohne Netzzugriff:** `EINTOPF_PREISE`
-  ist ein Singleton-Objekt ohne Schreibzugriff von außen außer über echten
-  Live-Abruf. Die neuen Tests überschreiben `EINTOPF_PREISE.sell/buy/volOf/
-  avgOf` je Testblock temporär durch Nachschlagefunktionen gegen eine
-  Fixture (`mitFixture()`-Helfer, lokal in `test.html`) und stellen die
-  Originale danach zuverlässig wieder her (`try/finally`). Da
-  `EINTOPF_RECHENKERN` diese Funktionen bei jedem Aufruf dynamisch über die
-  Objektreferenz nachschlägt, greift das Monkey-Patching ohne jede Änderung
-  an den drei Produktionsdateien.
-- **Abdeckung:** Stationsgebühr-Formel (Referenzwert 2.462 Silber bei Satz
-  380, end-to-end über `strategien()`), RET_OHNE=0,152/RET_MIT=0,435
-  (inkl. Monotonie-Check), FEFF=2192/2353, Steuer (4 %) und
-  Einstellungsgebühr (2,5 %) über `verkaufswege()` gegen die am Marktfenster
-  belegten Werte (8 × 218.898 ⇒ 70.047/43.780), `gerade()`/`schmerzgrenze()`
-  mit der etablierten Gegenprobe "Gewinn bei Schmerzgrenze = 0",
-  `entscheidungsleiter()` mit einer eigens konstruierten, vorab in Python
-  gegengerechneten Fixture (4 lückenlose Preiszonen, Sieger je Zone
-  unabhängig über `gerade()`+`guete()` neu berechnet, Gewinn-Gleichheit an
-  den Zonengrenzen), sowie der Fehlerfall "Preis 0/kein Angebot darf nicht
-  als echter Preis durchgerutscht werden" (`bezugsarten()`/`billigste()`/
-  `verkaufswege()`/`gerade()`/`strategien()`). Dazu 6 Tests auf
-  Datenkonstanten aus `eintopf-daten.js` (Fischzahl, ItemValue,
-  Fokus-Rohwerte, Nahrung je Batch).
-- **Korrektur gegenüber der Auftragsbeschreibung:** `EINTOPF_DATEN.FISH`
-  enthält **38** Fische, nicht 39 wie ursprünglich angenommen (reine
-  Nachzählung der Daten, kein Fehler in `eintopf-daten.js`).
+- `Eintopf_Rechner.html`, `eintopf_update.py`, `Eintopf-Rechner aktualisieren.bat`
+  aus dem Albion-Wurzelverzeichnis nach
+  `../Archiv/Eintopf-Rechner (eigenstaendig, vor App-Fusion)/` verschoben, nicht
+  gelöscht.
+- Die zugehörige Versionshistorie unter `../Versionen/` im Wurzelverzeichnis
+  bleibt unverändert stehen (Nutzer-Entscheidung, s. `../CLAUDE.md`
+  Abschnitt "Versionierung").
+- `../KONTEXT.md` am Anfang mit einem Archiv-Hinweis versehen (Verweis hierher),
+  der übrige Inhalt bleibt unverkürzt als historische Fachdokumentation der
+  Formeln/Werte stehen, die weiterhin die Quelle für `js/eintopf-*.js` sind.
+- `../CLAUDE.md` aktualisiert: Tabelle "Kontext-Dateien immer zuerst lesen" und
+  Abschnitt "Versionskontrolle" beschreiben den Eintopf-Rechner jetzt als
+  archivierte, in den Kostenrechner überführte App statt als eigenständiges
+  Ziel; neuer Absatz "App-Fusion (Pakete A-E, abgeschlossen 13.09.2026)"
+  ergänzt. Belegte Spielformeln/-werte unangetastet.
+- `../.claude/agents/albion-cycle-orchestrator.md` (eigene Agentendefinition)
+  an vier Stellen (Frontmatter-Beschreibung, "Erste Schritte", Phase 2, Phase 5
+  Git-Regel) an den neuen Stand angepasst.
+- **Geprüft, nichts zeigt ins Leere:** keine Windows-Verknüpfung (Desktop,
+  Startmenü) referenziert die drei Dateien; die einzige Albion-nahe
+  Verknüpfung startet nur das Spiel selbst. `Eintopf-Rechner aktualisieren.bat`
+  nutzt ausschließlich relative Pfade (`cd /d "%~dp0"`), bleibt also nach dem
+  gemeinsamen Verschieben aller drei Dateien funktionsfähig.
 
-**Getestet:** alle Erwartungswerte vor dem Schreiben der Tests unabhängig in
-Python nachgerechnet (Stationsgebühr, Steuer/Gebühr, K0/B/A, Schmerzgrenze,
-Entscheidungsleiter-Zonen), danach zusätzlich per Node (`vm`-Modul, lädt die
-drei echten `js/eintopf-*.js`-Dateien unverändert von der Platte) gegen die
-tatsächliche Implementierung verifiziert, bevor die Tests in `test.html`
-übernommen wurden. `tests/test.html` per echtem `file://`-Aufruf in Chrome
-(headless, `--dump-dom`) geöffnet: **335/335 grün** (296 bisherige + 39 neue),
-keine Konsolenfehler. Kein `rechenkern-pruefer` angefordert (Vorgabe: nur bei
-Änderungen an der Rechenlogik nötig, hier ausdrücklich keine).
+**Getestet:** keine Code-Änderung an Kostenrechner-Dateien, daher keine neue
+Testlogik nötig. `tests/test.html` trotzdem per echtem `file://`-Aufruf in
+Chrome (headless, `--dump-dom`) erneut geprüft: unverändert **335/335 grün**,
+keine Konsolenfehler. Kein `rechenkern-pruefer`/`spieldaten-pruefer` angefordert
+(kein Rechenkern-/Spieldaten-Code geändert).
 
-**Gehärtet:** keine Oberflächenänderung (nur `tests/test.html`, eine
-Entwicklerseite, kein App-Markup), daher kein `oberflaechen-pruefer`
-angefordert. Kein `spieldaten-pruefer` angefordert, da keine neuen Rezept-
-oder Spieldaten eingeführt wurden, nur bereits belegte Werte aus
-`eintopf-daten.js`/`CLAUDE.md` in Testfixturen verwendet. Git-Status nach
-Abschluss geprüft: ausschließlich `tests/test.html` geändert, die drei
-Eintopf-Produktionsdateien sowie alle Kostenrechner-Dateien unangetastet.
+**Gehärtet:** keine Oberflächenänderung, daher kein `oberflaechen-pruefer`
+angefordert. `Kostenrechner.html` im Browser geöffnet, alle drei Reiter
+(Kostenrechner/Eintopf-Rechner/Preisvergleich) funktionieren unverändert wie
+vor dem Paket, da an ihrem Code nichts geändert wurde. Git-Status nach
+Abschluss geprüft: innerhalb `Kostenrechner/` ausschließlich diese
+Kontextdatei geändert.
+
+**Damit ist die App-Fusion (Pakete A-E) vollständig abgeschlossen.** Die
+ehemals drei getrennten Werkzeuge (Kostenrechner, Eintopf-Rechner,
+Preisvergleich) laufen jetzt als eine App mit drei Reitern, die alten
+Eintopf-Rechner-Dateien sind archiviert statt gelöscht.
 
 ---
 
@@ -153,7 +144,11 @@ Kostenrechner-/Preisvergleich-Modul und `tests/test.html` nicht geaendert -
 Tests fuer den Eintopf-Rechenkern sind Paket D) plus "App-Fusion Paket D:
 Eintopf-Rechenkern automatisierte Tests ergaenzt" (v3.1.1, ausschliesslich
 `tests/test.html` erweitert (39 neue Tests + 3 neue Script-Einbindungen),
-keine der drei Eintopf-Dateien geaendert, Option A s. "Aktueller Stand"):
+keine der drei Eintopf-Dateien geaendert, Option A) plus "App-Fusion Paket E:
+alte eigenstaendige Eintopf-Rechner-Dateien archiviert" (v3.1.2, reines
+Aufraeum-/Dokumentationspaket, KEINE Kostenrechner-Code-Datei geaendert, nur
+diese Kontextdatei; die drei archivierten Dateien und die Doku ausserhalb
+dieses Repos s. "Aktueller Stand"; App-Fusion Pakete A-E damit abgeschlossen):
 
 ```
 Kostenrechner/
@@ -287,6 +282,7 @@ Kostenrechner/
   Versionen/v3.0.0 - App-Fusion Paket A+B, Reiterumschaltung und Preisvergleich migriert/
   Versionen/v3.1.0 - App-Fusion Paket C, Eintopf-Rechenkern live migriert/
   Versionen/v3.1.1 - App-Fusion Paket D, Eintopf-Rechenkern automatisierte Tests ergaenzt/
+  Versionen/v3.1.2 - App-Fusion Paket E, alte eigenstaendige Eintopf-Rechner-Dateien archiviert/
   tests/test.html           335 Tests (296 bisherige + 39 neu fuer eintopf-rechenkern.js/
                               eintopf-daten.js, v3.1.1, App-Fusion Paket D). Offline-
                               Selbsttests + 2 Live-Abschnitte; Testrahmen/-logik sonst
@@ -345,14 +341,9 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
 
 ## Backlog / Mögliche nächste Schritte
 
-**Nächstes Orchestrator-Paket (höchste Priorität): Paket E der App-Fusion.**
-Paket D (automatisierte Tests für den Eintopf-Rechenkern) ist mit v3.1.1
-abgeschlossen, s. "Aktueller Stand" oben. Offen:
-- **Paket E:** `Eintopf_Rechner.html`/`eintopf_update.py`/
-  `Eintopf-Rechner aktualisieren.bat` im Albion-Wurzelverzeichnis in einen
-  Archivordner verschieben, nicht löschen (Nutzer-Entscheidung, s.
-  `../KONTEXT.md`). Jetzt unbedenklich, da der migrierte Rechenkern seit
-  Paket D eine eigene automatisierte Testabdeckung hat.
+**App-Fusion (Pakete A-E) ist mit v3.1.2 vollständig abgeschlossen**, s.
+"Aktueller Stand" oben. Kein offenes Paket aus diesem Vorhaben mehr. Die
+Backlog-Punkte unten sind eigenständige, davon unabhängige Ideen.
 
 **`oberflaechen-pruefer` und `spieldaten-pruefer` waren über mehrere
 Sitzungen hinweg nicht verfügbar** (Harness-Fehler "Agent type ... not found").

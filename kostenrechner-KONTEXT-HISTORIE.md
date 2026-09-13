@@ -7,6 +7,75 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.1.1, App-Fusion Paket D, 13.09.2026)
+
+**Vorheriger Stand (v3.1.0, App-Fusion Paket C)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** drittes Paket der Feature "App-Fusion" - automatisierte Tests für
+den in Paket C migrierten Eintopf-Rechenkern ergänzen. Bis dahin gab es dafür
+**keine** automatisierten Tests, nur eine einmalige externe Prüfung durch
+`rechenkern-pruefer` im v3.1.0-Zyklus. Nutzer-Entscheidung vom 13.09.2026:
+keine Änderung an den drei bestehenden Eintopf-Dateien
+(`js/eintopf-daten.js`/`js/eintopf-preise.js`/`js/eintopf-rechenkern.js`),
+alle neuen Tests leben ausschließlich in `tests/test.html` ("Option A").
+
+**Umgesetzt** (ausschließlich `tests/test.html` geändert, sonst keine Datei):
+
+- Drei neue `<script>`-Einbindungen (`js/eintopf-daten.js`/`js/eintopf-preise.js`/
+  `js/eintopf-rechenkern.js`) und **39 neue Tests** in einem eigenen
+  Testblock, nach demselben Ad-hoc-IIFE-Muster wie die bestehenden
+  `rechenkern.js`-Tests (kein modul-eigenes `selbsttest()`, anders als
+  `PREISVERGLEICH.selbsttest()` - das hätte eine Änderung an
+  `eintopf-rechenkern.js` erfordert, war explizit nicht gewünscht).
+- **Datenquelle für synthetische Preise ohne Netzzugriff:** `EINTOPF_PREISE`
+  ist ein Singleton-Objekt ohne Schreibzugriff von außen außer über echten
+  Live-Abruf. Die neuen Tests überschreiben `EINTOPF_PREISE.sell/buy/volOf/
+  avgOf` je Testblock temporär durch Nachschlagefunktionen gegen eine
+  Fixture (`mitFixture()`-Helfer, lokal in `test.html`) und stellen die
+  Originale danach zuverlässig wieder her (`try/finally`). Da
+  `EINTOPF_RECHENKERN` diese Funktionen bei jedem Aufruf dynamisch über die
+  Objektreferenz nachschlägt, greift das Monkey-Patching ohne jede Änderung
+  an den drei Produktionsdateien.
+- **Abdeckung:** Stationsgebühr-Formel (Referenzwert 2.462 Silber bei Satz
+  380, end-to-end über `strategien()`), RET_OHNE=0,152/RET_MIT=0,435
+  (inkl. Monotonie-Check), FEFF=2192/2353, Steuer (4 %) und
+  Einstellungsgebühr (2,5 %) über `verkaufswege()` gegen die am Marktfenster
+  belegten Werte (8 × 218.898 ⇒ 70.047/43.780), `gerade()`/`schmerzgrenze()`
+  mit der etablierten Gegenprobe "Gewinn bei Schmerzgrenze = 0",
+  `entscheidungsleiter()` mit einer eigens konstruierten, vorab in Python
+  gegengerechneten Fixture (4 lückenlose Preiszonen, Sieger je Zone
+  unabhängig über `gerade()`+`guete()` neu berechnet, Gewinn-Gleichheit an
+  den Zonengrenzen), sowie der Fehlerfall "Preis 0/kein Angebot darf nicht
+  als echter Preis durchgerutscht werden" (`bezugsarten()`/`billigste()`/
+  `verkaufswege()`/`gerade()`/`strategien()`). Dazu 6 Tests auf
+  Datenkonstanten aus `eintopf-daten.js` (Fischzahl, ItemValue,
+  Fokus-Rohwerte, Nahrung je Batch).
+- **Korrektur gegenüber der Auftragsbeschreibung:** `EINTOPF_DATEN.FISH`
+  enthält **38** Fische, nicht 39 wie ursprünglich angenommen (reine
+  Nachzählung der Daten, kein Fehler in `eintopf-daten.js`).
+
+**Getestet:** alle Erwartungswerte vor dem Schreiben der Tests unabhängig in
+Python nachgerechnet (Stationsgebühr, Steuer/Gebühr, K0/B/A, Schmerzgrenze,
+Entscheidungsleiter-Zonen), danach zusätzlich per Node (`vm`-Modul, lädt die
+drei echten `js/eintopf-*.js`-Dateien unverändert von der Platte) gegen die
+tatsächliche Implementierung verifiziert, bevor die Tests in `test.html`
+übernommen wurden. `tests/test.html` per echtem `file://`-Aufruf in Chrome
+(headless, `--dump-dom`) geöffnet: **335/335 grün** (296 bisherige + 39 neue),
+keine Konsolenfehler. Kein `rechenkern-pruefer` angefordert (Vorgabe: nur bei
+Änderungen an der Rechenlogik nötig, hier ausdrücklich keine).
+
+**Gehärtet:** keine Oberflächenänderung (nur `tests/test.html`, eine
+Entwicklerseite, kein App-Markup), daher kein `oberflaechen-pruefer`
+angefordert. Kein `spieldaten-pruefer` angefordert, da keine neuen Rezept-
+oder Spieldaten eingeführt wurden, nur bereits belegte Werte aus
+`eintopf-daten.js`/`CLAUDE.md` in Testfixturen verwendet. Git-Status nach
+Abschluss geprüft: ausschließlich `tests/test.html` geändert, die drei
+Eintopf-Produktionsdateien sowie alle Kostenrechner-Dateien unangetastet.
+
+---
+
 ## Aktueller Stand (v3.1.0, App-Fusion Paket C, 13.09.2026)
 
 **Vorheriger Stand (v3.0.0, App-Fusion Paket A+B)** unverkürzt nach
