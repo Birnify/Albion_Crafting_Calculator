@@ -1408,6 +1408,92 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Regressionstest Craften+Reroll-Kombination (Bugfix Audit-Befund 10,
+  // 14.09.2026, s. AUDIT-2026-09-13.md): bei einem Qualitaets-Wurf-Weg (keine
+  // preservequality-Zutat) rechnet craftBeiQualitaetKandidat() jetzt zwei
+  // Strategien gegeneinander - "immer neu craften bis ein Versuch direkt
+  // trifft" (bisheriges Verhalten) und "einmal craften, danach die gelandete
+  // Qualitaet hochrerollen" (neu) - und waehlt die guenstigere. Reales Item
+  // (T4_MAIN_SWORD, cc=sword, kein preservequality), zwei Szenarien mit
+  // synthetischen Preisen.
+  // -----------------------------------------------------------------------
+  (function () {
+    if (typeof REZEPTGRAPH === "undefined" || !REZEPTGRAPH.items["T4_MAIN_SWORD"]) {
+      pruefe("Regressionstest Craften+Reroll uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+    // Szenario 1: teure Materialien + hohe Zielqualitaet (Meisterwerk) ohne
+    // Qualitaetsbonus -> Direkttreffer-Chance nur 0,1 %, erwartet 1.000
+    // Versuche bei reinem Neu-Craften. Ein einzelner Versuch landet aber mit
+    // 68,9 % Wahrscheinlichkeit auf Normal und laesst sich von dort aus
+    // vergleichsweise guenstig hochrerollen - die kombinierte Strategie muss
+    // hier klar gewinnen.
+    const teuerErgebnis = RECHENKERN.kosten("T4_MAIN_SWORD", 0, 1, {
+      preise: {
+        T4_METALBAR: { sell: { preis: 1000, kein: false }, buy: { preis: 0, kein: true } },
+        T4_LEATHER: { sell: { preis: 1000, kein: false }, buy: { preis: 0, kein: true } },
+      },
+      preiseQualitaet: {},
+      stationssaetze: { Kriegerschmiede: 380 },
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 0,
+      qualitaetsIndex: 4, // Meisterwerk
+      qualitaetsChancenpunkte: 0,
+    });
+    pruefe("Craften+Reroll Szenario 1 (teuer/Meisterwerk): loesbar", !teuerErgebnis.gesperrt, String(teuerErgebnis.grund));
+    pruefe(
+      "Craften+Reroll Szenario 1: die kombinierte Strategie gewinnt (qualitaetsart = wurf+reroll)",
+      teuerErgebnis.weg.qualitaetsart === "wurf+reroll",
+      teuerErgebnis.weg.qualitaetsart
+    );
+    // Naive Neu-Craften-Strategie haette (16x1.000 + 8x1.000 = 24.000 Rohmaterial
+    // je Versuch, mindestens so viel wie materialSilber nach Rueckgewinnung)
+    // x ~1.000 erwartete Versuche gekostet, also mindestens rund 24 Mio.
+    // Silber - die kombinierte Strategie muss dramatisch billiger sein.
+    pruefe(
+      "Craften+Reroll Szenario 1: kombinierte Strategie ist dramatisch billiger als die naive Neu-Craften-Untergrenze (~24 Mio.)",
+      teuerErgebnis.silber < 5000000,
+      String(teuerErgebnis.silber)
+    );
+    pruefe(
+      "Craften+Reroll Szenario 1: exakte Gegenprobe des Silberwerts (Regressionsschutz)",
+      nahe(teuerErgebnis.silber, 2124426.0048457123, 1),
+      String(teuerErgebnis.silber)
+    );
+
+    // Szenario 2: guenstige Materialien + niedrige Zielqualitaet (Gut) ohne
+    // Bonus -> Direkttreffer-Chance schon 31,1 % je Versuch, erwartet nur
+    // rund 3,2 Versuche. Hier muss die ALTE Neu-Craften-Strategie weiterhin
+    // gewinnen (Regressionsschutz: die neue Kombinationsrechnung darf das
+    // bisherige Verhalten nicht verdraengen, wo es tatsaechlich besser ist).
+    const billigErgebnis = RECHENKERN.kosten("T4_MAIN_SWORD", 0, 1, {
+      preise: {
+        T4_METALBAR: { sell: { preis: 20, kein: false }, buy: { preis: 0, kein: true } },
+        T4_LEATHER: { sell: { preis: 20, kein: false }, buy: { preis: 0, kein: true } },
+      },
+      preiseQualitaet: {},
+      stationssaetze: { Kriegerschmiede: 380 },
+      stadt: "Lymhurst",
+      fce: 0,
+      fokuswert: 0,
+      qualitaetsIndex: 1, // Gut
+      qualitaetsChancenpunkte: 0,
+    });
+    pruefe("Craften+Reroll Szenario 2 (billig/Gut): loesbar", !billigErgebnis.gesperrt, String(billigErgebnis.grund));
+    pruefe(
+      "Craften+Reroll Szenario 2: die alte Neu-Craften-Strategie bleibt die bessere Wahl (qualitaetsart = wurf, kein Regressionsschaden)",
+      billigErgebnis.weg.qualitaetsart === "wurf",
+      billigErgebnis.weg.qualitaetsart
+    );
+    pruefe(
+      "Craften+Reroll Szenario 2: exakte Gegenprobe des Silberwerts (Regressionsschutz)",
+      nahe(billigErgebnis.silber, 1331.7041800643085, 0.5),
+      String(billigErgebnis.silber)
+    );
+  })();
+
+  // -----------------------------------------------------------------------
   // Regressionstest "Alle Wege"-Gruppierung (Zyklus "Aussagekraft der
   // Alle-Wege-Tabelle verbessern", 05.09.2026): gleichwertige Wege
   // (exakt gleich bei der ANGEZEIGTEN Rundung von Silber, Fokus UND Status,

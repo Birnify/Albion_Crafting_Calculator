@@ -24,6 +24,10 @@ const REGELN = (function () {
   const STEUER_OHNE_PREMIUM = 0.08;
   const EINSTELLGEBUEHR_SATZ = 0.025; // beim Aufgeben einer eigenen Order
 
+  // Audit-Befund 12 (14.09.2026, kosmetisch): js/eintopf-rechenkern.js fuehrt
+  // fuer denselben Fall (B=0,18, kein Fokus) eine eigene, unabhaengig im Spiel
+  // abgelesene Konstante RET_OHNE=0,152 statt 0,18/1,18=0,152542... - Absicht,
+  // s. dortiger Kommentar, kein Duplikatsfehler.
   const RRR_GRUNDPRODUKTION = 0.18;
   const RRR_STADTBONUS_CRAFT = 0.15;
   const RRR_STADTBONUS_VEREDELN = 0.40; // deutlich groesser als der Craft-Bonus, s. CLAUDE.md
@@ -121,6 +125,15 @@ const REGELN = (function () {
     // statt erfundener Zuordnung, s. ../../CLAUDE.md.
     offhand: "Nebenhand (Gebaeude je Item unterschiedlich)",
     knuckles: "Kampfhandschuhe (im Wiki keinem Gebaeude gelistet)",
+    // shapeshifterstaff (Audit-Befund 5, 14.09.2026): taucht auf der Wiki-Seite
+    // "Crafting" ueberhaupt nicht auf (weder Fliesstext noch HTML), auch nicht
+    // auf den Seiten "Hunter's Lodge" oder "Shapeshifter" selbst - anders als
+    // bei den uebrigen Waffenkategorien kein einziger Beleg fuer ein Gebaeude
+    // gefunden, trotz gezielter Suche. Deshalb wie offhand/knuckles/meat_*
+    // eine eigene Gebuehrengruppe statt einer erfundenen Zuordnung zur
+    // Jaegerhuette (naheliegend, weil "Hunter-type specialization" laut Wiki
+    // "Shapeshifter", aber nicht wortwoertlich belegt).
+    shapeshifterstaff: "Wandlerstab (im Wiki keinem Gebaeude gelistet)",
     meat_chicken: "Tierhaltung",
     meat_cow: "Tierhaltung",
     meat_goat: "Tierhaltung",
@@ -157,7 +170,11 @@ const REGELN = (function () {
       veredeln: ["ore"],
     },
     Caerleon: {
-      craft: ["food", "gatherergear", "tools", "knuckles"],
+      // shapeshifterstaff ergaenzt (Audit-Befund 5, 14.09.2026): Wiki
+      // "Resource_return_rate", Tabelle "Royal Cities Bonuses", Zeile
+      // Caerleon/Weapons: "War Gloves, Shapeshifter Staff" - klar belegt,
+      // anders als die Gebaeudefrage oben.
+      craft: ["food", "gatherergear", "tools", "knuckles", "shapeshifterstaff"],
       veredeln: [],
     },
     Brecilien: {
@@ -270,6 +287,26 @@ const REGELN = (function () {
     // Knoten verschmolzen ("fused"), kein getrennter Meisterschaftsknoten,
     // s. CLAUDE.md "Fokuskosten"/Wiki Specializations.
     werkzeug_fused: { unique: 250, mutual: 60, mastery: 0, einFeld: true },
+    // Sammlerausruestung (Bugfix Audit-Befund 6, 14.09.2026): eigener Typ
+    // statt werkzeug_fused. Wiki "Specializations", Abschnitt "Gathering gear
+    // crafting specialization nodes are under the fused crafting mastery
+    // nodes of the tools": jeder Gathergear-Knoten fuer sich ist ein
+    // GEWOEHNLICHER Spezialisierungsknoten mit 250 Unique + NUR 30 Mutual je
+    // Stufe (nicht 60 wie bei werkzeug_fused), plus separat der Beitrag des
+    // zugehoerigen fused Werkzeug-Meisterschaftsknotens von 60 FCE je Stufe
+    // ("Every fused mastery node will provide a mutual 60 FCE bonus for each
+    // fused mastery node level"). Gegenprobe Wiki, woertlich: ein einzelner
+    // Gathergear-Knoten + sein fused Meisterschaftsknoten auf Stufe 100 ergibt
+    // 34.000 FCE (=28.000 eigen + 6.000 Meisterschaft), ein voll ausgebauter
+    // Baum (3 Gathergear-Knoten + 2 fused Meisterschaftsknoten) 40.000 FCE
+    // (=28.000 + 2x3.000 Mutual von den anderen zwei Gathergear-Knoten +
+    // 6.000 Meisterschaft). Vereinfachung hier: die Meisterschaftskomponente
+    // (60/Stufe) als eigenes Meisterschaftsfeld dieser Kategorie modelliert,
+    // obwohl sie im Spiel eigentlich am fused Werkzeug-Meisterschaftsknoten
+    // haengt und mit "tools" geteilt wird - diese Kopplung bildet die App
+    // nicht ab (separate Eingabefelder je Kategorie), das ist eine bewusste
+    // Naeherung, kein Fehler mehr wie die vorherige 60er-Mutual-Verwechslung.
+    gatherergear: { unique: 250, mutual: 30, mastery: 60, einFeld: false },
     // Veredeln: KEIN getrennter Meisterschaftsknoten (anders als vorher hier
     // angenommen, Fehler behoben 13.09.2026, Audit-Befund 3). Wiki
     // "Specializations", Abschnitt Refining, woertlich: "All refining
@@ -296,10 +333,25 @@ const REGELN = (function () {
     plate_armor: "waffen_ruestung", plate_helmet: "waffen_ruestung", plate_shoes: "waffen_ruestung",
     cloth_armor: "waffen_ruestung", cloth_helmet: "waffen_ruestung", cloth_shoes: "waffen_ruestung",
     leather_armor: "waffen_ruestung", leather_helmet: "waffen_ruestung", leather_shoes: "waffen_ruestung",
+    // shapeshifterstaff ergaenzt (Audit-Befund 5, 14.09.2026): gleiche
+    // Unique-/Mutual-/Meisterschafts-Struktur wie alle anderen Waffen (Wiki
+    // "Crafting"-Uebersichtstabelle nennt keine abweichende Zeile dafuer).
+    shapeshifterstaff: "waffen_ruestung",
     fiber: "veredeln", ore: "veredeln", rock: "veredeln", hide: "veredeln", wood: "veredeln",
     cape: "umhang",
     bag: "tasche",
-    tools: "werkzeug_fused", gatherergear: "werkzeug_fused",
+    tools: "werkzeug_fused",
+    // gatherergear NICHT mehr werkzeug_fused (Bugfix Audit-Befund 6,
+    // 14.09.2026): Wiki "Specializations" trennt beide ausdruecklich.
+    // werkzeug_fused (Bergbauspitzhacke usw.) hat 250 Unique + 60 Mutual IN
+    // EINEM verschmolzenen Knoten, keine eigene Meisterschaft. gatherergear
+    // liegt zwar auch UNTER den fused Werkzeug-Meisterschaftsknoten, ist aber
+    // selbst ein GEWOEHNLICHER Spezialisierungsknoten mit 250 Unique + NUR 30
+    // Mutual (nicht 60) plus einer separaten Meisterschafts-aehnlichen
+    // Komponente von 60 je Stufe (wirkt laut Wiki eigentlich auf den fused
+    // Werkzeug-Meisterschaftsknoten, hier vereinfacht als eigenes
+    // Meisterschaftsfeld dieser Kategorie modelliert, s. SPEZ_TYP.gatherergear).
+    gatherergear: "gatherergear",
     food: "speise",
     potion: "trank",
     // offhand, knuckles, meat_* absichtlich NICHT abgebildet, s. CLAUDE.md
@@ -491,6 +543,51 @@ const REGELN = (function () {
     for (let q = 0; q < zielQualitaet; q++) pEinzelUnter += QUALITAETSWURF_BASIS[q];
     const pErfolgMitN = (n) => 1 - Math.pow(pEinzelUnter, n);
     return zusatzChance * pErfolgMitN(garantierteWuerfe + 1) + (1 - zusatzChance) * pErfolgMitN(garantierteWuerfe);
+  }
+
+  /**
+   * P(best-of-n Wuerfe auf die Basistabelle landet bei mindestens Index `q`).
+   * Hilfsfunktion fuer qualitaetsVerteilung() unten, dieselbe Mathematik wie
+   * in qualitaetWurfErfolgswahrscheinlichkeit(), nur fuer beliebige `q` statt
+   * nur die Zielqualitaet.
+   */
+  function pBesserGleich(q, n) {
+    if (q <= 0) return 1;
+    if (q > 4) return 0;
+    let unter = 0;
+    for (let k = 0; k < q; k++) unter += QUALITAETSWURF_BASIS[k];
+    return 1 - Math.pow(unter, n);
+  }
+
+  /**
+   * Volle Wahrscheinlichkeitsverteilung ueber die GELANDETE Qualitaet eines
+   * einzelnen Craft-Versuchs (Index 0..4 = Normal..Meisterwerk), nicht nur
+   * die Erfolgswahrscheinlichkeit gegen EIN Ziel wie
+   * qualitaetWurfErfolgswahrscheinlichkeit(). Gebraucht fuer die kombinierte
+   * Craften+Reroll-Strategie (Audit-Befund 10, 14.09.2026, s.
+   * AUDIT-2026-09-13.md): ein Fehlversuch landet nicht "nichts", sondern eine
+   * KONKRETE Qualitaet, die sich oft guenstiger zur Zielqualitaet hochrerollen
+   * laesst als ein kompletter Neuversuch. Dieselbe Mischung aus
+   * garantierten/zusaetzlichen Wuerfen wie in
+   * qualitaetWurfErfolgswahrscheinlichkeit() (Korn-Formel), nur fuer ALLE
+   * fuenf Qualitaetsstufen statt nur eine.
+   * @returns {number[]} Laenge 5, Summe exakt 1.
+   */
+  function qualitaetsVerteilung(chancenpunkte) {
+    const bonus = Math.max(0, chancenpunkte || 0);
+    const garantierteWuerfe = 1 + Math.floor(bonus / 100);
+    const zusatzChance = (bonus % 100) / 100;
+    const verteilung = [0, 0, 0, 0, 0];
+    [
+      [garantierteWuerfe, 1 - zusatzChance],
+      [garantierteWuerfe + 1, zusatzChance],
+    ].forEach(([n, gewicht]) => {
+      if (gewicht <= 0) return;
+      for (let q = 0; q <= 4; q++) {
+        verteilung[q] += gewicht * (pBesserGleich(q, n) - pBesserGleich(q + 1, n));
+      }
+    });
+    return verteilung;
   }
 
   /** Ob mindestens eine Zutat des Rezepts preservequality traegt (p:true). */
@@ -751,6 +848,13 @@ const REGELN = (function () {
     pruefe("Kategorie offhand -> eigene Gebuehrengruppe (nicht erfunden zugeordnet)", gebaeudeVonKategorie("offhand") !== "Kriegerschmiede" && gebaeudeVonKategorie("offhand") !== "Jaegerhuette" && gebaeudeVonKategorie("offhand") !== "Magierturm");
     pruefe("Kategorie knuckles -> eigene Gebuehrengruppe", gebaeudeVonKategorie("knuckles") !== null && gebaeudeVonKategorie("knuckles") !== "Kriegerschmiede");
     pruefe("Kategorie meat_cow -> Tierhaltung", gebaeudeVonKategorie("meat_cow") === "Tierhaltung");
+    // Audit-Befund 5 (14.09.2026): shapeshifterstaff ergaenzt.
+    pruefe(
+      "Kategorie shapeshifterstaff -> eigene Gebuehrengruppe (kein Beleg fuer ein Gebaeude gefunden)",
+      gebaeudeVonKategorie("shapeshifterstaff") !== null
+    );
+    pruefe("Caerleon hat Craft-Bonus auf shapeshifterstaff (Wiki Resource_return_rate)", hatCraftBonus("shapeshifterstaff", "Caerleon") === true);
+    pruefe("Lymhurst hat KEINEN Craft-Bonus auf shapeshifterstaff", hatCraftBonus("shapeshifterstaff", "Lymhurst") === false);
 
     // Spezialisierungsknoten (05.09.2026, Zyklus "FCE-Ableitung ueber
     // Schicksalsbrett-Knotenliste je Kategorie")
@@ -759,9 +863,13 @@ const REGELN = (function () {
     pruefe("spezTypVonKategorie(cape) = umhang", spezTypVonKategorie("cape") === "umhang");
     pruefe("spezTypVonKategorie(bag) = tasche", spezTypVonKategorie("bag") === "tasche");
     pruefe("spezTypVonKategorie(tools) = werkzeug_fused", spezTypVonKategorie("tools") === "werkzeug_fused");
-    pruefe("spezTypVonKategorie(gatherergear) = werkzeug_fused", spezTypVonKategorie("gatherergear") === "werkzeug_fused");
+    // Audit-Befund 6 (14.09.2026): gatherergear ist seither ein eigener Typ,
+    // nicht mehr werkzeug_fused.
+    pruefe("spezTypVonKategorie(gatherergear) = gatherergear (nicht mehr werkzeug_fused, Bugfix Befund 6)", spezTypVonKategorie("gatherergear") === "gatherergear");
     pruefe("spezTypVonKategorie(food) = speise", spezTypVonKategorie("food") === "speise");
     pruefe("spezTypVonKategorie(potion) = trank", spezTypVonKategorie("potion") === "trank");
+    // Audit-Befund 5 (14.09.2026): shapeshifterstaff wie alle anderen Waffen.
+    pruefe("spezTypVonKategorie(shapeshifterstaff) = waffen_ruestung", spezTypVonKategorie("shapeshifterstaff") === "waffen_ruestung");
     pruefe(
       "spezTypVonKategorie(offhand/knuckles/meat_cow) = null (keine eindeutige Wiki-Zuordnung, bleibt Freitext-Fallback)",
       spezTypVonKategorie("offhand") === null && spezTypVonKategorie("knuckles") === null && spezTypVonKategorie("meat_cow") === null
@@ -848,6 +956,29 @@ const REGELN = (function () {
         "fceAusSpezialisierungsknoten (uebrige Werkzeuge, fused): eigener Mutual-Anteil zaehlt mit, Meisterschaftsparameter wird ignoriert",
         mitIgnorierterMeisterschaft === erwartet,
         mitIgnorierterMeisterschaft + " vs " + erwartet
+      );
+    })();
+    (function () {
+      // gatherergear (Bugfix Audit-Befund 6, 14.09.2026): unique 250, mutual
+      // NUR 30 (nicht 60 wie werkzeug_fused), plus getrenntes Meisterschaftsfeld
+      // 60 je Stufe (Naeherung fuer den geteilten fused-Meisterschaftsknoten,
+      // s. SPEZ_TYP-Kommentar).
+      const stufen = { A: 5, B: 2 };
+      const erwartet = 5 * 250 + (5 + 2) * 30 + 4 * 60; // 1.250 + 210 + 240 = 1.700
+      const ergebnis = fceAusSpezialisierungsknoten("gatherergear", "A", stufen, 4);
+      pruefe(
+        "fceAusSpezialisierungsknoten (Sammlerausruestung): unique 250 + Mutual 30 (nicht 60) + eigenes Meisterschaftsfeld 60/Stufe",
+        ergebnis === erwartet,
+        ergebnis + " vs " + erwartet
+      );
+      // Gegenprobe Wiki "Crafting_Focus", woertlich: "A single gathering gear
+      // crafting specialization node, and its fused mastery node on level 100
+      // will provide: 34,000 focus cost efficiency (28,000 + 6,000)".
+      const einzelnerKnotenVoll = fceAusSpezialisierungsknoten("gatherergear", "A", { A: 100 }, 100);
+      pruefe(
+        "fceAusSpezialisierungsknoten (Sammlerausruestung): ein einzelner Knoten + Meisterschaft auf Stufe 100 ergibt den belegten Wert 34.000 FCE",
+        einzelnerKnotenVoll === 34000,
+        String(einzelnerKnotenVoll)
       );
     })();
     (function () {
@@ -1034,6 +1165,35 @@ const REGELN = (function () {
       qualitaetWurfErfolgswahrscheinlichkeit(4, 100000) <= 1
     );
 
+    // qualitaetsVerteilung (Audit-Befund 10, 14.09.2026): volle Verteilung
+    // ueber die gelandete Qualitaet, Gegenprobe gegen die bereits getestete
+    // qualitaetWurfErfolgswahrscheinlichkeit() (Tail-Summe muss uebereinstimmen)
+    // bei mehreren Bonuswerten, plus die triviale Summe-1-Eigenschaft.
+    [0, 50, 100, 150, 275].forEach((bonus) => {
+      const v = qualitaetsVerteilung(bonus);
+      const summe = v.reduce((a, b) => a + b, 0);
+      pruefe(
+        "qualitaetsVerteilung(" + bonus + "): Summe ueber alle 5 Qualitaeten = 1",
+        nahe(summe, 1, 1e-9),
+        String(summe)
+      );
+      for (let ziel = 1; ziel <= 4; ziel++) {
+        let tailSumme = 0;
+        for (let q = ziel; q <= 4; q++) tailSumme += v[q];
+        const erwartet = qualitaetWurfErfolgswahrscheinlichkeit(ziel, bonus);
+        pruefe(
+          "qualitaetsVerteilung(" + bonus + "): Tail-Summe ab Ziel " + ziel + " stimmt mit qualitaetWurfErfolgswahrscheinlichkeit ueberein",
+          nahe(tailSumme, erwartet, 1e-9),
+          tailSumme + " vs " + erwartet
+        );
+      }
+    });
+    pruefe(
+      "qualitaetsVerteilung(0): ohne Bonus exakt die Basistabelle (ein Wurf)",
+      QUALITAETSWURF_BASIS.every((p, i) => nahe(qualitaetsVerteilung(0)[i], p, 1e-9)),
+      JSON.stringify(qualitaetsVerteilung(0))
+    );
+
     pruefe(
       "rerollUebergaenge(Normal): 'bleibt Normal' auf 0 gekappt (80+15+5+0,1 = 100,1 %, Rundungsartefakt)",
       rerollUebergaenge(0)[0] === 0,
@@ -1140,6 +1300,7 @@ const REGELN = (function () {
     rerollUebergaenge,
     rerollKostenZuQualitaet,
     qualitaetWurfErfolgswahrscheinlichkeit,
+    qualitaetsVerteilung,
     rezeptHatPreservequality,
     stationsgebuehr,
     steuerUndGebuehr,

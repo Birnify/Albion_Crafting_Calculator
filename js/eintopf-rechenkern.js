@@ -23,6 +23,18 @@ const EINTOPF_RECHENKERN = (function () {
 
   // Feste Spielwerte - im Craft- und Marktfenster abgelesen, nicht einstellbar.
   // Ressourcen-Ertragsrate am Kochtopf in Lymhurst (kein Stadtbonus auf Speisen):
+  //
+  // Audit-Befund 12 (14.09.2026, kosmetisch, s. AUDIT-2026-09-13.md): dieser
+  // Wert ist eine EIGENE, unabhaengige Messung (Screenshot des Craft-Fensters,
+  // s. ../../CLAUDE.md "Im Spiel abgelesene Werte"), nicht aus REGELN.rrr()
+  // abgeleitet - bewusst getrennter Code, s. Modulkommentar oben ("kein
+  // gemeinsamer Code mit preise.js/preisvergleich.js"). Die REGELN.rrr()-
+  // Formel in js/regeln.js liefert fuer dieselbe Situation (B=0,18, kein
+  // Fokus) 0,18/1,18 = 0,152542... - der winzige Unterschied (0,03
+  // Prozentpunkte, 0,06 % relativ) ist Rundung der abgelesenen Prozentzahl,
+  // kein Fehler. Bewusst NICHT durch den Formelwert ersetzt: das waere ein
+  // belegter (im Spiel abgelesener) Wert, der ohne neuen Beleg geaendert
+  // wuerde, s. ../../CLAUDE.md "Belegte Werte nie ohne neuen Beleg aendern".
   const RET_OHNE = 0.152; // ohne Fokus
   const RET_MIT = 0.435; // mit Fokus
   // Einstellungsgebuehr auf eigene Orders; Sofortgeschaefte zahlen sie nicht.

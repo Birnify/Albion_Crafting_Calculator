@@ -7,6 +7,80 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel, 13.09.2026)
+
+**Vorheriger Stand (v3.1.2, App-Fusion Paket E)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** zwei durch das offizielle Wiki belegte Rechenfehler aus einem
+Code-Audit (`AUDIT-2026-09-13.md`, Befund 2 und 3) beheben:
+
+1. `fceAusSpezialisierungsknoten()` ließ den Mutual-Anteil des eigenen
+   Zielknotens aus (nur "alle ANDEREN Knoten"). Wiki "Crafting",
+   Übersichtstabelle, wörtlich: "Total bonus of a node" = 280 je Stufe für
+   Waffen/Rüstung/Veredeln/Gathergear, also 250 Unique **+ 30 Mutual
+   desselben Knotens**, nicht nur Unique. Bis zu 3.000 FCE zu wenig, bis zu
+   23 % zu hohe Fokuskosten.
+2. `SPEZ_TYP.veredeln` führte fälschlich einen getrennten
+   Meisterschaftsknoten (`mastery: 30, einFeld: false`). Wiki
+   "Specializations", Abschnitt Refining, wörtlich: "All refining
+   specialization nodes are their own crafting mastery nodes" - es gibt dort
+   **keinen** getrennten Meisterschaftsknoten. Bis zu 3.000 FCE zu viel, bis
+   zu 19 % zu niedrige Fokuskosten beim Veredeln.
+
+Diese Sitzung ohne den `albion-cycle-orchestrator` umgesetzt: der Agent war
+über das Agent-Tool nicht aufrufbar (`Agent type 'albion-cycle-orchestrator'
+not found`, ebenso `oberflaechen-pruefer`/`spieldaten-pruefer` - dasselbe seit
+mehreren Sitzungen bekannte selektive Harness-Problem, s. Backlog unten). Nach
+Rückfrage hat der Nutzer die Inline-Umsetzung im Hauptgespräch gewählt statt
+zu warten oder abzubrechen.
+
+**Umgesetzt** (`js/regeln.js`, `js/ui.js`, `tests/test.html`, kein
+Rechenkern-/Preise-Code geändert):
+
+- `js/regeln.js`: `SPEZ_TYP.veredeln` auf `{ unique: 250, mutual: 30,
+  mastery: 0, einFeld: true }` geändert (wie `werkzeug_fused` modelliert,
+  eigene Unique-/Mutual-Werte). `fceAusSpezialisierungsknoten()`: der
+  Mutual-Anteil wird jetzt über ALLE Knoten summiert, den eigenen
+  eingeschlossen, statt nur über die anderen.
+- `js/ui.js`: keine Logikänderung - das Meisterschaftsfeld für Veredeln
+  verschwindet automatisch über die bereits vorhandene
+  `!typ.einFeld`-Bedingung. Nur zwei Kommentare/eine Tooltip-Beschriftung
+  ("Eigener Unique-Anteil + Mutual-Anteil ALLER Knoten ... inkl. des
+  eigenen") aktualisiert.
+- `tests/test.html`: bestehender Fokus-Monotonie-Regressionstest (v1.5.2)
+  nutzt `fiber` (Veredeln) mit einem Meisterschaftswert im Testfall - der
+  hartkodierte Erwartungswert ändert sich dadurch von 1.233,50 auf 1.087,45
+  Fokus (keine Regression, sondern die neue korrekte Zahl für dieselbe
+  Eingabe, s. Kommentar dort). Kommentar ergänzt, der das erklärt.
+
+**Getestet:** `js/regeln.js`: drei bestehende Tests an die neue Formel
+angepasst (waffen_ruestung-Testfall neu 3.040 statt 2.740, werkzeug_fused neu
+1.670 statt 1.370, jeweils mit erklärendem Kommentar), zwei neue Tests ergänzt
+(einzelner Ruestungsknoten = 280 FCE laut Wiki "Total bonus of a node";
+Veredeln-Kette mit 5 Knoten je Stufe 100 = 40.000 FCE laut Wiki-Endwert,
+Meisterschaftsparameter wird nachweislich ignoriert). Vorher unabhängig in
+einem Node-Skript im Scratchpad gegengerechnet, bevor die Tests geschrieben
+wurden. `tests/test.html` über den lokalen Server (`.claude/launch.json`,
+nicht `file://`) im Browser ausgeführt: **338/338 grün** (335 + 3 neue),
+keine Konsolenfehler.
+
+**Gehärtet:** live in der Oberfläche geprüft (`Kostenrechner.html` über den
+lokalen Server): das Meisterschaftsfeld fehlt jetzt korrekt bei `fiber`
+("Knotenstufe" statt "Spezialisierungsstufe"), bleibt korrekt erhalten bei
+`sword` ("Meisterschaftsstufe" + "Spezialisierungsstufe"). Testeingabe an
+zwei fiber-Knoten (je Stufe 10) ergab live 3.100 FCE (250×10 + 30×20) bzw.
+600 FCE für einen unbenutzten Knoten (30×20) - exakt die erwartete Rechnung.
+Kein `rechenkern-pruefer`/`oberflaechen-pruefer` angefordert (Formel-Tests
+und Browser-Gegenprobe bereits selbst durchgeführt).
+
+Die weiteren Audit-Befunde (Befund 1: Fokus-Bezugsgröße je Charge/Stück,
+ungeklärt und schwerwiegend; Befund 4-12) sind eigene, spätere Pakete, s.
+`AUDIT-2026-09-13.md`.
+
+---
+
 ## Aktueller Stand (v3.1.2, App-Fusion Paket E, 13.09.2026, letztes Paket der App-Fusion)
 
 **Vorheriger Stand (v3.1.1, App-Fusion Paket D)** unverkürzt nach

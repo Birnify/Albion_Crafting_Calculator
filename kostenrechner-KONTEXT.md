@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-13 · Version: v3.1.3 · Bugfix Spezialisierungsknoten-FCE-Formel (eigener Mutual-Anteil ergänzt, Veredeln ohne getrennten Meisterschaftsknoten), Audit-Befund 2/3
+Stand: 2026-09-14 · Version: v3.1.4 · Vier Audit-Befunde (5/6/12/10): shapeshifterstaff ergänzt, gatherergear-FCE korrigiert, RRR-Konstanten dokumentiert, Craften+Reroll-Strategie kombiniert
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -45,77 +45,107 @@ Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
 
-## Aktueller Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel, 13.09.2026)
+## Aktueller Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung, 14.09.2026)
 
-**Vorheriger Stand (v3.1.2, App-Fusion Paket E)** unverkürzt nach
-`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
-"Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel)**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** zwei durch das offizielle Wiki belegte Rechenfehler aus einem
-Code-Audit (`AUDIT-2026-09-13.md`, Befund 2 und 3) beheben:
+**Auftrag:** vier weitere, durch das offizielle Wiki belegte Befunde aus
+`AUDIT-2026-09-13.md` beheben, vom Nutzer in dieser Reihenfolge angefordert:
+Befund 5, 6, 12, 10 ("und alle Befunde die du sonst noch ohne mich machen
+kannst"). Komplett autonom umgesetzt (Nutzer schlief), ohne
+`albion-cycle-orchestrator` (weiterhin nicht über das Agent-Tool aufrufbar).
 
-1. `fceAusSpezialisierungsknoten()` ließ den Mutual-Anteil des eigenen
-   Zielknotens aus (nur "alle ANDEREN Knoten"). Wiki "Crafting",
-   Übersichtstabelle, wörtlich: "Total bonus of a node" = 280 je Stufe für
-   Waffen/Rüstung/Veredeln/Gathergear, also 250 Unique **+ 30 Mutual
-   desselben Knotens**, nicht nur Unique. Bis zu 3.000 FCE zu wenig, bis zu
-   23 % zu hohe Fokuskosten.
-2. `SPEZ_TYP.veredeln` führte fälschlich einen getrennten
-   Meisterschaftsknoten (`mastery: 30, einFeld: false`). Wiki
-   "Specializations", Abschnitt Refining, wörtlich: "All refining
-   specialization nodes are their own crafting mastery nodes" - es gibt dort
-   **keinen** getrennten Meisterschaftsknoten. Bis zu 3.000 FCE zu viel, bis
-   zu 19 % zu niedrige Fokuskosten beim Veredeln.
+**Umgesetzt** (`js/regeln.js`, `js/rechenkern.js`, `js/ui.js`,
+`js/eintopf-rechenkern.js`, `tests/test.html`):
 
-Diese Sitzung ohne den `albion-cycle-orchestrator` umgesetzt: der Agent war
-über das Agent-Tool nicht aufrufbar (`Agent type 'albion-cycle-orchestrator'
-not found`, ebenso `oberflaechen-pruefer`/`spieldaten-pruefer` - dasselbe seit
-mehreren Sitzungen bekannte selektive Harness-Problem, s. Backlog unten). Nach
-Rückfrage hat der Nutzer die Inline-Umsetzung im Hauptgespräch gewählt statt
-zu warten oder abzubrechen.
+1. **Befund 5, `shapeshifterstaff` fehlte in allen drei Kategorie-Tabellen.**
+   `KATEGORIE_ZU_SPEZTYP.shapeshifterstaff = "waffen_ruestung"` (Wiki nennt
+   keine abweichende Struktur). `STADTBONUS.Caerleon.craft` um
+   `shapeshifterstaff` ergänzt (Wiki "Resource_return_rate", Zeile
+   Caerleon/Weapons: "War Gloves, Shapeshifter Staff", klar belegt). Für das
+   Gebäude **kein Beleg gefunden** (Crafting-Seite, Hunter's-Lodge-Seite und
+   Shapeshifter-Seite gezielt durchsucht, auch im rohen HTML, kein einziges
+   Vorkommen) - deshalb wie `offhand`/`knuckles`/`meat_*` eine eigene
+   Gebührengruppe ("Wandlerstab") statt einer erfundenen Zuordnung zur
+   Jägerhütte.
+2. **Befund 6, `gatherergear` fälschlich als `werkzeug_fused` eingeordnet.**
+   Wiki "Specializations" trennt beide ausdrücklich: `werkzeug_fused` hat 250
+   Unique + 60 Mutual in einem verschmolzenen Knoten ohne eigene
+   Meisterschaft, Sammlerausrüstung dagegen 250 Unique + **nur 30** Mutual je
+   eigenem Knoten plus eine separate, hier als Meisterschaftsfeld modellierte
+   Komponente von 60 FCE je Stufe (im Spiel eigentlich der geteilte fused
+   Werkzeug-Meisterschaftsknoten, s. Codekommentar für die bewusste
+   Vereinfachung). Neuer `SPEZ_TYP.gatherergear`, Gegenprobe exakt gegen den
+   wörtlichen Wiki-Wert (ein Knoten + Meisterschaft auf Stufe 100 = 34.000
+   FCE).
+3. **Befund 12, zwei leicht verschiedene RRR-Konstanten (kosmetisch).**
+   `js/eintopf-rechenkern.js`s `RET_OHNE=0,152` ist eine EIGENE, unabhängig im
+   Spiel abgelesene Messung, `js/regeln.js`s `RRR_GRUNDPRODUKTION=0,18`
+   liefert über die Formel 0,152542... - beide sind demselben Spielwert aus
+   zwei verschiedenen Quellen zugeordnet (Screenshot vs. Formel), keine
+   davon wurde geändert (Regel "Belegte Werte nie ohne neuen Beleg ändern").
+   Nur Kommentare in beiden Dateien ergänzt, die den Zusammenhang erklären.
+4. **Befund 10, Craft-Wurf und Reroll wurden nie kombiniert.** Neue Funktion
+   `REGELN.qualitaetsVerteilung(chancenpunkte)`: volle
+   Wahrscheinlichkeitsverteilung über die gelandete Qualität eines
+   Craft-Versuchs (nicht nur Erfolg/Misserfolg gegen ein Ziel wie die
+   bestehende `qualitaetWurfErfolgswahrscheinlichkeit()`, die unverändert
+   bleibt). `craftBeiQualitaetKandidat()` in `rechenkern.js` rechnet jetzt bei
+   jedem Qualitäts-Wurf-Weg (kein `preservequality`) zwei Strategien
+   gegeneinander - "immer neu craften bis ein Versuch direkt trifft"
+   (bisheriges Verhalten, unverändert als Fallback) und "einmal craften, die
+   gelandete Qualität danach hochrerollen" (neu, Materialien/Fokus nur
+   einmal, Reroll kostet laut Spielregel keinen Fokus) - und wählt die
+   günstigere über den Zielwert. Neues Feld `weg.qualitaetsart` kann jetzt
+   auch `"wurf+reroll"` sein, `weg.erwarteterRerollSilber` neu. `js/ui.js` an
+   beiden Stellen (Bauplan-Detailzeile, Tooltip) um diesen Fall ergänzt, sonst
+   keine Logikänderung.
 
-**Umgesetzt** (`js/regeln.js`, `js/ui.js`, `tests/test.html`, kein
-Rechenkern-/Preise-Code geändert):
+**Getestet:** `js/regeln.js` selbsttest() um 33 neue Tests erweitert:
+`qualitaetsVerteilung` gegen die bereits getestete
+`qualitaetWurfErfolgswahrscheinlichkeit` gegengeprüft (Tail-Summe muss exakt
+übereinstimmen, fünf Bonuswerte), plus `shapeshifterstaff`/`gatherergear`-
+Tabellen- und Formel-Tests (u. a. Wiki-Gegenprobe 34.000 FCE für einen vollen
+Gathergear-Knoten). `tests/test.html` um zwei Integrationstests für die
+Craften+Reroll-Kombination ergänzt (reales Item `T4_MAIN_SWORD`, ein
+Szenario, in dem die neue Strategie klar gewinnen muss (teure Materialien,
+Zielqualität Meisterwerk, 0 Bonus, ~24 Mio. Silber nach alter Rechnung
+vs. tatsächlich 2,12 Mio.), ein Szenario, in dem die alte Strategie weiterhin
+gewinnen muss (billige Materialien, Zielqualität Gut), beide mit exakten
+Regressionswerten). **377/377 grün** (344 + 33 neue), über den lokalen Server
+im Browser ausgeführt, keine Konsolenfehler.
 
-- `js/regeln.js`: `SPEZ_TYP.veredeln` auf `{ unique: 250, mutual: 30,
-  mastery: 0, einFeld: true }` geändert (wie `werkzeug_fused` modelliert,
-  eigene Unique-/Mutual-Werte). `fceAusSpezialisierungsknoten()`: der
-  Mutual-Anteil wird jetzt über ALLE Knoten summiert, den eigenen
-  eingeschlossen, statt nur über die anderen.
-- `js/ui.js`: keine Logikänderung - das Meisterschaftsfeld für Veredeln
-  verschwindet automatisch über die bereits vorhandene
-  `!typ.einFeld`-Bedingung. Nur zwei Kommentare/eine Tooltip-Beschriftung
-  ("Eigener Unique-Anteil + Mutual-Anteil ALLER Knoten ... inkl. des
-  eigenen") aktualisiert.
-- `tests/test.html`: bestehender Fokus-Monotonie-Regressionstest (v1.5.2)
-  nutzt `fiber` (Veredeln) mit einem Meisterschaftswert im Testfall - der
-  hartkodierte Erwartungswert ändert sich dadurch von 1.233,50 auf 1.087,45
-  Fokus (keine Regression, sondern die neue korrekte Zahl für dieselbe
-  Eingabe, s. Kommentar dort). Kommentar ergänzt, der das erklärt.
+**Gehärtet:** `Kostenrechner.html` über den lokalen Server geladen, keine
+Konsolenfehler. Wegen der Uhrzeit (Nutzer schlief) keine vertiefte manuelle
+Klick-Gegenprobe der neuen Craften+Reroll-Anzeige im Bauplan wie bei
+Befund 5/6 am Vortag - die Node-Gegenrechnung und die beiden neuen
+Integrationstests decken die Kernlogik ab, eine visuelle Prüfung der neuen
+Detailzeile steht für die nächste Sitzung noch aus.
 
-**Getestet:** `js/regeln.js`: drei bestehende Tests an die neue Formel
-angepasst (waffen_ruestung-Testfall neu 3.040 statt 2.740, werkzeug_fused neu
-1.670 statt 1.370, jeweils mit erklärendem Kommentar), zwei neue Tests ergänzt
-(einzelner Ruestungsknoten = 280 FCE laut Wiki "Total bonus of a node";
-Veredeln-Kette mit 5 Knoten je Stufe 100 = 40.000 FCE laut Wiki-Endwert,
-Meisterschaftsparameter wird nachweislich ignoriert). Vorher unabhängig in
-einem Node-Skript im Scratchpad gegengerechnet, bevor die Tests geschrieben
-wurden. `tests/test.html` über den lokalen Server (`.claude/launch.json`,
-nicht `file://`) im Browser ausgeführt: **338/338 grün** (335 + 3 neue),
-keine Konsolenfehler.
+Damit sind aus `AUDIT-2026-09-13.md` die Befunde 2, 3, 5, 6, 10 und 12
+behoben. Offen: Befund 1 (schwer, braucht eine Schicksalsbrett-Ablesung im
+Spiel), Befund 4 (Knotenableitung trifft die echte Knotenzahl nicht),
+Befund 7 (Qualität für nicht qualifizierbare Items), Befund 8 (T1/T2 im Spiel
+gebührenfrei), Befund 9 (Global Discount/Gold Market Stabilization, braucht
+einen neuen Eingabewert vom Nutzer), Befund 11 (offhand/knuckles ohne
+Spezialisierungsformel, fuer offhand widerspruechliche/unklare Wiki-Werte je
+Nebenhand-Typ). Bewusst nicht angefasst: das Risiko, mit widersprüchlicher
+oder unvollständiger Quellenlage etwas Falsches zu bauen, während der Nutzer
+nicht gegenlesen konnte, wog schwerer als der Wunsch nach Vollständigkeit.
 
-**Gehärtet:** live in der Oberfläche geprüft (`Kostenrechner.html` über den
-lokalen Server): das Meisterschaftsfeld fehlt jetzt korrekt bei `fiber`
-("Knotenstufe" statt "Spezialisierungsstufe"), bleibt korrekt erhalten bei
-`sword` ("Meisterschaftsstufe" + "Spezialisierungsstufe"). Testeingabe an
-zwei fiber-Knoten (je Stufe 10) ergab live 3.100 FCE (250×10 + 30×20) bzw.
-600 FCE für einen unbenutzten Knoten (30×20) - exakt die erwartete Rechnung.
-Kein `rechenkern-pruefer`/`oberflaechen-pruefer` angefordert (Formel-Tests
-und Browser-Gegenprobe bereits selbst durchgeführt).
-
-Die weiteren Audit-Befunde (Befund 1: Fokus-Bezugsgröße je Charge/Stück,
-ungeklärt und schwerwiegend; Befund 4-12) sind eigene, spätere Pakete, s.
-`AUDIT-2026-09-13.md`.
+**Zusätzlich vom Nutzer angestoßen, noch nicht begonnen:** den
+Eintopf-Rechner-Reiter zu einem generischen "Foodrechner" verallgemeinern
+(beliebiges Gericht statt nur Rindfleischeintopf auswählen, danach dieselbe
+Logik wie heute). Das ist ein echter Feature-Umbau, keine Bugfix-Korrektur -
+braucht laut eigenem Arbeitsablauf ("Orchestrator statt direkter Umsetzung")
+erst eine interaktive Brainstorming-Phase (welche Gerichte, welche
+Selektions-UI, ob alle Speisen wirklich derselben Fischsauce-Struktur folgen)
+und wurde deshalb in dieser unbeaufsichtigten Nachtsitzung bewusst nicht
+begonnen. Nächster Schritt: `/define-feature`, dann eine frische
+Orchestrator-Instanz (sobald das Agent-Tool sie wieder findet) oder eine
+interaktive Sitzung mit dem Nutzer.
 
 ---
 
@@ -168,7 +198,13 @@ dieses Repos s. "Aktueller Stand"; App-Fusion Pakete A-E damit abgeschlossen)
 plus Bugfix "Spezialisierungsknoten-FCE-Formel" (v3.1.3, `js/regeln.js`
 (SPEZ_TYP.veredeln, fceAusSpezialisierungsknoten()) + `tests/test.html`
 (drei Tests angepasst, zwei neu) geaendert, `js/ui.js` nur Kommentare/
-Tooltip-Text, s. "Aktueller Stand" und `AUDIT-2026-09-13.md` Befund 2/3):
+Tooltip-Text, s. "Aktueller Stand" und `AUDIT-2026-09-13.md` Befund 2/3) plus
+vier weitere Audit-Befunde (v3.1.4, `js/regeln.js` (shapeshifterstaff/
+gatherergear-Tabellen, qualitaetsVerteilung()) + `js/rechenkern.js`
+(craftBeiQualitaetKandidat() Craften+Reroll-Kombination) + `js/ui.js`
+(neuer qualitaetsart-Fall) + `js/eintopf-rechenkern.js` (nur Kommentar) +
+`tests/test.html` (33 neue Tests) geaendert, s. "Aktueller Stand" und
+`AUDIT-2026-09-13.md` Befund 5/6/10/12):
 
 ```
 Kostenrechner/
@@ -219,7 +255,10 @@ Kostenrechner/
                               billigste/bestChopQuelle/sauceWege/verkaufswege/strategien/
                               gerade/entscheidungsleiter/schmerzgrenze/guete), nur
                               Datenquelle auf EINTOPF_PREISE/EINTOPF_DATEN umgestellt;
-                              RET_OHNE/RET_MIT/ORDERGEB/FEFF unveraendert aus ../CLAUDE.md
+                              RET_OHNE/RET_MIT/ORDERGEB/FEFF unveraendert aus ../CLAUDE.md;
+                              Kommentar bei RET_OHNE ergaenzt (Verhaeltnis zu
+                              REGELN.RRR_GRUNDPRODUKTION erklaert, keine Werteaenderung)
+                              v3.1.4, s. AUDIT-2026-09-13.md Befund 12
     eintopf-ui.js             neu v3.1.0, Rendering/DOM-Verdrahtung 1:1 aus dem alten
                               TEMPLATE, IDs mit et-Praefix, alle querySelectorAll auf
                               #tab-eintopf eingeschraenkt; automatischer Erstabruf beim
@@ -235,12 +274,17 @@ Kostenrechner/
                               fceAusSpezialisierungsknoten() v1.5.0; gruppenSchluesselVonItem(item,cc)
                               Bugfix v1.5.1; Bugfix fceAusSpezialisierungsknoten() (eigener Mutual-
                               Anteil ergaenzt) + SPEZ_TYP.veredeln (kein getrennter Meisterschafts-
-                              knoten mehr) v3.1.3, s. "Aktueller Stand" und AUDIT-2026-09-13.md
-                              Befund 2/3): itemWert, RRR, Stationsgebuehr
+                              knoten mehr) v3.1.3; shapeshifterstaff in allen drei Tabellen
+                              ergaenzt, SPEZ_TYP.gatherergear eigener Typ (vorher faelschlich
+                              werkzeug_fused), neue Funktion qualitaetsVerteilung() (volle
+                              Wurf-Qualitaetsverteilung, Basis fuer die Craften+Reroll-
+                              Kombination in rechenkern.js) v3.1.4, s. "Aktueller Stand" und
+                              AUDIT-2026-09-13.md Befund 5/6/10): itemWert, RRR, Stationsgebuehr
                               (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
                               rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
-                              rerollKostenZuQualitaet(), Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1/v3.1.3).
-                              Unveraendert seit v3.1.3.
+                              qualitaetsVerteilung()/rerollKostenZuQualitaet(),
+                              Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1/v3.1.3/v3.1.4).
+                              Unveraendert seit v3.1.4.
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
                               Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
                               fceFuer() um Knoten-Ebene erweitert v1.5.0, reicht cc an
@@ -253,7 +297,12 @@ Kostenrechner/
                               Kaufen/Reroll/Craften(Wurf oder preservequality)/Verzaubern
                               in Zielqualitaet (v1.4.0), fceFuer(item,cc,opts) mit drei
                               Prioritaetsebenen (Knoten > Kategorie-Freitext > global, v1.5.0).
-                              Unveraendert seit v1.5.1.
+                              craftBeiQualitaetKandidat() rechnet im Wurf-Fall (kein
+                              preservequality) jetzt zwei Strategien gegeneinander (Neu-
+                              Craften vs. Craften+Reroll ueber REGELN.qualitaetsVerteilung()/
+                              rerollKostenZuQualitaet()) und waehlt die guenstigere, neue Felder
+                              weg.qualitaetsart="wurf+reroll"/weg.erwarteterRerollSilber v3.1.4,
+                              s. AUDIT-2026-09-13.md Befund 10. Unveraendert seit v3.1.4.
     ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
                               Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0,
                               Bauplan-Knoten als Karten statt Fliesstext v1.3.0; Qualitaet-
@@ -272,7 +321,9 @@ Kostenrechner/
                               (Text/Grafisch, localStorage-persistiert) v1.8.0; FCE-Spalten-
                               Tooltip + Kommentar praezisiert, keine Logikaenderung
                               (Meisterschaftsfeld-Sichtbarkeit haengt schon vorher an
-                              typ.einFeld) v3.1.3, s. AUDIT-2026-09-13.md Befund 3):
+                              typ.einFeld) v3.1.3; neuer Fall weg.qualitaetsart==="wurf+reroll"
+                              an beiden Detailzeilen-Stellen (Bauplan-Karte, Tooltip) ergaenzt
+                              v3.1.4, s. AUDIT-2026-09-13.md Befund 10):
                               Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
@@ -309,7 +360,11 @@ Kostenrechner/
   Versionen/v3.1.0 - App-Fusion Paket C, Eintopf-Rechenkern live migriert/
   Versionen/v3.1.1 - App-Fusion Paket D, Eintopf-Rechenkern automatisierte Tests ergaenzt/
   Versionen/v3.1.2 - App-Fusion Paket E, alte eigenstaendige Eintopf-Rechner-Dateien archiviert/
-  tests/test.html           338 Tests (335 bisherige + 3 neu/angepasst fuer
+  Versionen/v3.1.3 - Bugfix Spezialisierungsknoten-FCE-Formel/
+  Versionen/v3.1.4 - Vier Audit-Befunde (shapeshifterstaff, gatherergear, RRR-Kommentare, Craften+Reroll)/
+  tests/test.html           377 Tests (338 bisherige + 33 neu fuer shapeshifterstaff/
+                              gatherergear/qualitaetsVerteilung()/Craften+Reroll-Kombination,
+                              v3.1.4; 335 davon + 3 neu/angepasst fuer
                               fceAusSpezialisierungsknoten(), v3.1.3, Bugfix
                               Spezialisierungsknoten-FCE-Formel; 296 davon + 39 fuer
                               eintopf-rechenkern.js/eintopf-daten.js, v3.1.1, App-Fusion

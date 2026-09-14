@@ -728,7 +728,7 @@ const RECHENKERN = (function () {
     } else {
       const jeVersuchSilber = materialSilber + stationsgebuehrJeStueck + rezeptSilberJeStueck;
       const jeVersuchFokus = materialFokus + fokusJeStueck;
-      let silber, fokus, erwarteteVersuche, pErfolg;
+      let silber, fokus, erwarteteVersuche, pErfolg, kombiniert, erwarteterRerollSilber;
       if (hatP) {
         // preservequality: kein Wurf, kein Fehlversuch. Die Zutat wurde bereits
         // rekursiv IN dieser Qualitaet beschafft (s. oben), das Ergebnis hat
@@ -745,8 +745,53 @@ const RECHENKERN = (function () {
           return ergebnis;
         }
         erwarteteVersuche = 1 / pErfolg;
-        silber = jeVersuchSilber * erwarteteVersuche;
-        fokus = jeVersuchFokus * erwarteteVersuche;
+        const silberNeuCraften = jeVersuchSilber * erwarteteVersuche;
+        const fokusNeuCraften = jeVersuchFokus * erwarteteVersuche;
+
+        // Kombinierte Strategie (Bugfix Audit-Befund 10, 14.09.2026, s.
+        // AUDIT-2026-09-13.md): bisher wurde bei Verfehlen der Zielqualitaet
+        // IMMER komplett neu gecraftet (Materialien + Fokus je Fehlversuch
+        // erneut). Ein Fehlversuch landet aber nicht "nichts", sondern eine
+        // KONKRETE Qualitaet (Korns Basistabelle), die sich oft guenstiger
+        // per Reroll an der Reparaturstation zur Zielqualitaet hochbringen
+        // laesst als ein weiterer Materialeinsatz - Reroll kostet laut
+        // Spielregel keinen Fokus (s. REGELN.rerollKostenZuQualitaet).
+        // Materialien/Fokus fallen hier nur EINMAL an (ein Craft-Versuch),
+        // der erwartete Reroll-Silberaufwand ueber
+        // REGELN.qualitaetsVerteilung() (volle Verteilung der gelandeten
+        // Qualitaet) addiert sich dazu. Beide Strategien bleiben als
+        // eigenstaendige Rechnung erhalten, die guenstigere (nach Zielwert)
+        // gewinnt - das ist immer mindestens so gut wie die alte, reine
+        // Neu-Craften-Strategie, oft deutlich billiger UND deutlich
+        // fokusaermer (nur ein Craft-Versuch statt erwarteter mehrerer).
+        const verteilung = REGELN.qualitaetsVerteilung(opts.qualitaetsChancenpunkte);
+        let rerollSilberErwartet = 0;
+        let rerollUnmoeglich = false;
+        for (let q = 0; q <= 4 && !rerollUnmoeglich; q++) {
+          if (verteilung[q] <= 0) continue;
+          const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, q);
+          if (reroll.gesperrt) {
+            rerollUnmoeglich = true;
+            break;
+          }
+          rerollSilberErwartet += verteilung[q] * reroll.silber;
+        }
+        const silberKombiniert = jeVersuchSilber + rerollSilberErwartet;
+        const fokusKombiniert = jeVersuchFokus;
+        const wertNeuCraften = silberNeuCraften + fokusNeuCraften * opts.fokuswert;
+        const wertKombiniert = silberKombiniert + fokusKombiniert * opts.fokuswert;
+
+        if (!rerollUnmoeglich && wertKombiniert < wertNeuCraften) {
+          silber = silberKombiniert;
+          fokus = fokusKombiniert;
+          kombiniert = true;
+          erwarteterRerollSilber = rerollSilberErwartet;
+        } else {
+          silber = silberNeuCraften;
+          fokus = fokusNeuCraften;
+          kombiniert = false;
+          erwarteterRerollSilber = null;
+        }
       }
       const wert = silber + fokus * opts.fokuswert;
       ergebnis = {
@@ -779,9 +824,10 @@ const RECHENKERN = (function () {
           fehlendeGebaeude,
           zutaten: zutatenWeg,
           qualitaet,
-          qualitaetsart: hatP ? "preservequality" : "wurf",
+          qualitaetsart: hatP ? "preservequality" : kombiniert ? "wurf+reroll" : "wurf",
           erfolgswahrscheinlichkeit: hatP ? null : pErfolg,
           erwarteteVersuche: hatP ? null : erwarteteVersuche,
+          erwarteterRerollSilber: hatP ? null : kombiniert ? erwarteterRerollSilber : null,
         },
       };
     }

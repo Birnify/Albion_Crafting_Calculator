@@ -1447,6 +1447,17 @@ const UI = (function () {
             " Erfolgschance je Versuch, erwartet " +
             weg.erwarteteVersuche.toLocaleString("de-DE", { maximumFractionDigits: 2 }) +
             " Versuche";
+        } else if (weg.qualitaetsart === "wurf+reroll") {
+          // Kombinierte Strategie (Bugfix Audit-Befund 10, 14.09.2026): ein
+          // Craft-Versuch, das Ergebnis danach an der Reparaturstation zur
+          // Zielqualitaet hochrerollt - guenstiger als reines Neu-Craften bei
+          // Verfehlen, s. rechenkern.js/craftBeiQualitaetKandidat().
+          qualitaetDetailHtml =
+            ", ein Craft-Versuch + Reroll auf " +
+            escapeHtml(REGELN.QUALITAETEN[weg.qualitaet]) +
+            " (erwarteter Reroll-Aufwand " +
+            formatSilber(weg.erwarteterRerollSilber) +
+            " Silber, guenstiger als reines Neu-Craften bei Verfehlen)";
         }
         const detail = document.createElement("div");
         detail.className = "kn-detail";
@@ -1579,6 +1590,14 @@ const UI = (function () {
               " Erfolgschance je Versuch, erwartet " +
               weg.erwarteteVersuche.toLocaleString("de-DE", { maximumFractionDigits: 2 }) +
               " Versuche"
+          );
+        } else if (weg.qualitaetsart === "wurf+reroll") {
+          teile.push(
+            "Ein Craft-Versuch + Reroll auf " +
+              REGELN.QUALITAETEN[weg.qualitaet] +
+              " (erwarteter Reroll-Aufwand " +
+              formatSilber(weg.erwarteterRerollSilber) +
+              " Silber)"
           );
         }
         if (weg.unvollstaendig) teile.push("Stationssatz fuer mindestens ein Gebaeude fehlt, Silber ist eine Untergrenze");
