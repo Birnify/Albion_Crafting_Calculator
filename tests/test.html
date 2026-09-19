@@ -1832,6 +1832,73 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         UI.wegGruppenLabel(gemischtGruppe)
       );
     })();
+
+    // k) Qualitaets-Zusatz im Label (Backlog-Punkt 6, 19.09.2026). Bei einer
+    //    Zielqualitaet ueber Normal enthalten Silber UND Fokus einer
+    //    Craft-Zeile den Faktor "erwartete Versuche" (s.
+    //    craftBeiQualitaetKandidat() in js/rechenkern.js). Ohne diesen Zusatz
+    //    las sich die Zeile wie ein Rechenfehler ("astronomische Werte").
+    //    Diagnose 19.09.2026: kein Rechenfehler, nur eine fehlende Angabe.
+    (function () {
+      const wurf = wFixture({
+        typ: "craften",
+        silber: 4748685,
+        fokus: 672782,
+        wert: 4748685,
+        weg: { rezeptIndex: 0, mitFokus: true, qualitaetsart: "wurf", qualitaet: 3, erwarteteVersuche: 90.9 },
+      });
+      pruefe(
+        "Alle-Wege-Label: Craft-Weg mit Qualitaets-Wurf nennt die erwarteten Versuche, die im Betrag stecken",
+        UI.wegLabelKurz(wurf) === "Craften #1, mit Fokus, erwartet 90,9 Versuche",
+        UI.wegLabelKurz(wurf)
+      );
+
+      const kombiniert = wFixture({
+        typ: "craften",
+        silber: 58444,
+        fokus: 7401,
+        wert: 58444,
+        weg: { rezeptIndex: 0, mitFokus: true, qualitaetsart: "wurf+reroll", qualitaet: 1, erwarteteVersuche: 3.2, erwarteterRerollSilber: 6208 },
+      });
+      pruefe(
+        "Alle-Wege-Label: kombinierter Weg weist EINEN Craft-Versuch plus Reroll aus, nicht die Versuchszahl",
+        UI.wegLabelKurz(kombiniert) === "Craften #1, mit Fokus, ein Versuch + Reroll",
+        UI.wegLabelKurz(kombiniert)
+      );
+
+      const ohneQualitaet = wFixture({
+        typ: "craften",
+        silber: 52236,
+        fokus: 7401,
+        wert: 52236,
+        weg: { rezeptIndex: 0, mitFokus: false },
+      });
+      pruefe(
+        "Alle-Wege-Label: bei Zielqualitaet Normal bleibt die Beschriftung unveraendert (keine Regression)",
+        UI.wegLabelKurz(ohneQualitaet) === "Craften #1, ohne Fokus",
+        UI.wegLabelKurz(ohneQualitaet)
+      );
+
+      const gleicherZusatz = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100, fokus: 5, wert: 100, weg: { rezeptIndex: 0, mitFokus: true, qualitaetsart: "wurf", erwarteteVersuche: 90.9 } }),
+        wFixture({ typ: "craften", silber: 100, fokus: 5, wert: 100, weg: { rezeptIndex: 1, mitFokus: true, qualitaetsart: "wurf", erwarteteVersuche: 90.9 } }),
+      ])[0];
+      pruefe(
+        "Alle-Wege-Gruppierung: einheitlicher Qualitaets-Zusatz wandert in die zusammengefasste Zeile",
+        UI.wegGruppenLabel(gleicherZusatz) === "Craften mit Fokus, erwartet 90,9 Versuche (2 gleichwertige Wege)",
+        UI.wegGruppenLabel(gleicherZusatz)
+      );
+
+      const gemischterZusatz = UI.gruppiereAlleWege([
+        wFixture({ typ: "craften", silber: 100, fokus: 5, wert: 100, weg: { rezeptIndex: 0, mitFokus: true, qualitaetsart: "wurf", erwarteteVersuche: 90.9 } }),
+        wFixture({ typ: "craften", silber: 100, fokus: 5, wert: 100, weg: { rezeptIndex: 1, mitFokus: true, qualitaetsart: "wurf+reroll", erwarteterRerollSilber: 10 } }),
+      ])[0];
+      pruefe(
+        "Alle-Wege-Gruppierung: uneinheitlicher Qualitaets-Zusatz bleibt weg statt fuer alle Mitglieder zu gelten",
+        UI.wegGruppenLabel(gemischterZusatz) === "Craften mit Fokus (2 gleichwertige Wege)",
+        UI.wegGruppenLabel(gemischterZusatz)
+      );
+    })();
   })();
 
   // Reale Gegenprobe: Koenigliche Gugel .3, der Beispielfall aus dem Auftrag

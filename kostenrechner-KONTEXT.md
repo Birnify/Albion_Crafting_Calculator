@@ -683,21 +683,40 @@ hier ebenfalls entfernt.
    Umsetzung klaeren, ob "automatisch" als Ausgangszustand gemeint ist oder
    der zuletzt gewaehlte Zustand je Knoten erhalten bleiben soll, wenn der
    Schalter wieder aus geht.
-6. **Reine "Craften"-Pfade in Alle Wege liefern astronomische Werte (echter
-   Rechenfehler, beim v2.1.3-Fix entdeckt, noch nicht untersucht).** Die
-   "Craften #N, mit/ohne Fokus"-Zeilen (erzwingen Craften statt Kaufen auf
-   jeder Ebene) zeigen fuer T4.3-Plattenruestung 4,6-10,9 Mio. Silber,
-   274.710-600.958 Fokus - Faktor 30-70 ueber Verzaubern/Craften+Reroll fuer
-   dasselbe Item. Gegenprobe an einem unbeteiligten Item (Soldatenruestung
-   des Adepten, keine Artefakt-/Relikt-Beteiligung) zeigt EXAKT dieselben
-   Fokus-Werte - deshalb sicher kein Folgefehler des v2.1.3-Fixes, sondern
-   ein eigener, vermutlich schon laenger bestehender Bug. Naheliegender
-   Verdacht (nicht verifiziert): die rekursive "immer craften"-Traversierung
-   craftet Rune/Seele/Relikt bzw. die Ore->Barren-Kette faelschlich mit statt
-   sie zu kaufen, oder ein `gesperrt`-Fallback tief im Baum liefert einen
-   ueberzogenen Ersatzwert statt den Pfad sauber zu sperren. Braucht eigene
-   Diagnose, am besten mit Zwischenwerten aus `craftKandidat()`/
-   `zutatenWeg()` in `rechenkern.js`.
+6. **ERLEDIGT 19.09.2026: "Reine Craften-Pfade in Alle Wege liefern
+   astronomische Werte" war KEIN Rechenfehler, nur eine fehlende Angabe in
+   der Beschriftung.** Diagnose in einem Projekt-Thread, die App dafuer
+   offline in Node und headless im Browser gegen synthetische Preise
+   laufen gelassen (Netzzugriff auf die Preis-API ist aus einem
+   Cloud-Thread gesperrt, s. unten).
+
+   **Ursache:** sobald die Zielqualitaet ueber Normal steht, multipliziert
+   `craftBeiQualitaetKandidat()` in `js/rechenkern.js` Silber UND Fokus mit
+   `erwarteteVersuche = 1 / Erfolgswahrscheinlichkeit`. Bei Exzellent und 0
+   Chancenpunkten sind das 90,9 Versuche. Verzaubern traegt diesen Faktor
+   nicht (kein Qualitaetswurf, es erbt die Qualitaet der Vorstufe), daher der
+   beobachtete Faktor 30-70. Reproduziert: 52.236 Silber / 7.401 Fokus je
+   Versuch, mal 90,9 ergibt 4.748.685 Silber / 672.782 Fokus, dieselbe
+   Groessenordnung wie im urspruenglichen Bericht.
+
+   **Zwei Annahmen des urspruenglichen Berichts sind widerlegt:** (a) die
+   "Craften #N"-Zeilen erzwingen das Craften NICHT auf jeder Ebene, sondern
+   nur an der Wurzel; die Zutaten nehmen weiter ihren guenstigsten Weg
+   (`kind = kindErgebnis.beste`). Gegenprobe: senkt man den Marktpreis des
+   verzauberten Barrens, kippt die Zutat in derselben Zeile von Craften auf
+   Kaufen. (b) Die identischen Fokuswerte bei einem anderen Item sind zu
+   erwarten und kein Indiz: alle T4-Plattenruestungen haengen an derselben
+   Kette aus 16 Barren, und die Artefakt-Zutat kostet selbst keinen Fokus
+   (SET1, SET3 und UNDEAD ergeben alle 7.401 Fokus).
+
+   **Umgesetzt:** neue Hilfsfunktion `qualitaetsZusatzKurz()` in `js/ui.js`,
+   angehaengt in `wegLabelKurz()` und (nur bei einheitlichem Zusatz ueber
+   alle Mitglieder) in `wegGruppenLabel()`. Die Zeile heisst jetzt
+   "Craften #1, mit Fokus, erwartet 90,9 Versuche" bzw. bei der seit v3.1.4
+   kombinierten Strategie "Craften #1, mit Fokus, ein Versuch + Reroll".
+   Wortlaut bewusst identisch zur Bauplan-Detailzeile und zum Tooltip, wo
+   die Zahl schon vorher stand. Bei Zielqualitaet Normal bleibt die
+   Beschriftung unveraendert. Keine Rechenlogik angefasst.
 
 **Kleinere offene Punkte, unverändert seit früheren Paketen:**
 

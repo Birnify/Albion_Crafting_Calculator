@@ -327,6 +327,37 @@ const UI = (function () {
   }
 
   /**
+   * Zusatz zum Craft-Label, der ausweist, WIE eine erhoehte Zielqualitaet in
+   * dieser Zeile erreicht wird (Backlog-Punkt 6, 19.09.2026).
+   *
+   * Hintergrund: bei einer Zielqualitaet ueber Normal enthalten Silber UND
+   * Fokus einer Craft-Zeile den Faktor "erwartete Versuche" (1 / Erfolgschance
+   * je Wurf, s. craftBeiQualitaetKandidat() in js/rechenkern.js). Bei
+   * Exzellent und 0 Chancenpunkten sind das 90,9 Versuche, die Zeile zeigt
+   * also rund das 91-fache eines einzelnen Versuchs. Diese Zahl stand bisher
+   * nur in der Bauplan-Detailzeile und im Tooltip, NICHT in der
+   * "Alle Wege"-Tabelle, in der der grosse Betrag steht; die Zeile las sich
+   * dadurch wie ein Rechenfehler (Backlog-Punkt 6: "astronomische Werte").
+   * Diagnose 19.09.2026: kein Rechenfehler, nur eine fehlende Angabe.
+   *
+   * Wortlaut bewusst identisch zur Detailzeile/dem Tooltip weiter unten
+   * (renderBauplan/bgTooltipFuer), damit Tabelle und Baum dieselbe Sprache
+   * sprechen. Bei Zielqualitaet Normal ist qualitaetsart nicht gesetzt und
+   * der Zusatz bleibt leer, die Beschriftung also unveraendert.
+   *
+   * @param {object} weg ein weg-Objekt aus RECHENKERN.kosten()
+   * @returns {string} "" oder der anzuhaengende Zusatz
+   */
+  function qualitaetsZusatzKurz(weg) {
+    if (!weg) return "";
+    if (weg.qualitaetsart === "wurf" && weg.erwarteteVersuche != null) {
+      return ", erwartet " + weg.erwarteteVersuche.toLocaleString("de-DE", { maximumFractionDigits: 2 }) + " Versuche";
+    }
+    if (weg.qualitaetsart === "wurf+reroll") return ", ein Versuch + Reroll";
+    return "";
+  }
+
+  /**
    * Kurzes Label eines EINZELNEN Weges fuer die "Alle Wege"-Tabelle, inklusive
    * der Details, die einen von mehreren gleichartigen Wegen unterscheiden
    * (Rezept-Index, Kaufweg). Modul-Ebene (nicht in boot()), damit
@@ -340,8 +371,10 @@ const UI = (function () {
         (w.weg.eigenpreis ? ", Eigenpreis" : "") +
         ")"
       );
-    if (w.typ === "craften")
-      return "Craften #" + (w.weg.rezeptIndex != null ? w.weg.rezeptIndex + 1 : "?") + ", " + (w.weg.mitFokus ? "mit Fokus" : "ohne Fokus");
+    if (w.typ === "craften") {
+      const basis = "Craften #" + (w.weg.rezeptIndex != null ? w.weg.rezeptIndex + 1 : "?") + ", " + (w.weg.mitFokus ? "mit Fokus" : "ohne Fokus");
+      return basis + qualitaetsZusatzKurz(w.weg);
+    }
     if (w.typ === "verzaubern") return "Verzaubern";
     if (w.typ === "reroll") return "Craften + Reroll";
     return w.typ;
@@ -428,6 +461,15 @@ const UI = (function () {
       const ersterFokuswert = gruppe.mitglieder[0].weg && gruppe.mitglieder[0].weg.mitFokus;
       const alleGleich = gruppe.mitglieder.every((w) => w.weg && w.weg.mitFokus === ersterFokuswert);
       basis = "Craften" + (alleGleich ? (ersterFokuswert ? " mit Fokus" : " ohne Fokus") : "");
+      // Qualitaets-Zusatz (Backlog-Punkt 6, s. qualitaetsZusatzKurz()) nach
+      // demselben Muster wie der Fokuseinsatz eine Zeile darueber: nur dann
+      // anhaengen, wenn ALLE Mitglieder der Gruppe denselben Zusatz haben.
+      // Sonst stuende an einer zusammengefassten Zeile eine Versuchszahl, die
+      // nur fuer einen Teil der Mitglieder gilt.
+      const ersterZusatz = qualitaetsZusatzKurz(gruppe.mitglieder[0].weg);
+      if (ersterZusatz && gruppe.mitglieder.every((w) => qualitaetsZusatzKurz(w.weg) === ersterZusatz)) {
+        basis += ersterZusatz;
+      }
     } else if (gruppe.typ === "verzaubern") basis = "Verzaubern";
     else if (gruppe.typ === "reroll") basis = "Craften + Reroll";
     else basis = gruppe.typ;
