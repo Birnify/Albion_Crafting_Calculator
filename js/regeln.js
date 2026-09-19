@@ -95,6 +95,11 @@ const REGELN = (function () {
   // gererollt, ist bereits das Maximum).
   const REROLL_FAKTOR = { 0: 4.4, 1: 5.5, 2: 6.6, 3: 27.5 };
 
+  // Global Discount: Goldpreis, ab dem es keinen Rabatt mehr gibt, und
+  // zugleich der Nenner der Formel. Wiki "Global_Discount", s.
+  // globalDiscount() weiter unten.
+  const GLOBAL_DISCOUNT_SCHWELLE = 3000;
+
   // -----------------------------------------------------------------------
   // Kategorie -> Gebaeude / Gebuehrengruppe
   // Aus ../CLAUDE.md, Abschnitt "Craft-Kategorie zu Gebaeude" (Wiki,
@@ -553,6 +558,51 @@ const REGELN = (function () {
   }
 
   /**
+   * Global Discount: Rabatt auf Silberkosten, sobald der Goldpreis am Markt
+   * unter 3.000 liegt (Audit-Befund 9, umgesetzt 19.09.2026).
+   *
+   * Beleg, Wiki-Seite `Global_Discount`, woertlich: "When the gold price on
+   * the market is below 3000, a Global Discount on silver costs is active,
+   * the percentage of discount is proportionate to the price of gold, and the
+   * cheaper the price of gold, the higher the discount." Formel ebendort:
+   * `Global Discount = (1 - gold price / 3000) * 100 %`, mit der Skala
+   * 3.000 -> 0 %, 1.500 -> 50 %, 0 -> 100 %. Gegenprobe der Seite selbst: bei
+   * 4,74 % Rabatt sank ein Inselausbau von 1.875.000 auf 1.786.125 Silber,
+   * also exakt 1.875.000 x (1 - 0,0474).
+   *
+   * UMFANG, ausdrueckliche Nutzer-Entscheidung vom 19.09.2026: die App wendet
+   * den Rabatt NUR auf die Reroll-Kosten an, NICHT auf die Stationsgebuehr.
+   * Die Wiki-Seite nennt als Silbersenken "repair, transmutation, quality
+   * improvements" (der Reroll ist eine Qualitaetsverbesserung) und spricht
+   * sonst nur allgemein von "anything that requires silver"; die
+   * Nutzungsgebuehr einer Station kommt dort nicht vor, und sie geht an den
+   * Gebaeudebesitzer, ist also keine Silbersenke im Sinne der Seite. Statt zu
+   * raten bleibt sie unangetastet.
+   *
+   * @param {?number} goldpreis aktueller Goldpreis in Silber (API /stats/gold)
+   * @returns {number} Rabatt als Anteil 0..1 (0 = kein Rabatt)
+   */
+  function globalDiscount(goldpreis) {
+    // null/undefined/"" heisst "kein Goldpreis bekannt" und ergibt 0 Rabatt.
+    // Wichtig: NICHT ueber Number() laufen lassen, das macht aus null eine 0
+    // und damit nach der Wiki-Skala 100 % Rabatt.
+    if (goldpreis == null || goldpreis === "") return 0;
+    const g = Number(goldpreis);
+    if (!isFinite(g) || g < 0) return 0;
+    if (g >= GLOBAL_DISCOUNT_SCHWELLE) return 0;
+    return 1 - g / GLOBAL_DISCOUNT_SCHWELLE;
+  }
+
+  /**
+   * Der Global Discount als Multiplikator auf einen Silberbetrag (1 = kein
+   * Rabatt, 0,95 = 5 % guenstiger). Bequemer Gegenpart zu globalDiscount().
+   * @param {?number} goldpreis
+   */
+  function silberRabattFaktor(goldpreis) {
+    return 1 - globalDiscount(goldpreis);
+  }
+
+  /**
    * Erwartete Silberkosten, ein Item per Reroll an der Reparaturstation von
    * `aktuelleQualitaet` (Default 0 = Normal) auf MINDESTENS `zielQualitaet` zu
    * bringen. Absorbierende Markov-Kette, geloest von Meisterwerk abwaerts (ein
@@ -561,10 +611,16 @@ const REGELN = (function () {
    * E[r]) / (1 - P(q->q)). `itemWertJeStueck` ist quality-unabhaengig (keine
    * belegte Quelle nennt eine Aenderung des ItemValue durch Qualitaet), gilt
    * fuer die gesamte Reroll-Kette gleichermassen.
+   *
+   * `rabattFaktor` (Default 1) ist der Global Discount, s. silberRabattFaktor().
+   * Er skaliert die Kosten JE REROLL; da die Markov-Kette linear in diesen
+   * Kosten ist, skaliert damit auch das Ergebnis exakt mit demselben Faktor -
+   * die Erfolgswahrscheinlichkeiten bleiben unberuehrt.
    * @returns {{silber: number, gesperrt: boolean, grund: ?string}}
    */
-  function rerollKostenZuQualitaet(itemWertJeStueck, zielQualitaet, aktuelleQualitaet) {
+  function rerollKostenZuQualitaet(itemWertJeStueck, zielQualitaet, aktuelleQualitaet, rabattFaktor) {
     const start = aktuelleQualitaet || 0;
+    const rabatt = rabattFaktor != null && isFinite(rabattFaktor) ? Math.max(0, rabattFaktor) : 1;
     if (zielQualitaet <= start) return { silber: 0, gesperrt: false, grund: null };
     if (zielQualitaet > 4 || zielQualitaet < 0) {
       return { silber: NaN, gesperrt: true, grund: "Qualitaetsindex " + zielQualitaet + " existiert nicht (0..4)" };
@@ -576,7 +632,7 @@ const REGELN = (function () {
         continue;
       }
       const uebergaenge = rerollUebergaenge(q);
-      const kostenJeReroll = itemWertJeStueck * (REROLL_FAKTOR[q] || 0);
+      const kostenJeReroll = itemWertJeStueck * (REROLL_FAKTOR[q] || 0) * rabatt;
       const pStay = (uebergaenge && uebergaenge[q]) || 0;
       let summeHoeher = 0;
       if (uebergaenge) {
@@ -1378,6 +1434,49 @@ const REGELN = (function () {
       pruefe("rerollUebergaenge(Exzellent) summiert sich exakt auf 1 (99,5+0,5 %)", nahe(summeExz, 1, 1e-9), String(summeExz));
     })();
 
+    // -- Audit-Befund 9 (19.09.2026): Global Discount ------------------------
+    pruefe(
+      "globalDiscount: Goldpreis auf oder ueber 3.000 ergibt keinen Rabatt",
+      globalDiscount(3000) === 0 && globalDiscount(4200) === 0
+    );
+    pruefe(
+      "globalDiscount: Wiki-Skala 1.500 -> 50 %, 0 -> 100 %",
+      globalDiscount(1500) === 0.5 && globalDiscount(0) === 1
+    );
+    pruefe(
+      "globalDiscount: fehlender oder unsinniger Goldpreis ergibt 0 (kein erfundener Ersatzwert)",
+      globalDiscount(null) === 0 && globalDiscount(undefined) === 0 && globalDiscount(NaN) === 0 && globalDiscount(-5) === 0
+    );
+    pruefe(
+      "silberRabattFaktor: Gegenstueck zu globalDiscount (1 = kein Rabatt)",
+      silberRabattFaktor(3000) === 1 && nahe(silberRabattFaktor(1500), 0.5, 1e-12) && silberRabattFaktor(null) === 1
+    );
+    (function () {
+      // Gegenprobe des Wiki-Rechenbeispiels: 4,74 % Rabatt senken 1.875.000
+      // Silber auf 1.786.125. Der zugehoerige Goldpreis ist 3000 x (1-0,0474).
+      const goldpreis = 3000 * (1 - 0.0474);
+      pruefe(
+        "globalDiscount: Wiki-Rechenbeispiel (4,74 % auf 1.875.000 Silber ergibt 1.786.125)",
+        nahe(1875000 * silberRabattFaktor(goldpreis), 1786125, 0.5),
+        String(1875000 * silberRabattFaktor(goldpreis))
+      );
+    })();
+    (function () {
+      // Die Markov-Kette ist linear in den Kosten je Reroll, das Ergebnis muss
+      // also exakt mit dem Rabattfaktor skalieren.
+      const ohne = rerollKostenZuQualitaet(576, 3, 0).silber;
+      const mit = rerollKostenZuQualitaet(576, 3, 0, 0.75).silber;
+      pruefe(
+        "rerollKostenZuQualitaet: der Rabattfaktor skaliert die Gesamtkosten exakt (Kette ist linear)",
+        nahe(mit, ohne * 0.75, 1e-9),
+        mit + " vs " + ohne * 0.75
+      );
+      pruefe(
+        "rerollKostenZuQualitaet: ohne Rabattparameter unveraendertes Verhalten (Faktor 1)",
+        rerollKostenZuQualitaet(576, 3, 0, 1).silber === ohne && rerollKostenZuQualitaet(576, 3, 0, null).silber === ohne
+      );
+    })();
+
     pruefe(
       "rerollKostenZuQualitaet: Ziel <= aktuelle Qualitaet kostet 0 (kein Reroll noetig)",
       rerollKostenZuQualitaet(1000, 0, 0).silber === 0
@@ -1453,6 +1552,7 @@ const REGELN = (function () {
     QUALITAETSWURF_BASIS,
     REROLL_UEBERGANG,
     REROLL_FAKTOR,
+    GLOBAL_DISCOUNT_SCHWELLE,
     KATEGORIE_ZU_GEBAEUDE,
     STADTBONUS,
     gebaeudeVonKategorie,
@@ -1471,6 +1571,8 @@ const REGELN = (function () {
     fceAusSpezialisierungsknoten,
     rerollUebergaenge,
     rerollKostenZuQualitaet,
+    globalDiscount,
+    silberRabattFaktor,
     qualitaetWurfErfolgswahrscheinlichkeit,
     qualitaetsVerteilung,
     rezeptHatPreservequality,

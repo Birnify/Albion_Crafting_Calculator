@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.7 · Audit-Befund 4 für Veredeln behoben (Knoten erst ab T4), Befund 9 und 11 nachgeprüft und begründet offen gelassen
+Stand: 2026-09-19 · Version: v3.1.8 · Global Discount aus dem live abgerufenen Goldpreis, wirkt auf die Reroll-Kosten (Audit-Befund 9 behoben)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -44,6 +44,53 @@ alle 7 Hauptstädte und alle 5 Qualitätsstufen abrufen. Kein Bezug zum
 Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
+
+## Aktueller Stand (v3.1.8, Global Discount, 19.09.2026)
+
+**Auftrag:** Sören hat nach dem Wiki-Nachschlag entschieden: "zieh die Daten
+live und lass die Stationsgebühren einfach in Ruhe."
+
+**Umgesetzt (Audit-Befund 9):**
+
+- `js/regeln.js`: `GLOBAL_DISCOUNT_SCHWELLE` (3.000), `globalDiscount()` und
+  `silberRabattFaktor()`. Formel wörtlich aus der Wiki-Seite
+  `Global_Discount`: `(1 - Goldpreis / 3000) x 100 %`, aktiv unter einem
+  Goldpreis von 3.000. `rerollKostenZuQualitaet()` nimmt den Faktor als
+  vierten, optionalen Parameter; ohne ihn verhält sie sich unverändert.
+- `js/rechenkern.js`: neues `opts.silberRabattFaktor` (Default 1), an beide
+  Reroll-Aufrufstellen durchgereicht.
+- `js/preise.js`: `goldpreisAbrufen()` gegen `/stats/gold.json?count=2` auf
+  demselben Europa-Realm, mit derselben 429-Disziplin wie die übrigen Abrufe,
+  plus die reine, offline testbare `normalisiereGoldAntwort()`.
+- `js/ui.js`: der Goldpreis wird beim Preisabruf mitgezogen, in `zustand.gold`
+  gehalten (nur Seitenspeicher, kein localStorage) und über
+  `opts.silberRabattFaktor` in die Rechnung gegeben. Die Statuszeile nennt
+  Goldpreis und Rabatt und sagt ausdrücklich, dass er auf die Reroll-Kosten
+  wirkt.
+
+**Bewusst NICHT auf die Stationsgebühr angewendet**, Nutzer-Entscheidung. Die
+Wiki-Seite nennt als Silbersenken nur Reparatur, Transmutation und
+Qualitätsverbesserungen; die Nutzungsgebühr geht an den Gebäudebesitzer.
+
+**Fehlertoleranz ist hier der Kern:** das Antwortschema des Goldendpunkts ist
+nicht dokumentiert (nur der Pfad selbst), und aus dem Cloud-Thread ist die API
+nicht erreichbar, der Abruf konnte also nicht live geprüft werden. Deshalb
+wertet `normalisiereGoldAntwort()` beide Schreibweisen aus und liefert bei
+allem Unbrauchbaren `null`; der Faktor bleibt dann 1 und die App rechnet exakt
+wie vorher. Ein erfundener Ersatz-Goldpreis wäre schlimmer als gar keiner.
+**Im Browser gegenzuprüfen**, sobald Sören die Seite das nächste Mal öffnet:
+ob die Statuszeile einen plausiblen Goldpreis nennt.
+
+Ein Testfall hat dabei einen echten Fehler gefunden: `Number(null)` ist 0, und
+ein Goldpreis von 0 bedeutet nach der Wiki-Skala 100 % Rabatt. Ohne die
+ausdrückliche `null`-Prüfung hätte ein fehlgeschlagener Abruf also alle
+Reroll-Kosten auf 0 gesetzt.
+
+**Getestet:** `tests/test.html` headless über Chromium/Playwright,
+**419/419 grün** (408 bisherige, 11 neue für Global Discount und
+Goldpreis-Auswertung).
+
+---
 
 ## Aktueller Stand (v3.1.7, Audit-Befund 4 für Veredeln behoben, 19.09.2026)
 

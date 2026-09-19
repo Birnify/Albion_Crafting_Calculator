@@ -62,6 +62,14 @@ const RECHENKERN = (function () {
       fokusRegelJeKategorie: o.fokusRegelJeKategorie || {}, // craftingcategory -> "immer"|"nie"
       fokusUebersteuerungJeKnoten: o.fokusUebersteuerungJeKnoten || {}, // "item@stufe" -> "immer"|"nie", schlaegt die Kategorie-Regel
       fokuswert: o.fokuswert != null ? o.fokuswert : 0, // Silber je Fokuspunkt (Zielfunktion)
+      // Global Discount (Audit-Befund 9, 19.09.2026): Multiplikator auf
+      // Silberkosten, aus dem aktuellen Goldpreis abgeleitet
+      // (REGELN.silberRabattFaktor). 1 = kein Rabatt und damit das
+      // unveraenderte Verhalten, auch wenn der Goldpreis gar nicht abgerufen
+      // werden konnte. Wirkt ausschliesslich auf die Reroll-Kosten, NICHT auf
+      // die Stationsgebuehr - ausdrueckliche Nutzer-Entscheidung, s.
+      // REGELN.globalDiscount().
+      silberRabattFaktor: o.silberRabattFaktor != null && isFinite(o.silberRabattFaktor) ? o.silberRabattFaktor : 1,
       tagesbonus: o.tagesbonus || {}, // craftingcategory -> "silber"|"gold"
       maxTiefe: o.maxTiefe || STANDARD_MAX_TIEFE,
       // Hoechstalter eines Marktpreises in Minuten (Datum aus preise.js,
@@ -620,7 +628,7 @@ const RECHENKERN = (function () {
       return gesperrterKandidat("reroll", item, stufe, "Normal-Beschaffung gesperrt: " + normalErgebnis.grund, { qualitaet, basis: normalErgebnis.weg });
     }
     const itemWertJeStueck = REGELN.itemWert(item, stufe, undefined, opts.graph);
-    const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, 0);
+    const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, 0, opts.silberRabattFaktor);
     if (reroll.gesperrt) {
       return gesperrterKandidat("reroll", item, stufe, reroll.grund, { qualitaet, basis: normalErgebnis.weg });
     }
@@ -779,7 +787,7 @@ const RECHENKERN = (function () {
         let rerollUnmoeglich = false;
         for (let q = 0; q <= 4 && !rerollUnmoeglich; q++) {
           if (verteilung[q] <= 0) continue;
-          const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, q);
+          const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, q, opts.silberRabattFaktor);
           if (reroll.gesperrt) {
             rerollUnmoeglich = true;
             break;

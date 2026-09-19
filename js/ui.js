@@ -646,6 +646,12 @@ const UI = (function () {
       // localStorage-Cache), bleibt ueber mehrere Suchen hinweg erhalten,
       // solange die Seite offen ist, s. PREISE.volumenAbrufen().
       handelsvolumen: {},
+      // Global Discount (Audit-Befund 9, 19.09.2026): der zuletzt abgerufene
+      // Goldpreis, {preis, zeitpunkt} oder null. Wie das Handelsvolumen
+      // bewusst nur im Seitenspeicher, kein localStorage-Cache. null heisst
+      // "nicht abgerufen oder Abruf fehlgeschlagen" und fuehrt zu Faktor 1,
+      // also zum unveraenderten Verhalten ohne Rabatt.
+      gold: null,
     };
 
     function nameVon(uniquename) {
@@ -936,10 +942,21 @@ const UI = (function () {
           }
         }
 
+        // Goldpreis fuer den Global Discount mitziehen (Audit-Befund 9).
+        // Schlaegt der Abruf fehl, liefert goldpreisAbrufen() null und die
+        // Rechnung laeuft ohne Rabatt weiter; ein Fehler hier darf den
+        // Preisabruf nicht scheitern lassen.
+        setStatus("Goldpreis fuer den Global Discount abrufen ...");
+        zustand.gold = await PREISE.goldpreisAbrufen();
+        if (meinToken !== anfrageZaehler) return;
+
         zustand.preiseRoh = preiseRoh;
         zustand.preiseQualitaetRoh = preiseQualitaetRoh;
         berechneMitVorhandenenPreisen();
-        setStatus(ids.length + " Markt-IDs, " + Object.keys(preiseRoh).length + " Preise fuer " + stadt + " geladen.", "ok");
+        setStatus(
+          ids.length + " Markt-IDs, " + Object.keys(preiseRoh).length + " Preise fuer " + stadt + " geladen. " + globalDiscountText(),
+          "ok"
+        );
       } catch (err) {
         if (meinToken === anfrageZaehler) setStatus("Fehler beim Preisabruf: " + err.message, "err");
       } finally {
@@ -979,6 +996,26 @@ const UI = (function () {
      * Ueberschreibung auf "0 FCE" statt weiterhin den Freitext/globalen Wert
      * gelten zu lassen.
      */
+    /**
+     * Kurztext zum Global Discount fuer die Statuszeile (Audit-Befund 9).
+     * Sagt ausdruecklich, worauf der Rabatt wirkt, damit niemand ihn
+     * faelschlich auch in der Stationsgebuehr vermutet.
+     */
+    function globalDiscountText() {
+      if (!zustand.gold) return "Goldpreis nicht abrufbar, deshalb ohne Global Discount gerechnet.";
+      const rabatt = REGELN.globalDiscount(zustand.gold.preis);
+      if (rabatt <= 0) {
+        return "Goldpreis " + formatSilber(zustand.gold.preis) + ", kein Global Discount (erst unter " + formatSilber(REGELN.GLOBAL_DISCOUNT_SCHWELLE) + ").";
+      }
+      return (
+        "Goldpreis " +
+        formatSilber(zustand.gold.preis) +
+        ", Global Discount " +
+        (rabatt * 100).toFixed(2).replace(".", ",") +
+        " % auf die Reroll-Kosten."
+      );
+    }
+
     function fceUeberschreibungenFuerOpts() {
       const out = Object.assign({}, einstellungen.fceAusnahmen);
       Object.keys(einstellungen.spezialisierung || {}).forEach((cc) => {
@@ -1006,6 +1043,7 @@ const UI = (function () {
         stationssaetze: einstellungen.stationssaetze,
         fce: einstellungen.fce,
         fceUeberschreibungen: fceUeberschreibungenFuerOpts(),
+        silberRabattFaktor: REGELN.silberRabattFaktor(zustand.gold ? zustand.gold.preis : null),
         fokusRegelJeKategorie: einstellungen.fokusRegelJeKategorie,
         fokusUebersteuerungJeKnoten: einstellungen.fokusUebersteuerungJeKnoten,
         fokuswert: einstellungen.fokuswert,

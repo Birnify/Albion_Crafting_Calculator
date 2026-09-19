@@ -147,6 +147,12 @@ der Zeit oder gar nicht; Wartezeit und Ausfallrisiko sind nicht modelliert.
   er meldet an `pow.europe.albion-online-data.com`.
 - Basis (allgemein): `https://<realm>.albion-online-data.com/api/v2/stats/`
 - `prices/` liefert das Feld **`city`**, `history/` liefert **`location`** (leicht zu verwechseln).
+- **`gold.json`** liefert den Goldpreis des Realms, Grundlage des Global
+  Discount (s. oben): `gold.json?count=2` oder `gold.json?date=...&end_date=...`,
+  beides in der offiziellen API-Doku dokumentiert. Das Antwortschema ist dort
+  **nicht** dokumentiert; die App wertet deshalb `price`/`timestamp` und
+  `Price`/`Timestamp` gleichermaßen aus und rechnet ohne Rabatt weiter, wenn
+  nichts Verwertbares kommt.
 - `history/` mit `time-scale=24` gibt Tageswerte, mit `time-scale=1` Stundenwerte.
   `item_count` ist die tatsächlich gehandelte Stückzahl, nicht die Angebotsmenge.
 - Zeitstempel sind **UTC**. Umrechnung in Ortszeit gehört in den Browser.
@@ -495,15 +501,27 @@ Der große Sprung des Faktors bei Exzellent (27,5 statt 6,6) passt zur niedrigen
 Meisterwerk-Chance (0,5 %) und macht das letzte Rerollen deutlich teurer als die
 vorigen Stufen.
 
-**Offener Audit-Befund 9 (19.09.2026, nachgeprüft):** live im Spiel schwankende
-Rabatte (Global Discount, Gold Market Stabilization) wirken laut Wiki zusätzlich
-auf Reroll-Kosten ("Reroll costs are affected by both Global Discount and Gold
-Market Stabilization") und vermutlich auch auf die Stationsgebühr, sind aber
-in der App nicht modelliert. Bewusst nicht umgesetzt: die Quellenlage nennt
-weder die Rechenart (multiplikativ? auf welche Größen?) noch einen Wert, und
-ob die Stationsgebühr überhaupt betroffen ist, ist nur eine Vermutung. Braucht
-eine Nutzer-Entscheidung plus eine Ablesung im Spiel, nicht nur ein
-Eingabefeld.
+**Global Discount** (Audit-Befund 9, behoben 19.09.2026, v3.1.8). Belegt über
+die Wiki-Seite `Global_Discount`, wörtlich: "When the gold price on the market
+is below 3000, a Global Discount on silver costs is active, the percentage of
+discount is proportionate to the price of gold".
+
+```
+Global Discount = (1 - Goldpreis / 3000) x 100 %
+Skala: Goldpreis 3.000 -> 0 % · 1.500 -> 50 % · 0 -> 100 %
+```
+
+Gegenprobe der Seite selbst: bei 4,74 % Rabatt sank ein Inselausbau von
+1.875.000 auf 1.786.125 Silber. Als Silbersenken nennt sie "repair,
+transmutation, quality improvements".
+
+**Die App wendet den Rabatt NUR auf die Reroll-Kosten an, nicht auf die
+Stationsgebühr.** Ausdrückliche Nutzer-Entscheidung vom 19.09.2026: die
+Wiki-Seite erwähnt die Nutzungsgebühr nicht, und sie geht an den
+Gebäudebesitzer, ist also keine Silbersenke im Sinne der Seite. Der Goldpreis
+wird live über die API mitgezogen (s. unten), nicht als Feld gepflegt; ist er
+nicht abrufbar, wird ohne Rabatt gerechnet. **Gold Market Stabilization** ist
+weiterhin nicht modelliert, die zugehörige Wiki-Seite antwortet mit 403.
 
 **Craft-Wurf und Reroll kombinieren (Bugfix 14.09.2026, s. Befund 10):** ein
 Craft-Versuch, der die Zielqualität verfehlt, landet nicht "nichts", sondern

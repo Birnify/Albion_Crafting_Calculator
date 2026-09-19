@@ -454,6 +454,90 @@ const PREISE = (function () {
   }
 
   /**
+   * Wertet die Antwort von /stats/gold.json aus und liefert den juengsten
+   * Goldpreis. Reine Funktion ohne Netzzugriff, deshalb offline testbar
+   * (Audit-Befund 9, 19.09.2026).
+   *
+   * Der Endpunkt ist in der offiziellen API-Doku dokumentiert
+   * (`/api/v2/stats/gold.json?date=...&end_date=...` bzw. `?count=2`), das
+   * genaue Antwortschema dagegen nicht. Deshalb hier bewusst tolerant: die
+   * Antwort ist eine Liste von Eintraegen, der Preis steht je nach
+   * Schreibweise unter `price` oder `Price`, der Zeitstempel unter
+   * `timestamp` oder `Timestamp`. Gibt es mehrere Eintraege, gewinnt der mit
+   * dem juengsten Zeitstempel; ohne verwertbaren Zeitstempel der letzte
+   * Eintrag der Liste. Nichts Verwertbares -> null, und der Aufrufer rechnet
+   * dann ohne Rabatt weiter (kein stiller Ersatzwert).
+   *
+   * @param {*} antwort geparste JSON-Antwort
+   * @returns {?{preis:number, zeitpunkt:?string}}
+   */
+  function normalisiereGoldAntwort(antwort) {
+    const liste = Array.isArray(antwort) ? antwort : null;
+    if (!liste || liste.length === 0) return null;
+    let bester = null;
+    liste.forEach((eintrag) => {
+      if (!eintrag || typeof eintrag !== "object") return;
+      const roh = eintrag.price != null ? eintrag.price : eintrag.Price;
+      const preis = Number(roh);
+      if (!isFinite(preis) || preis <= 0) return;
+      const zeitpunkt = eintrag.timestamp != null ? eintrag.timestamp : eintrag.Timestamp;
+      // REGELN.parseApiDatumUtc() kennt die API-Eigenheit (Zeitstempel ohne
+      // Zonenangabe sind UTC, s. CLAUDE.md) und liefert Millisekunden bzw.
+      // NaN. Ist regeln.js nicht geladen, entscheidet die Listenreihenfolge.
+      const rohZeit =
+        zeitpunkt && typeof REGELN !== "undefined" && REGELN.parseApiDatumUtc ? REGELN.parseApiDatumUtc(zeitpunkt) : NaN;
+      const zeit = isFinite(rohZeit) ? rohZeit : null;
+      const kandidat = { preis, zeitpunkt: zeitpunkt || null, _zeit: zeit };
+      if (!bester) {
+        bester = kandidat;
+        return;
+      }
+      // Juengster Zeitstempel gewinnt; sind beide ohne Zeitstempel, gewinnt
+      // der spaetere Listeneintrag (die API liefert chronologisch).
+      if (kandidat._zeit != null && bester._zeit != null) {
+        if (kandidat._zeit > bester._zeit) bester = kandidat;
+      } else if (kandidat._zeit != null && bester._zeit == null) {
+        bester = kandidat;
+      } else if (kandidat._zeit == null && bester._zeit == null) {
+        bester = kandidat;
+      }
+    });
+    if (!bester) return null;
+    return { preis: bester.preis, zeitpunkt: bester.zeitpunkt };
+  }
+
+  /**
+   * Ruft den aktuellen Goldpreis ab (Grundlage des Global Discount, s.
+   * REGELN.globalDiscount). Bewusst OHNE localStorage-Cache und bewusst
+   * fehlertolerant: schlaegt der Abruf fehl, liefert die Funktion null statt
+   * zu werfen, und die Rechnung laeuft ohne Rabatt weiter - genau wie bisher.
+   * Ein erfundener Ersatz-Goldpreis waere schlimmer als gar keiner.
+   *
+   * @param {object} [opts]
+   * @param {number} [opts.anzahl=2] wie viele Datenpunkte die API liefern soll
+   * @returns {Promise<?{preis:number, zeitpunkt:?string}>}
+   */
+  async function goldpreisAbrufen(opts) {
+    const o = opts || {};
+    const anzahl = o.anzahl != null ? o.anzahl : 2;
+    const url = `${API_BASE}/gold.json?count=${anzahl}`;
+    for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
+      try {
+        const antwort = await fetch(url);
+        if (antwort.status === 429) {
+          await warte(PAUSE_MS * Math.pow(2, versuch + 1));
+          continue;
+        }
+        if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
+        return normalisiereGoldAntwort(await antwort.json());
+      } catch (e) {
+        if (versuch < MAX_VERSUCHE - 1) await warte(PAUSE_MS * Math.pow(2, versuch + 1));
+      }
+    }
+    return null;
+  }
+
+  /**
    * Wertet eine einzelne history/-Antwortzeile aus: 7-Tage-Summe von
    * item_count (tatsaechlich gehandelte Stueckzahl, NICHT die Angebotsmenge,
    * s. CLAUDE.md "Albion Online Data Project API") und mengengewichteter
@@ -810,6 +894,43 @@ const PREISE = (function () {
       normalisiereHistorieZeile(null, 7) === null && normalisiereHistorieZeile({}, 7) === null
     );
 
+    // -- Audit-Befund 9 (19.09.2026): Goldpreis fuer den Global Discount -----
+    (function () {
+      const g = normalisiereGoldAntwort([
+        { price: 4200, timestamp: "2026-09-18T12:00:00" },
+        { price: 2850, timestamp: "2026-09-19T12:00:00" },
+      ]);
+      pruefe(
+        "normalisiereGoldAntwort: juengster Zeitstempel gewinnt, auch wenn er nicht der hoechste Preis ist",
+        g && g.preis === 2850,
+        JSON.stringify(g)
+      );
+    })();
+    (function () {
+      const g = normalisiereGoldAntwort([{ Price: 1500, Timestamp: "2026-09-19T12:00:00" }]);
+      pruefe(
+        "normalisiereGoldAntwort: grossgeschriebene Feldnamen werden ebenfalls erkannt (Antwortschema nicht dokumentiert)",
+        g && g.preis === 1500,
+        JSON.stringify(g)
+      );
+    })();
+    (function () {
+      const g = normalisiereGoldAntwort([{ price: 3100 }, { price: 3050 }]);
+      pruefe(
+        "normalisiereGoldAntwort: ohne Zeitstempel gewinnt der letzte Listeneintrag (API liefert chronologisch)",
+        g && g.preis === 3050,
+        JSON.stringify(g)
+      );
+    })();
+    pruefe(
+      "normalisiereGoldAntwort: unbrauchbare Antwort liefert null statt eines erfundenen Ersatzpreises",
+      normalisiereGoldAntwort(null) === null &&
+        normalisiereGoldAntwort([]) === null &&
+        normalisiereGoldAntwort({ price: 1000 }) === null &&
+        normalisiereGoldAntwort([{ price: 0 }]) === null &&
+        normalisiereGoldAntwort([{ price: "keine Zahl" }]) === null
+    );
+
     return ergebnisse;
   }
 
@@ -833,6 +954,8 @@ const PREISE = (function () {
     eigenpreiseAlle,
     normalisiereHistorieZeile,
     volumenAbrufen,
+    normalisiereGoldAntwort,
+    goldpreisAbrufen,
     selbsttest,
   };
 })();
