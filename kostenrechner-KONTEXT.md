@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.10 · Audit-Befund 1 behoben: `craftingfocus` gilt je Stück, nicht je Charge (im Spiel abgelesen)
+Stand: 2026-09-19 · Version: v3.1.11 · Backlog-Punkt 6 geklärt: die „astronomischen Werte" waren kein Rechenfehler, die Alle-Wege-Tabelle weist die erwarteten Versuche jetzt aus
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
