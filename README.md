@@ -30,7 +30,7 @@ speichert sie zwischen, dafuer braucht sie beim ersten Aufruf Internetzugang.
 | `tests/test.html` | Testsuite, per Doppelklick |
 
 Die belegten Spielregeln und Formeln, auf denen die Rechnung beruht, stehen
-eine Ebene hoeher in `../CLAUDE.md`. Der Auftrag in Arbeitspaketen steht in
+in `CLAUDE.md`. Der Auftrag in Arbeitspaketen steht in
 `kostenrechner-PLAN.md`, der laufende Stand in `kostenrechner-KONTEXT.md`.
 
 ## Datenquellen

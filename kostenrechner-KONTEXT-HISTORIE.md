@@ -7,6 +7,72 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.1.5, Befund 7 und 8 aus dem Audit, 19.09.2026)
+
+**Vorheriger Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung)**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** die beiden Audit-Befunde beheben, die in der Nacht-Sitzung
+(v3.1.4) fälschlich als "braucht den Nutzer" eingestuft worden waren, obwohl
+sie klare, unstrittige Wiki-Fakten ohne jede Ermessensfrage sind - Korrektur
+dieser Fehleinschätzung direkt zu Beginn dieser Sitzung, bevor die eigentlich
+nutzerbedürftigen Befunde (1, 4, 9, 11) angegangen werden.
+
+**Umgesetzt** (`js/regeln.js`, `js/rechenkern.js`, `js/ui.js`,
+`tests/test.html`):
+
+1. **Befund 8, keine Stationsgebühr für T1/T2.** Wiki "Building", wörtlich:
+   "This fee does not affect any service that does not cost Silver, such as
+   refining and crafting Tier 2 or lower items." Neue Funktion
+   `REGELN.stationsgebuehrGiltFuerTier(tier)` (fehlendes Tier gilt konservativ
+   weiter als gebührenpflichtig). In `craftKandidat()` und
+   `craftBeiQualitaetKandidat()` (`rechenkern.js`) eingebaut: Stationsgebühr
+   wird bei T1/T2 auf 0 gesetzt, ein fehlender Stationssatz macht das Ergebnis
+   dort auch nicht mehr "unvollständig" (die Angabe ist bei Gebührenfreiheit
+   belanglos). Betrifft 35 Graph-Items.
+2. **Befund 7, Qualität für nicht qualifizierbare Items.** Wiki
+   "Item_Quality", wörtlich: "All consumables can not be qualified" und "All
+   the tools except fishing rod can not be qualified". Neue Funktion
+   `REGELN.istQualifizierbar(item, cc)`: `food`/`potion` immer false,
+   `tools` false außer bei `FISHINGROD` im uniquename (Wiki-Ausnahme, im Dump
+   konsistent benannt über alle Tiers/Avalon-Varianten).
+   `kostenBeiQualitaet()` in `rechenkern.js` delegiert für solche Items direkt
+   an `kostenGesamt()` (identisch zu Zielqualität Normal), statt
+   Kaufen-bei-Qualität/Reroll/Wurf-Kosten für einen im Spiel nicht
+   existierenden Mechanismus vorzugaukeln. `js/ui.js`/`renderHero()` zeigt bei
+   ignorierter Zielqualität jetzt einen Hinweis ("Nicht qualifizierbar ...,
+   Zielqualität wird für dieses Item ignoriert"), live im Browser an
+   `T8_MEAL_STEW` mit Zielqualität "Herausragend" geprüft. Betrifft 65
+   Speise-, 43 Tränke- und 89 Werkzeug-Items (minus die Angelrute-Ausnahme).
+
+**Getestet:** `js/regeln.js` selbsttest() um 13 neue Tests erweitert
+(`stationsgebuehrGiltFuerTier`: T1/T2 false, ab T3 true, fehlendes Tier
+konservativ true; `istQualifizierbar`: food/potion/tools false, Angelrute
+und Avalon-Angelrute Ausnahme true, gewöhnliche Ausrüstung unverändert true,
+unbekannte Kategorie true). `tests/test.html` um 7 Integrationstests
+ergänzt (reale Items `T8_MEAL_STEW`/`T2_BAG`: Zielqualität ändert bei der
+Speise weder Silber noch Fokus und setzt kein `qualitaetsart`-Feld;
+`T2_BAG` hat trotz gesetztem Stationssatz 380 keine Gebühr und bleibt auch
+ohne gepflegten Satz vollständig). **396/396 grün** (377 + 19 neue), über
+den lokalen Server im Browser ausgeführt, keine Konsolenfehler.
+
+**Gehärtet:** live im Browser geprüft (`Kostenrechner.html` über den lokalen
+Server, direkte DOM-Steuerung statt Klick-Simulation wegen eines leeren
+Screenshots): Zielqualität auf "Herausragend" gestellt, Rindfleischeintopf
+gesucht und ausgewählt - der neue Hinweistext erscheint exakt wie erwartet,
+Kosten/Fokus unverändert gegenüber Normal-Qualität.
+
+Damit sind aus `AUDIT-2026-09-13.md` zusätzlich die Befunde 7 und 8 behoben,
+zusammen mit v3.1.3/v3.1.4 also 2, 3, 5, 6, 7, 8, 10, 12. Offen bleiben
+Befund 1 (braucht eine Schicksalsbrett-Ablesung im Spiel), Befund 4
+(Knotenableitung trifft die echte Knotenzahl nicht), Befund 9 (Global
+Discount/Gold Market Stabilization, braucht einen neuen Eingabewert), Befund
+11 (offhand/knuckles ohne Spezialisierungsformel) - alle vier werden jetzt,
+mit dem Nutzer im Gespräch, angegangen.
+
+---
+
 ## Aktueller Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung, 14.09.2026)
 
 **Vorheriger Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel)**

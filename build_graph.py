@@ -41,7 +41,7 @@ OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rezepte.
 # reine Marktabfrage auch fuer Rohstoffe, Reittiere und Kosmetik, die nie
 # Teil eines Rezepts sind. Deshalb ein zweiter, unabhaengiger Output.
 # Qualitaetsstufen-Erkennung wie im Eintopf-Rechner belegt (13.09.2026, Dump
-# UND Live-API gegengeprueft, s. ../KONTEXT.md): nur die drei Top-Level-
+# UND Live-API gegengeprueft, s. EINTOPF-KONTEXT-ARCHIV.md): nur die drei Top-Level-
 # Kategorien equipmentitem/weapon/transformationweapon kennen echte,
 # unterschiedliche Preise je Qualitaetsstufe.
 QUALITAETS_KATEGORIEN = {"equipmentitem", "weapon", "transformationweapon"}

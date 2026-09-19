@@ -1,13 +1,13 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.5 · Befund 7 und 8: Qualität für nicht qualifizierbare Items ignoriert, T1/T2 gebührenfrei
+Stand: 2026-09-19 · Version: v3.1.6 · Repo für Claude Projects eigenständig gemacht (CLAUDE.md, Agenten, Skill, Eintopf-Archiv ins Repo kopiert)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
 > Arbeit an diesem Projekt vollständig lesen.
 >
 > Der **Auftrag** steht in `kostenrechner-PLAN.md` und ändert sich kaum. Die
-> **Spielregeln und belegten Formeln** stehen in `../CLAUDE.md`. Diese Datei hier
+> **Spielregeln und belegten Formeln** stehen in `CLAUDE.md`. Diese Datei hier
 > beschreibt, wie weit die Anwendung ist.
 
 ## Was ist das?
@@ -34,7 +34,7 @@ mehr, anders als ursprünglich für dieses Paket erwartet, s.
 `kostenrechner-KONTEXT-HISTORIE.md` Abschnitt "Aktueller Stand (v3.1.0 ...)").
 Der eigenständige Eintopf-Rechner im Albion-Wurzelverzeichnis ist seit Paket E
 (v3.1.2, 13.09.2026) archiviert (`../Archiv/Eintopf-Rechner (eigenstaendig,
-vor App-Fusion)/`, s. `../KONTEXT.md`), nicht gelöscht, aber kein aktives
+vor App-Fusion)/`, s. `EINTOPF-KONTEXT-ARCHIV.md`), nicht gelöscht, aber kein aktives
 Arbeitsziel mehr. Die App-Fusion (Pakete A-E) ist damit vollständig
 abgeschlossen.
 
@@ -45,69 +45,75 @@ Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
 
-## Aktueller Stand (v3.1.5, Befund 7 und 8 aus dem Audit, 19.09.2026)
+## Aktueller Stand (v3.1.6, Repo für Claude Projects eigenständig gemacht, 19.09.2026)
 
-**Vorheriger Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung)**
-unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
-(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v3.1.5, Befund 7 und 8 aus dem Audit)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** die beiden Audit-Befunde beheben, die in der Nacht-Sitzung
-(v3.1.4) fälschlich als "braucht den Nutzer" eingestuft worden waren, obwohl
-sie klare, unstrittige Wiki-Fakten ohne jede Ermessensfrage sind - Korrektur
-dieser Fehleinschätzung direkt zu Beginn dieser Sitzung, bevor die eigentlich
-nutzerbedürftigen Befunde (1, 4, 9, 11) angegangen werden.
+**Auftrag:** dieses Repository so weit eigenständig machen, dass eine
+Claude-Code-Projekt-Anbindung (Beta, nur ans GitHub-Repo, keine lokalen
+Dateien) alles Nötige vorfindet, um direkt weiterzuarbeiten. Auslöser:
+Recherche zu "Claude Projects" (`code.claude.com/docs/en/claude-projects`)
+ergab die zentrale Einschränkung "Threads don't pick up anything from the
+Claude Code setup on your own machine" - alles, was bisher eine Ebene höher
+im lokalen Albion-Ordner lag (Root-`CLAUDE.md`, `.claude/agents/`,
+`.claude/skills/`, die historische `KONTEXT.md`), war für einen reinen
+Projekt-Thread unerreichbar.
 
-**Umgesetzt** (`js/regeln.js`, `js/rechenkern.js`, `js/ui.js`,
-`tests/test.html`):
+**Umgesetzt** (nur neue Dateien plus Pfadkorrekturen in Kommentaren/Doku,
+keine Rechenkern-/Regel-Logik verändert):
 
-1. **Befund 8, keine Stationsgebühr für T1/T2.** Wiki "Building", wörtlich:
-   "This fee does not affect any service that does not cost Silver, such as
-   refining and crafting Tier 2 or lower items." Neue Funktion
-   `REGELN.stationsgebuehrGiltFuerTier(tier)` (fehlendes Tier gilt konservativ
-   weiter als gebührenpflichtig). In `craftKandidat()` und
-   `craftBeiQualitaetKandidat()` (`rechenkern.js`) eingebaut: Stationsgebühr
-   wird bei T1/T2 auf 0 gesetzt, ein fehlender Stationssatz macht das Ergebnis
-   dort auch nicht mehr "unvollständig" (die Angabe ist bei Gebührenfreiheit
-   belanglos). Betrifft 35 Graph-Items.
-2. **Befund 7, Qualität für nicht qualifizierbare Items.** Wiki
-   "Item_Quality", wörtlich: "All consumables can not be qualified" und "All
-   the tools except fishing rod can not be qualified". Neue Funktion
-   `REGELN.istQualifizierbar(item, cc)`: `food`/`potion` immer false,
-   `tools` false außer bei `FISHINGROD` im uniquename (Wiki-Ausnahme, im Dump
-   konsistent benannt über alle Tiers/Avalon-Varianten).
-   `kostenBeiQualitaet()` in `rechenkern.js` delegiert für solche Items direkt
-   an `kostenGesamt()` (identisch zu Zielqualität Normal), statt
-   Kaufen-bei-Qualität/Reroll/Wurf-Kosten für einen im Spiel nicht
-   existierenden Mechanismus vorzugaukeln. `js/ui.js`/`renderHero()` zeigt bei
-   ignorierter Zielqualität jetzt einen Hinweis ("Nicht qualifizierbar ...,
-   Zielqualität wird für dieses Item ignoriert"), live im Browser an
-   `T8_MEAL_STEW` mit Zielqualität "Herausragend" geprüft. Betrifft 65
-   Speise-, 43 Tränke- und 89 Werkzeug-Items (minus die Angelrute-Ausnahme).
+- `CLAUDE.md` (neu, ~450 Zeilen): konsolidierte, ans Repo angepasste Kopie
+  der Root-Datei. Spielregeln/-formeln vollständig übernommen, dabei alle
+  seit 14./19.09.2026 behobenen Audit-Befunde (2, 3, 5, 6, 7, 8, 10) direkt
+  in die betroffenen Formel-Abschnitte eingearbeitet statt nur verlinkt, und
+  die noch offenen Befunde (1, 4, 9, 11) an den jeweils betroffenen Stellen
+  vermerkt. "Kontext-Dateien"- und "Dateien"-Tabellen auf repo-lokale Pfade
+  umgestellt, Pizza-Absatz entfernt (kein Bestandteil dieses Repos). Kopfnotiz
+  hält fest: die Root-Datei bleibt die maßgebliche für lokale Sitzungen im
+  Albion-Ordner, beide Kopien müssen inhaltlich gepflegt bleiben.
+- `EINTOPF-KONTEXT-ARCHIV.md` (neu): Kopie der historischen Eintopf-Rechner-
+  Fachdokumentation (vorher nur als `../KONTEXT.md` erreichbar), unverkürzt,
+  nur die Kopfnotiz und zwei `Kostenrechner/`-Pfadpräfixe angepasst.
+- `.claude/agents/albion-cycle-orchestrator.md` (neu, ins Repo kopiert): alle
+  Pfadverweise auf repo-lokale Dateien umgestellt (kein `Kostenrechner/`-
+  Präfix mehr nötig, da bereits im Repo), der harte lokale Windows-Pfad im
+  Fließtext entfernt, Hinweis ergänzt, dass Schritte wie der
+  `Versionen/`-Schnappschuss in einem Cloud-Thread ohne lokales Dateisystem
+  eventuell nicht sinnvoll ausführbar sind.
+- `.claude/agents/rechenkern-pruefer.md`, `oberflaechen-pruefer.md` (neu, ins
+  Repo kopiert, kleine Pfadkorrekturen), `spieldaten-pruefer.md` (unverändert
+  kopiert, enthielt keine Außenpfade).
+- `.claude/skills/define-feature/SKILL.md` (neu, ins Repo kopiert, Pfade auf
+  `kostenrechner-PLAN.md`/`EINTOPF-KONTEXT-ARCHIV.md` ohne Präfix umgestellt).
+- In den bereits vorhandenen Dateien `js/regeln.js`, `js/preise.js`,
+  `js/eintopf-rechenkern.js`, `kostenrechner-KONTEXT.md`,
+  `kostenrechner-PLAN.md`, `AUDIT-2026-09-13.md`, `README.md`,
+  `build_graph.py`: alle `../CLAUDE.md`/`../../CLAUDE.md`-Kommentarverweise
+  auf die neue lokale `CLAUDE.md` umgebogen, `../KONTEXT.md` auf
+  `EINTOPF-KONTEXT-ARCHIV.md`. Reine Text-/Kommentaränderungen, keine
+  Logik betroffen. `kostenrechner-KONTEXT-HISTORIE.md` bewusst NICHT
+  angefasst (historische Aufzeichnung, Pfade galten zum jeweiligen
+  Zeitpunkt korrekt).
 
-**Getestet:** `js/regeln.js` selbsttest() um 13 neue Tests erweitert
-(`stationsgebuehrGiltFuerTier`: T1/T2 false, ab T3 true, fehlendes Tier
-konservativ true; `istQualifizierbar`: food/potion/tools false, Angelrute
-und Avalon-Angelrute Ausnahme true, gewöhnliche Ausrüstung unverändert true,
-unbekannte Kategorie true). `tests/test.html` um 7 Integrationstests
-ergänzt (reale Items `T8_MEAL_STEW`/`T2_BAG`: Zielqualität ändert bei der
-Speise weder Silber noch Fokus und setzt kein `qualitaetsart`-Feld;
-`T2_BAG` hat trotz gesetztem Stationssatz 380 keine Gebühr und bleibt auch
-ohne gepflegten Satz vollständig). **396/396 grün** (377 + 19 neue), über
-den lokalen Server im Browser ausgeführt, keine Konsolenfehler.
+**Bewusst außerhalb dieses Repos belassen:** die Original-Excel-Tabellen, das
+Archiv der eigenständigen Eintopf-Rechner-App
+(`Archiv/Eintopf-Rechner (eigenstaendig, vor App-Fusion)/`) und dessen
+`Versionen/`-Historie, das fremde `Pizza/`-Projekt. Alles reines Archiv bzw.
+kein Bestandteil dieser App, ein Projekt-Thread braucht es nicht.
 
-**Gehärtet:** live im Browser geprüft (`Kostenrechner.html` über den lokalen
-Server, direkte DOM-Steuerung statt Klick-Simulation wegen eines leeren
-Screenshots): Zielqualität auf "Herausragend" gestellt, Rindfleischeintopf
-gesucht und ausgewählt - der neue Hinweistext erscheint exakt wie erwartet,
-Kosten/Fokus unverändert gegenüber Normal-Qualität.
+**Getestet:** `tests/test.html` vor und nach der Umstellung ausgeführt,
+**396/396 grün** in beiden Fällen (reine Kommentar-/Dokuänderungen, keine
+Regression zu erwarten und keine aufgetreten).
 
-Damit sind aus `AUDIT-2026-09-13.md` zusätzlich die Befunde 7 und 8 behoben,
-zusammen mit v3.1.3/v3.1.4 also 2, 3, 5, 6, 7, 8, 10, 12. Offen bleiben
-Befund 1 (braucht eine Schicksalsbrett-Ablesung im Spiel), Befund 4
-(Knotenableitung trifft die echte Knotenzahl nicht), Befund 9 (Global
-Discount/Gold Market Stabilization, braucht einen neuen Eingabewert), Befund
-11 (offhand/knuckles ohne Spezialisierungsformel) - alle vier werden jetzt,
-mit dem Nutzer im Gespräch, angegangen.
+**Offen, nicht Teil dieses Pakets:** ob ein Cloud-Projekt-Thread tatsächlich
+dieselben Werkzeuge zur Verfügung hat wie eine lokale Sitzung (insbesondere
+Browser-Zugriff aufs offizielle Wiki für künftige Audit-Arbeit), ist
+ungeklärt und an mehreren Stellen in der neuen `CLAUDE.md` als offene Frage
+vermerkt statt stillschweigend vorausgesetzt. Die eigentliche Einrichtung des
+Projekts (Claude GitHub App installieren, Repo als Kontext hinzufügen) ist
+Sache des Nutzers auf claude.ai, nicht in dieser Sitzung durchführbar.
 
 ---
 
@@ -222,7 +228,7 @@ Kostenrechner/
                               billigste/bestChopQuelle/sauceWege/verkaufswege/strategien/
                               gerade/entscheidungsleiter/schmerzgrenze/guete), nur
                               Datenquelle auf EINTOPF_PREISE/EINTOPF_DATEN umgestellt;
-                              RET_OHNE/RET_MIT/ORDERGEB/FEFF unveraendert aus ../CLAUDE.md;
+                              RET_OHNE/RET_MIT/ORDERGEB/FEFF unveraendert aus CLAUDE.md;
                               Kommentar bei RET_OHNE ergaenzt (Verhaeltnis zu
                               REGELN.RRR_GRUNDPRODUKTION erklaert, keine Werteaenderung)
                               v3.1.4, s. AUDIT-2026-09-13.md Befund 12
@@ -305,6 +311,16 @@ Kostenrechner/
   kostenrechner-PLAN.md
   kostenrechner-KONTEXT.md
   kostenrechner-KONTEXT-HISTORIE.md
+  CLAUDE.md                 neu v3.1.6, konsolidierte, ans Repo angepasste Kopie der
+                              Root-CLAUDE.md (Spielregeln/-formeln), s. "Aktueller Stand"
+  EINTOPF-KONTEXT-ARCHIV.md neu v3.1.6, Kopie der historischen Eintopf-Rechner-
+                              Fachdokumentation (vorher nur als ../KONTEXT.md erreichbar)
+  AUDIT-2026-09-13.md       Code-Audit gegen das offizielle Wiki, mit Umsetzungsstatus
+                              je Befund (s. Kopfzeile der Datei)
+  .claude/agents/           neu v3.1.6 ins Repo kopiert (vorher nur lokal eine Ebene
+                              hoeher): albion-cycle-orchestrator.md, rechenkern-pruefer.md,
+                              spieldaten-pruefer.md, oberflaechen-pruefer.md
+  .claude/skills/define-feature/ neu v3.1.6 ins Repo kopiert, s. oben
   design.md                 neu v2.0.0, verbindliche Design-Spezifikation (Farben/Typografie/
                               Bausteine), einzige Quelle fuer Design-Entscheidungen
   assets/lymhurst-bg.jpg    neu v2.0.0, Banner Hauptseite
@@ -339,6 +355,7 @@ Kostenrechner/
   Versionen/v3.1.3 - Bugfix Spezialisierungsknoten-FCE-Formel/
   Versionen/v3.1.4 - Vier Audit-Befunde (shapeshifterstaff, gatherergear, RRR-Kommentare, Craften+Reroll)/
   Versionen/v3.1.5 - Befund 7 und 8, Qualitaet ignoriert und T1-T2 gebuehrenfrei/
+  Versionen/v3.1.6 - Repo fuer Claude Projects eigenstaendig gemacht/
   tests/test.html           396 Tests (377 bisherige + 19 neu fuer istQualifizierbar()/
                               stationsgebuehrGiltFuerTier() und deren Integration, v3.1.5;
                               338 davon + 33 neu fuer shapeshifterstaff/

@@ -23,7 +23,7 @@
 //
 // Realm: der Nutzer spielt auf Europa. "www.albion-online-data.com" ist der
 // Amerika-Server und liefert stillschweigend andere (falsche) Preise, ohne
-// Fehlermeldung. Siehe ../../CLAUDE.md, Abschnitt "Albion Online Data
+// Fehlermeldung. Siehe ../CLAUDE.md, Abschnitt "Albion Online Data
 // Project API". Deshalb hier fest verdrahtet, nicht konfigurierbar.
 
 const PREISE = (function () {

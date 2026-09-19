@@ -4,7 +4,7 @@ Der große Plan für eine neue Web-App: **Auf welchem Weg bekomme ich ein Item a
 einer bestimmten Verzauberungsstufe am günstigsten?**
 
 Dieses Dokument ist der Auftrag. Es wird paketweise abgearbeitet, jedes Paket von
-einer frischen Orchestrator-Instanz (s. `../CLAUDE.md`, Abschnitt „Arbeitsablauf").
+einer frischen Orchestrator-Instanz (s. `CLAUDE.md`, Abschnitt „Arbeitsablauf").
 Der laufende Stand steht in `kostenrechner-KONTEXT.md`, nicht hier; dieser Plan
 bleibt weitgehend unverändert stehen und wird nur ergänzt, wenn sich der Auftrag
 ändert.
@@ -161,7 +161,7 @@ Rezeptsilber   = @silver x Chargen        (z. B. 2.500 bei Seele -> Relikt)
 
 `RRR_wirksam` ist 0, wenn das **hergestellte** Item keine `craftingcategory` hat
 oder die Zutat `@maxreturnamount: 0` trägt. Sonst gilt die belegte Formel aus
-`../CLAUDE.md`:
+`CLAUDE.md`:
 
 ```
 RRR = B / (1 + B)
@@ -173,7 +173,7 @@ B   = 0,18  Grundproduktion
     + 0,10 oder 0,20  Tagesbonus (Silber- bzw. Goldtag, per Schalter)
 ```
 
-Die Zuordnung Warengruppe zu Bonusstadt steht als Tabelle in `../CLAUDE.md`.
+Die Zuordnung Warengruppe zu Bonusstadt steht als Tabelle in `CLAUDE.md`.
 Fuer Lymhurst: Craft-Bonus auf Schwert, Bogen, Arkanstab, Lederhelm und
 Lederschuhe, Veredelungsbonus auf Faser zu Stoff. Ein Stoffhelm wie die
 Koenigliche Gugel bekommt in Lymhurst also **keinen** Craft-Bonus, der Stoff
@@ -276,7 +276,7 @@ ist bindend, weil jedes auf dem vorigen aufbaut.
 
 ### P0: Projektrahmen ✔ erledigt 04.09.2026
 
-Ordner, Kontextdatei, Agenten, Skill, Regeln in `../CLAUDE.md`. Siehe
+Ordner, Kontextdatei, Agenten, Skill, Regeln in `CLAUDE.md`. Siehe
 `kostenrechner-KONTEXT.md`.
 
 ### P1: Rezeptgraph erzeugen
@@ -358,7 +358,7 @@ testbar bleiben.
   meat_goose, meat_pig, meat_sheep, naturestaff, offhand, ore, plate_armor,
   plate_helmet, plate_shoes, potion, quarterstaff, rock, spear, sword, tools,
   wood`. Die Zuordnung zum Gebäude (Kriegerschmiede, Magierturm, Jägerhütte,
-  Veredelung) steht seit 04.09.2026 als belegte Tabelle in `../CLAUDE.md`,
+  Veredelung) steht seit 04.09.2026 als belegte Tabelle in `CLAUDE.md`,
   Abschnitt „Craft-Kategorie zu Gebäude“. Nicht neu herleiten. Die dort
   genannten drei Sonderfälle (`offhand`, `knuckles`, `meat_*`) bekommen eigene
   Gebührengruppen statt einer erfundenen Zuordnung.
@@ -463,7 +463,7 @@ Damit sie nicht durch die Hintertür wieder auftauchen.
 ## 9. Geklärte und offene Spielwerte
 
 Stand 04.09.2026. Was der Nutzer bestätigt oder was belegt recherchiert wurde,
-steht in `../CLAUDE.md` und gilt als gesetzt.
+steht in `CLAUDE.md` und gilt als gesetzt.
 
 ### Geklärt
 
@@ -474,7 +474,7 @@ steht in `../CLAUDE.md` und gilt als gesetzt.
 2. **Stationssätze sind keine Konstanten.** Der Besitzer setzt sie, sie
    unterscheiden sich je Gebäude und ändern sich laufend. Gehören als
    Eingabefeld je Gebäude in die Oberfläche, mit Speicherung in `localStorage`.
-3. **Stadtboni je Warengruppe** stehen als Tabelle in `../CLAUDE.md`. Für den
+3. **Stadtboni je Warengruppe** stehen als Tabelle in `CLAUDE.md`. Für den
    Kostenrechner wichtig: Craft-Bonus **+0,15**, Veredelungs-Bonus **+0,40**. Die
    Königliche Gugel ist ein Stoffhelm und bekommt in Lymhurst **keinen**
    Craft-Bonus (das wäre Thetford), der Stoff für sie wird in Lymhurst aber mit
@@ -482,7 +482,7 @@ steht in `../CLAUDE.md` und gilt als gesetzt.
    `regeln.js`, nicht als Eingabefeld.
 4. **ItemValue** ist eine Funktion von (Item, Verzauberungsstufe, Rezept), nicht
    des Items allein, und wird durch `amountcrafted` geteilt. Herleitung und Belege
-   in `../CLAUDE.md`. Damit erübrigt sich die frühere Frage, welcher der beiden
+   in `CLAUDE.md`. Damit erübrigt sich die frühere Frage, welcher der beiden
    Werte bei Alternativrezepten gilt: **beide**, je nachdem, welches Rezept
    gerechnet wird. Die Gebühr hängt am tatsächlich verwendeten Weg.
 
@@ -509,7 +509,7 @@ Beides in der Hauptsitzung am 04.09.2026 nachgewiesen, nicht vermutet:
    plus Ausnahmeliste wie in Abschnitt 2 entschieden.
 
    **Eingabe besser über FCE statt über Prozent.** Die belegte Formel in
-   `../CLAUDE.md` lautet `Fokus = Grundfokus × 0,5 ^ (FCE / 10.000)`. Der
+   `CLAUDE.md` lautet `Fokus = Grundfokus × 0,5 ^ (FCE / 10.000)`. Der
    Prozentwert ist damit nur eine andere Schreibweise derselben Größe, aber die
    FCE ergeben sich direkt aus den Stufen am Schicksalsbrett
    (Meisterschaftsstufen × 30 + Spezialisierungsstufe des Items × 250) und sind
@@ -520,7 +520,7 @@ Beides in der Hauptsitzung am 04.09.2026 nachgewiesen, nicht vermutet:
    Grundfokus) × 10.000` selbst aus.
 
    ⚠️ Beim Eintopf-Rechner steht ein ungeklärter Widerspruch zwischen der
-   angegebenen Maximalspezialisierung und den gemessenen 93,16 %, s. `../CLAUDE.md`,
+   angegebenen Maximalspezialisierung und den gemessenen 93,16 %, s. `CLAUDE.md`,
    Abschnitt Spielerprofil. Falls die Fokuszahlen später nicht aufgehen, dort
    zuerst nachsehen.
 6. **Tagesbonus.** +0,10 am Silbertag, +0,20 am Goldtag, rotiert je Stadt und
@@ -538,7 +538,7 @@ Beides in der Hauptsitzung am 04.09.2026 nachgewiesen, nicht vermutet:
 ## 10. Wie der Plan abgearbeitet wird
 
 Ein Paket = ein Zyklus = eine frische Orchestrator-Instanz. Der Ablauf steht in
-`../CLAUDE.md`. Kurzform:
+`CLAUDE.md`. Kurzform:
 
 1. Der Hauptagent startet `albion-cycle-orchestrator` per `Agent`-Tool mit **genau
    einem** Paket aus Abschnitt 6.
@@ -547,4 +547,4 @@ Ein Paket = ein Zyklus = eine frische Orchestrator-Instanz. Der Ablauf steht in
 3. Er aktualisiert `kostenrechner-KONTEXT.md`, legt einen Versions-Schnappschuss an
    und beendet seine Runde mit einer Abschluss-Zusammenfassung.
 4. Für das nächste Paket startet der Hauptagent eine **neue** Instanz. Nicht
-   dieselbe weiterlaufen lassen, der Grund steht in `../CLAUDE.md`.
+   dieselbe weiterlaufen lassen, der Grund steht in `CLAUDE.md`.

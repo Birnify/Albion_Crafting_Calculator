@@ -4,7 +4,7 @@
 // Stationsgebuehr, Fokusumrechnung, Steuer und Einstellungsgebuehr, sowie die
 // beiden gepflegten Tabellen "Kategorie -> Gebaeude" und "Kategorie ->
 // Stadtbonus". Reine Funktionen, kein DOM. Alle Zahlenwerte sind belegt,
-// s. ../../CLAUDE.md, Abschnitt "Belegte Spielformeln" und "Craft-Kategorie
+// s. ../CLAUDE.md, Abschnitt "Belegte Spielformeln" und "Craft-Kategorie
 // zu Gebaeude". Nichts hier raten oder "plausibel" anpassen, ohne neuen Beleg.
 //
 // Muss NACH rezepte.js geladen werden (itemWert() liest REZEPTGRAPH), kann
@@ -16,7 +16,7 @@ const REGELN = (function () {
   "use strict";
 
   // -----------------------------------------------------------------------
-  // Grundkonstanten, alle belegt (s. ../../CLAUDE.md "Belegte Spielformeln")
+  // Grundkonstanten, alle belegt (s. ../CLAUDE.md "Belegte Spielformeln")
   // -----------------------------------------------------------------------
 
   const STATIONSGEBUEHR_FAKTOR = 0.1125;
@@ -69,12 +69,12 @@ const REGELN = (function () {
   }
 
   // Craft-Qualitaetswurf, Basistabelle OHNE Bonus (Korn, Entwickler-Forumspost,
-  // verlinkt vom offiziellen Wiki "Item_Quality", s. ../../CLAUDE.md
+  // verlinkt vom offiziellen Wiki "Item_Quality", s. ../CLAUDE.md
   // "Craft-Qualitaetswurf"). Summe = 1 (68,9+25+5+1+0,1 %).
   const QUALITAETSWURF_BASIS = [0.689, 0.25, 0.05, 0.01, 0.001];
 
   // Reroll-Uebergangstabelle (Wiki "Item_Quality", Abschnitt "Rerolling
-  // quality at a repair station", s. ../../CLAUDE.md "Qualitaet rerollen an
+  // quality at a repair station", s. ../CLAUDE.md "Qualitaet rerollen an
   // der Reparaturstation"). Schluessel = AKTUELLE Qualitaet vor dem Reroll,
   // Werte = { ErgebnisQualitaet: Wahrscheinlichkeit }. Ein Eintrag mit
   // ErgebnisQualitaet === AktuelleQualitaet ist "bleibt gleich" (kein
@@ -97,7 +97,7 @@ const REGELN = (function () {
 
   // -----------------------------------------------------------------------
   // Kategorie -> Gebaeude / Gebuehrengruppe
-  // Aus ../../CLAUDE.md, Abschnitt "Craft-Kategorie zu Gebaeude" (Wiki,
+  // Aus ../CLAUDE.md, Abschnitt "Craft-Kategorie zu Gebaeude" (Wiki,
   // 04.09.2026). offhand, knuckles und meat_* sind dort ausdruecklich als
   // eigene Gebuehrengruppen vorgesehen statt einer erfundenen Zuordnung.
   // -----------------------------------------------------------------------
@@ -145,7 +145,7 @@ const REGELN = (function () {
     potion: "Alchemistenlabor",
     food: "Kueche",
     // Sonderfaelle: keine eindeutige Wiki-Zuordnung, eigene Gebuehrengruppen
-    // statt erfundener Zuordnung, s. ../../CLAUDE.md.
+    // statt erfundener Zuordnung, s. ../CLAUDE.md.
     offhand: "Nebenhand (Gebaeude je Item unterschiedlich)",
     knuckles: "Kampfhandschuhe (im Wiki keinem Gebaeude gelistet)",
     // shapeshifterstaff (Audit-Befund 5, 14.09.2026): taucht auf der Wiki-Seite
@@ -166,7 +166,7 @@ const REGELN = (function () {
   };
 
   // -----------------------------------------------------------------------
-  // Kategorie -> Stadtbonus, alle sieben Staedte (s. ../../CLAUDE.md).
+  // Kategorie -> Stadtbonus, alle sieben Staedte (s. ../CLAUDE.md).
   // v1 rechnet nur mit Lymhurst, die Tabelle steht trotzdem vollstaendig,
   // wie ausdruecklich verlangt.
   // -----------------------------------------------------------------------
@@ -482,7 +482,7 @@ const REGELN = (function () {
 
   // -----------------------------------------------------------------------
   // Qualitaetsstufen: Craft-Qualitaetswurf (Korn) und Reroll an der
-  // Reparaturstation. S. ../../CLAUDE.md "Craft-Qualitaetswurf" und
+  // Reparaturstation. S. ../CLAUDE.md "Craft-Qualitaetswurf" und
   // "Qualitaet rerollen an der Reparaturstation" fuer die Belege.
   // -----------------------------------------------------------------------
 
@@ -554,7 +554,7 @@ const REGELN = (function () {
    * ab 100 % Bonus ein garantierter zweiter Wurf plus die restlichen Prozent
    * als Chance auf einen dritten usw.; bei mehreren Wuerfen zaehlt der beste).
    * `chancenpunkte` wird 1:1 als Prozent-Bonus gelesen: eine im Projekt
-   * dokumentierte UNBELEGTE Annahme (s. ../../CLAUDE.md "Craft-Qualitaetswurf"),
+   * dokumentierte UNBELEGTE Annahme (s. ../CLAUDE.md "Craft-Qualitaetswurf"),
    * keine Quelle bestaetigt woertlich 1 Punkt = 1 %.
    */
   function qualitaetWurfErfolgswahrscheinlichkeit(zielQualitaet, chancenpunkte) {
@@ -624,7 +624,7 @@ const REGELN = (function () {
 
   /**
    * Gebuehr = ItemValue(je Stueck) x 0,1125 x Stationssatz / 100 x menge.
-   * Aequivalent zur Formel aus ../../CLAUDE.md/PLAN (ItemValue je Charge x
+   * Aequivalent zur Formel aus ../CLAUDE.md/PLAN (ItemValue je Charge x
    * 0,1125 x Stationssatz/100 x Chargen), nur mit itemWert() als Pro-Stueck-
    * Groesse und menge statt Chargen ausgedrueckt (menge = Chargen x
    * amountcrafted, ItemValueJeCharge = itemWert x amountcrafted, beides kuerzt
@@ -704,7 +704,7 @@ const REGELN = (function () {
 
   // -----------------------------------------------------------------------
   // ItemValue: rekursiv aus (Item, Verzauberungsstufe, Rezept), mit
-  // Memoisierung und Besuchsschutz. S. ../../CLAUDE.md, Abschnitt "ItemValue
+  // Memoisierung und Besuchsschutz. S. ../CLAUDE.md, Abschnitt "ItemValue
   // genau" fuer die beiden P1-Fehler, die diese Funktion behebt:
   //   1. Division durch amountcrafted (sonst Batch- statt Stueckwert)
   //   2. Stufe der Zutat beruecksichtigen (node.el hat Vorrang vor l, wie bei
