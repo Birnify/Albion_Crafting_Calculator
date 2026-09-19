@@ -55,37 +55,38 @@ auch nicht nötig (reines Archiv, kein aktives Arbeitsziel).
   Saucen und Verkaufsstädte für die Eintöpfe sind ebenfalls in der App frei
   wählbar (Checkboxen, unabhängig von der Craft-Stadt).
 - **Premium** ist aktiv (4 % Steuer statt 8 %).
-- Kochen und Eintöpfe sind nach Angabe des Nutzers auf **Maximalstufe**
-  spezialisiert. Fokus-Effizienz **93,16 %** der Roh-Fokuskosten, im Craft-Fenster
-  abgelesen: T8.3 kostet 2.192 Fokus statt der 2.353 aus dem Dump.
+- Kochen und Eintöpfe sind nach Angabe des Nutzers weit spezialisiert.
+  Im Craft-Fenster abgelesen: eine Charge T8.3-Rindfleischeintopf (10 Stück)
+  kostet **2.192 Fokus**. Der Rohfokus dafür ist **23.530** (10 × 2.353 aus dem
+  Dump, der Dumpwert gilt je Stück, s. unten), die Fokus-Effizienz also
+  **9,32 %** der Roh-Fokuskosten, entsprechend **FCE 34.242**.
 
-  ⚠️ **Die Annahme „Maximalstufe" trifft nach Aktenlage nicht zu.** Geklärt am
-  04.09.2026 gegen das offizielle Wiki. Rückgerechnet ergeben 2.192 von 2.353
-  genau **1.022 FCE**. Das Wiki nennt für vollständig ausgebaute Speisen- und
-  Trankknoten **55.000 FCE, also 2,21 % der Grundkosten**. Der T8.3-Eintopf würde
-  dann **52 Fokus je Charge** kosten statt 2.192, also Faktor 42. Selbst der
-  Eintopf-Knoten allein auf Stufe 100 (28.000 FCE) brächte 338 Fokus, Faktor 6,5.
+  **Bezugsgröße geklärt (19.09.2026, im Spiel abgelesen, Audit-Befund 1
+  geschlossen):** `craftingfocus` aus dem Dump ist der Grundfokus **je Stück**,
+  nicht je Charge. Beleg: am Steinmetz kostet derselbe Travertinblock-Craft mit
+  doppelter Ausbeute doppelt so viel Fokus. Alle vier Steinblock-Rezepte tragen
+  im Dump identisch `f=54` und unterscheiden sich nur in `amountcrafted`
+  (1/2/4/8), es ist dasselbe Item und derselbe Spezialisierungsknoten, die
+  eigene FCE kürzt sich also vollständig heraus. Bis dahin rechnete
+  `rechenkern.js` `fokusKosten(...) / amountcrafted` und lag bei 313 Rezepten
+  (Speisen, Tränke, Steinblöcke, Tierhaltung) um genau diesen Faktor zu
+  billig; behoben am 19.09.2026, s. `AUDIT-2026-09-13.md` Befund 1.
 
-  Drei Fehlerquellen sind ausgeschlossen: der Vergleich ist stufenrichtig
-  (2.353 gehört zu T8.**3**, darunter liegen 551 / 752 / 1.152), der Dumpwert ist
-  belegt der Grundwert bei Stufe 0 (elf Wiki-Werte stimmen exakt), und die
-  Bezugsgröße stimmt (beide Zahlen je Charge, nicht je Stück).
-
-  **Am 19.09.2026 am Schicksalsbrett nachgesehen, und das entscheidet die
-  Frage.** Die Koch-Handwerksspezialisierung steht auf Suppen 18, Salate 2,
-  Pasteten 2, Braten 18, Omelette 0, **Eintöpfe 100**, Sandwiches 0,
+  **Am 19.09.2026 zusätzlich am Schicksalsbrett nachgesehen, zweiter,
+  unabhängiger Beleg.** Die Koch-Handwerksspezialisierung steht auf Suppen 18,
+  Salate 2, Pasteten 2, Braten 18, Omelette 0, **Eintöpfe 100**, Sandwiches 0,
   Kochzutaten 19, Fleisch 51, Stufensumme 210. Daraus folgt
   `FCE(Eintöpfe) = 250 × 100 + 30 × 210 + 30 × Meisterschaft = 31.300 + 30 ×
   Meisterschaft`, also ein Wert zwischen 31.300 und 34.300. **1.022 ist in
-  diesem Bereich nicht erreichbar**, 34.243 dagegen schon (Meisterschaft 98).
-  Damit ist die Lesart „der Dump-Fokuswert gilt je Stück" bestätigt und die
-  Division durch `amountcrafted` in `craftKandidat()` ist falsch, s.
-  `AUDIT-2026-09-13.md` Befund 1. Noch nicht umgesetzt. **Offener Audit-
-  Befund 1 (19.09.2026):** die Wiki-Tabelle für Speisen-Fokus stimmt exakt mit
-  den Dump-Werten überein, unabhängig von `amountcrafted` - die im Projekt
-  lange gültige Annahme "Wiki je Stück, Dump je Charge" ist damit widerlegt,
-  s. `AUDIT-2026-09-13.md` Befund 1 für die volle Analyse. Braucht eine neue
-  Schicksalsbrett-Ablesung, um die richtige Bezugsgröße zu klären.
+  diesem Bereich nicht erreichbar**, 34.242 dagegen schon (Meisterschaft 98).
+  Steinmetz-Ablesung und Schicksalsbrett sagen damit dasselbe, und der seit
+  04.09.2026 dokumentierte Widerspruch zur Angabe „weit spezialisiert" ist
+  aufgelöst.
+
+  Zwei Fehlerquellen waren schon vorher ausgeschlossen: der Vergleich ist
+  stufenrichtig (2.353 gehört zu T8.**3**, darunter liegen 551 / 752 / 1.152),
+  und der Dumpwert ist belegt der Grundwert bei Spezialisierungsstufe 0 (elf
+  Wiki-Werte stimmen exakt).
 - Küche in Lymhurst: **T8 Küche des Ältesten**, Nutzungsgebühr **380 Silber
   je 100 Nahrung**.
 
@@ -97,7 +98,7 @@ auch nicht nötig (reines Archiv, kein aktives Arbeitsziel).
 | Silberkosten | **2.462** je Batch | Stationsgebühr |
 | Gegenstandswert | **576** je Stück | ItemValue, ×10 = 5.760 je Batch |
 | Nährwert | 8.170 je Batch | Fütterungswert, **nicht** Craft-Aufwand |
-| Fokus | **2.192** je Batch | bei Rohwert 2.353 |
+| Fokus | **2.192** je Batch | bei Rohwert 23.530 je Batch (2.353 je Stück × 10) |
 
 **Lymhurst hat keinen Stadtbonus auf gekochte Speisen.** Die 15,2 % entsprechen
 der reinen Grundproduktion (B = 0,18). Gekochte Speisen sind die Bonuswarengruppe
@@ -442,16 +443,22 @@ Tier-Präfix). Das ist eine Näherung, die zu viele Knoten liefert.
   `Alchemy` führt Kartoffelschnaps und Co. als Zutaten des Alchemistenlabors,
   der Dump gibt ihnen aber `craftingcategory: food`).
 
-**Achtung, Bezugsgröße (Audit-Befund 1, 19.09.2026, weiterhin ungeklärt,
-widerlegt die vorherige Zeile dieses Abschnitts):** früher stand hier, die
-Wiki-Tabellen für Speisen/Tränke nennten den Fokus je Stück, der Dump dagegen
-je Charge, mit Faktor 10 Unterschied bei `amountcrafted=10`. Das ist
-**widerlegt**: die Wiki-Tabelle „Food Base Focus Cost" enthält exakt die
-Dump-Werte des Rindfleischeintopfs (551/752/1.152/2.353, `amountcrafted=10`)
-UNVERÄNDERT, nicht durch 10 geteilt. Offen bleibt, was der Dump-Wert
-tatsächlich meint (je Charge oder je Stück) - siehe `AUDIT-2026-09-13.md`
-Befund 1 für die volle Analyse inklusive Gegenproben in beide Richtungen.
-Braucht eine neue Schicksalsbrett-Ablesung zur Klärung.
+**Bezugsgröße: `craftingfocus` gilt je Stück (Audit-Befund 1, geklärt und
+behoben 19.09.2026).** Früher stand hier, die Wiki-Tabellen für Speisen/Tränke
+nennten den Fokus je Stück, der Dump dagegen je Charge. Beides war falsch: die
+Wiki-Tabelle „Food Base Focus Cost" enthält exakt die Dump-Werte des
+Rindfleischeintopfs (551/752/1.152/2.353, `amountcrafted=10`) unverändert, und
+der Dumpwert selbst gilt **je Stück**. Der Rohfokus eines Craft-Vorgangs ist
+also `craftingfocus × amountcrafted`. Im Spiel belegt am Steinmetz (s.
+„Spielerprofil" oben). Gegenproben aus dem Dump, die dasselbe stützen: ein
+T8-Fischeintopf (`amountcrafted=1`) kostet je Stück das 1,2-fache eines
+T8-Rindfleischeintopfs, unter der alten Lesart wäre es das 11,8-fache gewesen
+(über alle 76 Gerichtspaare Median 2,1 gegen 21,3); und verzaubertes Material
+kostet sonst überall mehr Fokus, nie weniger (`T4_METALBAR` 54 gegen
+`_LEVEL1` 94 usw.), während die alte Lesart Steinblöcke aus verzaubertem Stein
+billiger gemacht hätte. Umgesetzt in `rechenkern.js/craftKandidat()` und
+`craftBeiQualitaetKandidat()`, abgedeckt durch acht Regressionstests in
+`tests/test.html`.
 
 **Der Umkehrschluss ist nützlich:** aus einem im Craft-Fenster abgelesenen
 Fokuswert lässt sich die eigene FCE ausrechnen.

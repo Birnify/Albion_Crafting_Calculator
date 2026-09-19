@@ -457,6 +457,86 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     );
   })();
 
+  // ---- Audit-Befund 1: Bezugsgroesse des Dump-Fokus (je Stueck, nicht je
+  // Charge). Im Spiel belegt am 19.09.2026 (Steinmetz, Travertinblock: dasselbe
+  // Rezept mit doppelter Ausbeute kostet doppelt so viel Fokus). Vor dem Fix
+  // teilte rechenkern.js durch amountcrafted und rechnete alle Rezepte mit
+  // amountcrafted > 1 um genau diesen Faktor zu billig. Diese Tests decken die
+  // Bezugsgroesse ab; vorher tat das KEIN einziger Test. ----
+  (function () {
+    const testGraph = {
+      items: {
+        BZG_R: { iv: 10, t: 4 },
+        // Gleicher Grundfokus, gleiche Kategorie, nur die Ausbeute unterscheidet sich.
+        BZG_CHARGE: { t: 4, cc: "sword", ivd: true, r: [{ a: 10, f: 1000, i: [{ n: "BZG_R", c: 10 }] }] },
+        BZG_EINZEL: { t: 4, cc: "sword", ivd: true, r: [{ a: 1, f: 1000, i: [{ n: "BZG_R", c: 1 }] }] },
+      },
+    };
+    function opts(zusatz) {
+      return Object.assign(
+        {
+          graph: testGraph,
+          preise: { BZG_R: { sell: { preis: 5, kein: false }, buy: { preis: 0, kein: true } } },
+          stationssaetze: { Kriegerschmiede: 0 },
+          stadt: "Nirgendwo",
+          fce: 0, // voller Rohfokus, damit der Grundwert unveraendert durchschlaegt
+          fokuswert: 0,
+          fokusUebersteuerungJeKnoten: { "BZG_CHARGE@0": "immer", "BZG_EINZEL@0": "immer" },
+        },
+        zusatz || {}
+      );
+    }
+
+    const rCharge = RECHENKERN.kosten("BZG_CHARGE", 0, 1, opts());
+    pruefe("Befund 1: Charge-Rezept (amountcrafted 10) nicht gesperrt", !rCharge.gesperrt, rCharge.grund);
+    pruefe(
+      "Befund 1: Fokus je Stueck ist der volle Dumpwert (1.000), NICHT durch amountcrafted geteilt (frueher 100)",
+      nahe(rCharge.fokus, 1000, 1e-9),
+      String(rCharge.fokus)
+    );
+    pruefe(
+      "Befund 1: weg.grundfokus zeigt den Rohfokus des ganzen Craft-Vorgangs (1.000 x 10 = 10.000), damit der Umrechner gegen das Craft-Fenster passt",
+      rCharge.weg.grundfokus === 10000,
+      String(rCharge.weg.grundfokus)
+    );
+
+    const rEinzel = RECHENKERN.kosten("BZG_EINZEL", 0, 1, opts());
+    pruefe(
+      "Befund 1: bei amountcrafted 1 bleibt alles wie bisher (Fokus 1.000, grundfokus 1.000)",
+      nahe(rEinzel.fokus, 1000, 1e-9) && rEinzel.weg.grundfokus === 1000,
+      rEinzel.fokus + " / " + rEinzel.weg.grundfokus
+    );
+    pruefe(
+      "Befund 1: gleicher Dump-Grundfokus bedeutet gleicher Fokus je Stueck, unabhaengig von amountcrafted",
+      nahe(rCharge.fokus, rEinzel.fokus, 1e-9),
+      rCharge.fokus + " vs " + rEinzel.fokus
+    );
+
+    // Derselbe Fix in craftBeiQualitaetKandidat(): eigene Codestelle, eigener Test.
+    const rQual = RECHENKERN.kosten("BZG_CHARGE", 0, 1, opts({ qualitaetsIndex: 1, preiseQualitaet: {} }));
+    const craftWegQual = rQual.alleWege.filter((w) => w.typ === "craften" && !w.gesperrt)[0];
+    pruefe(
+      "Befund 1: auch der Qualitaets-Craftweg rechnet den vollen Dumpwert je Stueck und meldet grundfokus je Vorgang",
+      craftWegQual && nahe(craftWegQual.weg.fokusJeStueck, 1000, 1e-9) && craftWegQual.weg.grundfokus === 10000,
+      craftWegQual ? craftWegQual.weg.fokusJeStueck + " / " + craftWegQual.weg.grundfokus : "kein Craft-Weg"
+    );
+
+    // Gegenprobe gegen den echten Dump und die Ablesung aus CLAUDE.md.
+    if (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.items["T8_MEAL_STEW"]) {
+      const stew3 = REZEPTGRAPH.items["T8_MEAL_STEW"].e["3"].r[0];
+      pruefe(
+        "Befund 1: Rindfleischeintopf T8.3 im Dump hat f=2.353 bei amountcrafted=10, Rohfokus je Charge also 23.530",
+        stew3.f === 2353 && stew3.a === 10 && stew3.f * stew3.a === 23530,
+        stew3.f + " x " + stew3.a
+      );
+      pruefe(
+        "Befund 1: 23.530 Rohfokus bei FCE 34.242 ergeben die im Craft-Fenster abgelesenen 2.192 je Charge",
+        nahe(REGELN.fokusKosten(stew3.f * stew3.a, 34242, 1), 2192, 1),
+        String(REGELN.fokusKosten(stew3.f * stew3.a, 34242, 1))
+      );
+    }
+  })();
+
   // ---- rechenkern: von Hand nachgerechneter Vollfall ueber zwei Ebenen ----
   (function () {
     const testGraph = {
@@ -694,9 +774,9 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 
     pruefe("ui: prozentAusFce(0) = 100 % (voller Rohfokus)", nahe(UI.prozentAusFce(0), 100, 0.01));
     pruefe(
-      "ui: prozentAusFce(1022) rekonstruiert die abgelesenen 2.192/2.353 aus CLAUDE.md (93,16 %)",
-      nahe(UI.prozentAusFce(1022), 93.16, 0.05),
-      String(UI.prozentAusFce(1022))
+      "ui: prozentAusFce(34242) rekonstruiert die abgelesenen 2.192 von 23.530 aus CLAUDE.md (9,32 %)",
+      nahe(UI.prozentAusFce(34242), 9.316, 0.01),
+      String(UI.prozentAusFce(34242))
     );
 
     pruefe(
@@ -2082,9 +2162,9 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     pruefe("eintopf-rechenkern: RET_OHNE = 0,152 (Craft-Fenster ohne Fokus)", K.RET_OHNE === 0.152);
     pruefe("eintopf-rechenkern: RET_MIT = 0,435 (Craft-Fenster mit Fokus)", K.RET_MIT === 0.435);
     pruefe("eintopf-rechenkern: ORDERGEB = 0,025 (Einstellungsgebuehr eigener Orders)", K.ORDERGEB === 0.025);
-    pruefe("eintopf-rechenkern: FEFF = 2192/2353 (93,16 % Fokus-Effizienz)", nahe(K.FEFF, 2192 / 2353, 1e-9));
+    pruefe("eintopf-rechenkern: FEFF = 2192/2353, gegen die Messung geeicht (Faktor auf den Dumpwert, nicht die echte Fokus-Effizienz)", nahe(K.FEFF, 2192 / 2353, 1e-9));
     pruefe(
-      "eintopf-rechenkern: FEFF rekonstruiert den im Craft-Fenster abgelesenen Fokus 2.192 aus dem Rohwert 2.353 (T8.3)",
+      "eintopf-rechenkern: FEFF rekonstruiert den im Craft-Fenster abgelesenen Fokus 2.192 je Charge (Befund 1 aendert hier nichts, s. Kommentar bei FEFF)",
       nahe(stew.ench[3].focus * K.FEFF, 2192, 0.01),
       stew.ench[3].focus * K.FEFF
     );

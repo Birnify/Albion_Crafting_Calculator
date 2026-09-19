@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.9 · Die neun echten Kochknoten aus dem Schicksalsbrett statt 25 abgeleiteter Gruppen (Audit-Befund 4 für Speisen behoben)
+Stand: 2026-09-19 · Version: v3.1.10 · Audit-Befund 1 behoben: `craftingfocus` gilt je Stück, nicht je Charge (im Spiel abgelesen)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -44,6 +44,74 @@ alle 7 Hauptstädte und alle 5 Qualitätsstufen abrufen. Kein Bezug zum
 Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
+
+## Aktueller Stand (v3.1.10, Audit-Befund 1 behoben: Fokus-Grundwert gilt je Stück, 19.09.2026)
+
+**Auftrag:** Audit-Befund 1 entscheidungsreif machen und, sobald die Ablesung
+da ist, umsetzen. Die Frage war, ob `craftingfocus` aus dem Client-Dump den
+Grundfokus je Charge oder je Stück meint; bei `amountcrafted=10` ein Faktor 10.
+
+**Die Ablesung, die es entschieden hat: Steinmetz statt Schicksalsbrett.**
+`T4_STONEBLOCK` hat vier Rezepte mit identischem `f=54` und `amountcrafted`
+1/2/4/8 (verzauberter Stein liefert mehr Blöcke, verzauberte Steinblöcke gibt
+es nicht als eigene Items). Dasselbe Item, derselbe Spezialisierungsknoten,
+dieselbe FCE, die eigene Spezialisierung kürzt sich also vollständig heraus.
+Nutzerablesung: "2 Blöcke brauchen doppelt so viel Fokus wie ein Block."
+Damit gilt der Dumpwert **je Stück**, der Rohfokus eines Craft-Vorgangs ist
+`craftingfocus x amountcrafted`. Die Schicksalsbrett-Screenshots aus dem
+v3.1.9-Zyklus sagen unabhängig davon dasselbe (FCE zwischen 31.300 und 34.300,
+"je Stück" verlangt 34.242, "je Charge" verlangt 1.022 und ist in dem Bereich
+nicht erreichbar).
+
+**Umgesetzt** (`js/rechenkern.js`, `Kostenrechner.html`, `js/regeln.js`,
+`js/eintopf-rechenkern.js`, `tests/test.html`, `CLAUDE.md`,
+`AUDIT-2026-09-13.md`):
+
+- `craftKandidat()` und `craftBeiQualitaetKandidat()` rechnen `fokusJeStueck`
+  ohne die Division durch `amountcrafted`.
+- Beide melden `weg.grundfokus = rezept.f x amountcrafted`. Das Feld füttert den
+  Umrechner "FCE aus abgelesenem Fokus" in `js/ui.js`, und das Craft-Fenster
+  zeigt den Wert des ganzen Vorgangs. Ohne diese Multiplikation lieferte der
+  Umrechner bei Speisen/Tränken/Steinblöcken eine um Faktor `amountcrafted` zu
+  kleine FCE; genau das war der innere Widerspruch zwischen den zwei
+  FCE-Eingabewegen, den das Audit beschrieben hat.
+- Fokus-Tooltip in `Kostenrechner.html`, zwei Selbsttest-Bezeichnungen in
+  `js/regeln.js` (2.192 von 23.530 statt von 2.353) und der Kommentar bei
+  `FEFF` in `js/eintopf-rechenkern.js` nachgezogen.
+- `CLAUDE.md`: Abschnitt "Spielerprofil" und "Achtung, Bezugsgröße" neu
+  geschrieben, Wertetabelle korrigiert. Die belegte Ablesung 2.192 bleibt
+  unverändert, nur ihre Bezugsgröße ändert sich: **FCE 34.242** statt 1.022,
+  Fokus-Effizienz **9,32 %** statt 93,16 %.
+
+**Der Eintopf-Reiter bleibt rechnerisch unberührt**, nur der Kommentar wurde
+präzisiert. Er multipliziert den Dumpwert mit `FEFF = 2192/2353` und behandelt
+das Ergebnis als Fokus je Charge; `f x (2192/2353)` ist identisch mit
+`f x 10 x (2192/23530)`, die beiden Lesarten kürzen sich dort heraus, weil
+`FEFF` direkt gegen die Messung geeicht ist.
+
+**Testlücke geschlossen, das war der eigentliche Befund unter dem Befund.** Vor
+dem Fix deckte kein einziger Test die Bezugsgröße ab: eine Probeänderung auf die
+andere Lesart ließ die Suite unverändert grün. Acht neue Tests pinnen jetzt
+beide Codestellen (normaler und Qualitäts-Craftweg), den Gleichstand bei
+`amountcrafted=1` und die Gegenprobe gegen den echten Dump.
+
+**Wirkung:** 313 von 13.010 Rezepten im Graphen rechneten den Fokus zu billig,
+davon 120 Speisen (`a=10`), 172 Tränke (`a=5`/`a=10`), 15 Steinblöcke
+(`a=2/4/8`) und 6 Tierhaltungsrezepte (`a=18`). Ausrüstung, Barren, Bretter,
+Leder und Stoff haben durchweg `a=1` und waren nie betroffen. Silberkosten
+ändern sich nirgends, nur Fokus.
+
+**Hinweis für den Nutzer:** wer die FCE bisher über den Umrechner aus der
+Ablesung 2.192 gesetzt hatte, hat 1.022 im Feld stehen und muss auf **34.242**
+ziehen (oder den Umrechner erneut aufrufen, der holt sich den Grundfokus jetzt
+richtig). Sonst werden Speisen und Tränke um `amountcrafted` zu teuer
+gerechnet.
+
+**Getestet:** `tests/test.html` zweimal ausgeführt, in Node gegen die Dateien
+auf der Platte und headless über Chromium, beide Male **441/441 grün** (433
+bisherige plus 8 neue).
+
+---
 
 ## Aktueller Stand (v3.1.9, die neun echten Kochknoten, 19.09.2026)
 
@@ -155,72 +223,65 @@ Goldpreis-Auswertung).
 
 ## Aktueller Stand (v3.1.7, Audit-Befund 4 für Veredeln behoben, 19.09.2026)
 
-**Vorheriger Stand (v3.1.6, Repo für Claude Projects eigenständig gemacht)**
-unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
-(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v3.1.7, Audit-Befund 4 für Veredeln behoben)** unverkürzt
+nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** die drei noch offenen Audit-Befunde 4, 9 und 11 aus
-`AUDIT-2026-09-13.md` durchgehen, jeden gegen den Code prüfen und die klaren
-Fälle umsetzen. Befund 1 gehört nicht dazu, der wird getrennt geklärt.
+**Auftrag:** Audit-Befund 1 entscheidungsreif machen und, sobald die Ablesung
+da ist, umsetzen. Die Frage war, ob `craftingfocus` aus dem Client-Dump den
+Grundfokus je Charge oder je Stück meint; bei `amountcrafted=10` ein Faktor 10.
 
-**Befund 4 (Knotenableitung trifft die echte Knotenzahl nicht): für Veredeln
-umgesetzt, für Speisen/Tränke bewusst offen gelassen.**
+**Die Ablesung, die es entschieden hat: Steinmetz statt Schicksalsbrett.**
+`T4_STONEBLOCK` hat vier Rezepte mit identischem `f=54` und `amountcrafted`
+1/2/4/8 (verzauberter Stein liefert mehr Blöcke, verzauberte Steinblöcke gibt
+es nicht als eigene Items). Dasselbe Item, derselbe Spezialisierungsknoten,
+dieselbe FCE, die eigene Spezialisierung kürzt sich also vollständig heraus.
+Nutzerablesung: "2 Blöcke brauchen doppelt so viel Fokus wie ein Block."
+Damit gilt der Dumpwert **je Stück**, der Rohfokus eines Craft-Vorgangs ist
+`craftingfocus x amountcrafted`.
 
-- Neue Funktion `REGELN.istEchterKnoten(cc, gruppenSchluessel)`: filtert
-  abgeleitete Gruppen, die es im Spiel gar nicht als Schicksalsbrett-Knoten
-  gibt. Bisher gefiltert wird nur der belegte Fall, Veredeln unter T4. Beleg:
-  der Wiki-Endwert einer voll ausgebauten Kette ist 40.000 FCE = 25.000 Unique
-  + 15.000 Mutual, und 15.000 = 5 x 3.000, also genau fünf Knoten je Kette
-  (T4 bis T8). Der Rezeptgraph liefert dagegen sieben (T2 bis T8).
-- Gewirkt hat das an zwei Stellen: `spezialisierungsGruppen()` zeigt die beiden
-  Gruppen nicht mehr als Eingabefelder, und `fceAusSpezialisierungsknoten()`
-  ignoriert sie auch dann, wenn aus einer früheren Sitzung noch eine Stufe
-  dafür in `localStorage` steht. Der erreichbare Endwert je Kette liegt damit
-  wieder bei 40.000 statt 46.000 FCE.
-- **Nebenwirkung, bewusst so:** T2-/T3-Veredelungsschritte im Rezeptbaum
-  bekommen jetzt gar keinen aus Knotenstufen abgeleiteten FCE-Wert mehr
-  (vorher den Mutual-Anteil) und fallen auf den allgemeinen FCE-Wert der
-  Einstellungen zurück. Begründung: ein Mutual-Bonus ist laut Wiki ein Bonus
-  auf Knoten, und für T2/T3 gibt es keinen. Der verankerte
-  Fokus-Regressionswert der Königlichen Gugel steigt dadurch von 1.087,45 auf
-  1.099,71, also rund 1 %; der Testkommentar in `tests/test.html` hält das
-  fest, wie schon beim Befund-2/3-Fix am 13.09.2026.
-- **Speisen (25 abgeleitete Gruppen gegen 9 echte Kochknoten) und Tränke (15
-  gegen 8) bleiben unverändert.** Dass die Zahl nicht stimmt, ist belegt;
-  welche der abgeleiteten Gruppen die echten Knoten sind, nicht. Das braucht
-  eine Ablesung der Knotennamen am Schicksalsbrett. Nichts geraten.
+**Umgesetzt** (`js/rechenkern.js`, `Kostenrechner.html`, `js/regeln.js`,
+`js/eintopf-rechenkern.js`, `tests/test.html`, `CLAUDE.md`,
+`AUDIT-2026-09-13.md`):
 
-**Befund 9 (Global Discount / Gold Market Stabilization): nachgeprüft, bewusst
-nicht umgesetzt.** Es fehlen drei Dinge, und keines steht in einer belegfähigen
-Quelle: die Rechenart (wie geht der Rabatt in die Formel ein), der Umfang (ob
-außer den Reroll-Kosten auch die Stationsgebühr betroffen ist, dazu sagt
-`CLAUDE.md` nur "vermutlich") und der Wert selbst, der live schwankt und nur im
-Spiel ablesbar ist. Ein Eingabefeld ohne geklärte Formel wäre ein Ratewert mit
-Quellenanstrich.
+- `craftKandidat()` und `craftBeiQualitaetKandidat()` rechnen `fokusJeStueck`
+  ohne die Division durch `amountcrafted`.
+- Beide melden `weg.grundfokus = rezept.f x amountcrafted`. Das Feld füttert den
+  Umrechner "FCE aus abgelesenem Fokus" in `js/ui.js`, und das Craft-Fenster
+  zeigt den Wert des ganzen Vorgangs. Ohne diese Multiplikation lieferte der
+  Umrechner bei Speisen/Tränken/Steinblöcken eine um Faktor `amountcrafted` zu
+  kleine FCE; genau das war der innere Widerspruch zwischen den zwei
+  FCE-Eingabewegen, den das Audit beschrieben hat.
+- Fokus-Tooltip in `Kostenrechner.html`, zwei Selbsttest-Bezeichnungen in
+  `js/regeln.js` (2.192 von 23.530 statt von 2.353) und der Kommentar bei
+  `FEFF` in `js/eintopf-rechenkern.js` nachgezogen.
+- `CLAUDE.md`: Abschnitt "Spielerprofil" und "Achtung, Bezugsgröße" neu
+  geschrieben, Wertetabelle korrigiert. Die belegte Ablesung 2.192 bleibt
+  unverändert, nur ihre Bezugsgröße ändert sich: **FCE 34.242** statt 1.022,
+  Fokus-Effizienz **9,32 %** statt 93,16 %. Damit löst sich auch der seit
+  04.09.2026 dokumentierte Widerspruch zur Angabe des Nutzers, sein Kochbaum
+  sei weit ausgebaut: 34.242 von maximal 55.000 passt dazu, 1.022 nicht.
 
-**Befund 11 (`offhand`/`knuckles` ohne Spezialisierungs-Unterstützung):
-nachgeprüft, bewusst nicht umgesetzt.** Die im Audit zitierte Struktur "unique
-250, mutual 90 in der ersten Gruppe, 15 in den übrigen" lässt sich nicht
-abbilden: `SPEZ_TYP` kennt einen Mutual-Wert je Typ, und welche der 18
-abgeleiteten Nebenhand-Gruppen "die erste" ist, steht nirgends; `CLAUDE.md`
-hält ausdrücklich fest, dass die Item-Namen dafür zu uneinheitlich sind. Für
-`knuckles` sind überhaupt keine Werte bekannt. Kein stiller Rechenfehler im
-Betrieb: beide Kategorien sind in `KATEGORIE_ZU_GEBAEUDE` als eigene
-Gebührengruppe und in `STADTBONUS` (offhand Martlock, knuckles Caerleon)
-gepflegt, nur das Knoten-Panel fehlt und der Freitext-FCE-Fallback greift.
+**Der Eintopf-Reiter bleibt rechnerisch unberührt**, nur der Kommentar wurde
+präzisiert. Er multipliziert den Dumpwert mit `FEFF = 2192/2353` und behandelt
+das Ergebnis als Fokus je Charge; `f x (2192/2353)` ist identisch mit
+`f x 10 x (2192/23530)`, die beiden Lesarten kürzen sich dort heraus, weil
+`FEFF` direkt gegen die Messung geeicht ist.
 
-**Werkzeuglage im Cloud-Projekt-Thread, für die nächste Sitzung festgehalten:**
-`WebFetch` auf `wiki.albiononline.com/wiki/Crafting` antwortet mit HTTP 403,
-`wiki/Specializations` und `wiki/Item_Quality` antworten zwar, geben die
-Tabellen und die gesuchten Sätze aber nicht heraus. Für Befund 9 und 11 war die
-Wiki-Seite von hier aus also nicht nachprüfbar; die Zitate im Audit stammen aus
-dem In-App-Browser-Lauf vom 13.09.2026. Ein `Versionen/`-Schnappschuss entfällt
-hier mangels lokalem Dateisystem, der Git-Commit ist die Historie.
+**Testlücke geschlossen, das war der eigentliche Befund unter dem Befund.** Vor
+dem Fix deckte kein einziger der 408 Tests die Bezugsgröße ab: eine
+Probeänderung auf die andere Lesart ließ die Suite unverändert grün. Acht neue
+Tests pinnen jetzt beide Codestellen (normaler und Qualitäts-Craftweg), den
+Gleichstand bei `amountcrafted=1` und die Gegenprobe gegen den echten Dump.
 
-**Getestet:** `tests/test.html` headless über Chromium/Playwright ausgeführt,
-**408/408 grün** (396 bisherige, 12 neue für `istEchterKnoten()` und die
-Gruppenzahl je Veredelungskette; ein bestehender Regressionsanker wurde auf den
-neuen, begründeten Wert gezogen).
+**Wirkung:** 313 von 13.010 Rezepten im Graphen rechneten den Fokus zu billig,
+davon 120 Speisen (`a=10`), 172 Tränke (`a=5`/`a=10`), 15 Steinblöcke
+(`a=2/4/8`) und 6 Tierhaltungsrezepte (`a=18`). Ausrüstung, Barren, Bretter,
+Leder und Stoff haben durchweg `a=1` und waren nie betroffen.
+
+**Getestet:** `tests/test.html` zweimal ausgeführt, in Node gegen die Dateien
+auf der Platte und headless über Chromium, beide Male **416/416 grün** (408
+bisherige plus 8 neue).
 
 ---
 
@@ -465,7 +526,10 @@ Kostenrechner/
   Versionen/v3.1.4 - Vier Audit-Befunde (shapeshifterstaff, gatherergear, RRR-Kommentare, Craften+Reroll)/
   Versionen/v3.1.5 - Befund 7 und 8, Qualitaet ignoriert und T1-T2 gebuehrenfrei/
   Versionen/v3.1.6 - Repo fuer Claude Projects eigenstaendig gemacht/
-  tests/test.html           408 Tests (396 bisherige + 12 neu fuer istEchterKnoten() und die
+  tests/test.html           441 Tests (433 bisherige + 8 neu fuer die Bezugsgroesse des
+                              Dump-Fokus, Audit-Befund 1, v3.1.10; 408 davon + 25 fuer Global
+                              Discount und die neun Kochknoten, v3.1.8/v3.1.9;
+                              396 davon + 12 fuer istEchterKnoten() und die
                               Knotenzahl je Veredelungskette, v3.1.7; dabei ein bestehender
                               Fokus-Regressionsanker von 1.087,45 auf 1.099,71 gezogen, s.
                               "Aktueller Stand"; 377 davon + 19 fuer istQualifizierbar()/

@@ -343,7 +343,14 @@ const RECHENKERN = (function () {
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
     const fce = fceFuer(item, cc, opts);
-    const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) / amountcrafted : 0;
+    // Bugfix Audit-Befund 1 (19.09.2026): `craftingfocus` aus dem Dump ist der
+    // Grundfokus JE STUECK, nicht je Charge. Frueher stand hier eine Division
+    // durch amountcrafted, die alle Rezepte mit amountcrafted > 1 (Speisen,
+    // Traenke, Steinbloecke, Tierhaltung) um genau diesen Faktor zu billig
+    // rechnete. Im Spiel abgelesen (Steinmetz, Travertinblock): dasselbe Rezept
+    // mit doppelter Ausbeute kostet doppelt so viel Fokus, s. CLAUDE.md
+    // "craftingfocus aus dem Dump" und AUDIT-2026-09-13.md Befund 1.
+    const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) : 0;
     const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
     // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
@@ -440,13 +447,18 @@ const RECHENKERN = (function () {
           itemWertJeStueck,
           stationsgebuehrJeStueck,
           rezeptSilberJeStueck,
-          // Rohfokus laut Dump (rezept.f), unabhaengig von mitFokus. Dient P5
-          // als Referenzwert fuer den "abgelesenen Fokus"-Umrechner in der
-          // Oberflaeche: der Nutzer liest im Craft-Fenster GENAU DIESES Items
-          // seinen eigenen Fokuswert ab und die Oberflaeche rechnet daraus die
-          // FCE aus (REGELN.fceAusAbgelesenemFokus), ohne dass er den
-          // Rohfokus selbst nachschlagen muesste.
-          grundfokus: rezept.f || 0,
+          // Rohfokus des ganzen Craft-Vorgangs laut Dump, unabhaengig von
+          // mitFokus. Dient P5 als Referenzwert fuer den "abgelesenen
+          // Fokus"-Umrechner in der Oberflaeche: der Nutzer liest im
+          // Craft-Fenster GENAU DIESES Items seinen eigenen Fokuswert ab und
+          // die Oberflaeche rechnet daraus die FCE aus
+          // (REGELN.fceAusAbgelesenemFokus), ohne dass er den Rohfokus selbst
+          // nachschlagen muesste. Deshalb MIT amountcrafted multipliziert
+          // (Bugfix Audit-Befund 1, 19.09.2026): rezept.f gilt je Stueck, das
+          // Craft-Fenster zeigt aber den Wert des ganzen Vorgangs. Ohne die
+          // Multiplikation lieferte der Umrechner bei Speisen/Traenken/
+          // Steinbloecken eine um Faktor amountcrafted zu kleine FCE.
+          grundfokus: (rezept.f || 0) * amountcrafted,
           fokusJeStueck,
           rrr: rrrWert,
           unvollstaendig,
@@ -682,7 +694,14 @@ const RECHENKERN = (function () {
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
     const fce = fceFuer(item, cc, opts);
-    const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) / amountcrafted : 0;
+    // Bugfix Audit-Befund 1 (19.09.2026): `craftingfocus` aus dem Dump ist der
+    // Grundfokus JE STUECK, nicht je Charge. Frueher stand hier eine Division
+    // durch amountcrafted, die alle Rezepte mit amountcrafted > 1 (Speisen,
+    // Traenke, Steinbloecke, Tierhaltung) um genau diesen Faktor zu billig
+    // rechnete. Im Spiel abgelesen (Steinmetz, Travertinblock): dasselbe Rezept
+    // mit doppelter Ausbeute kostet doppelt so viel Fokus, s. CLAUDE.md
+    // "craftingfocus aus dem Dump" und AUDIT-2026-09-13.md Befund 1.
+    const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) : 0;
     const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
     // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
@@ -841,7 +860,7 @@ const RECHENKERN = (function () {
           itemWertJeStueck,
           stationsgebuehrJeStueck,
           rezeptSilberJeStueck,
-          grundfokus: rezept.f || 0,
+          grundfokus: (rezept.f || 0) * amountcrafted, // s. Kommentar in craftKandidat()
           fokusJeStueck,
           rrr: rrrWert,
           unvollstaendig,

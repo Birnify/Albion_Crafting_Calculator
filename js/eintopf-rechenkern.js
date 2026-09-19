@@ -40,8 +40,19 @@ const EINTOPF_RECHENKERN = (function () {
   // Einstellungsgebuehr auf eigene Orders; Sofortgeschaefte zahlen sie nicht.
   const ORDERGEB = 0.025;
   // Fokus-Effizienz durch Spezialisierung auf Kochen/Eintoepfe: im Craft-Fenster
-  // kostet T8.3 2.192 Fokus statt der 2.353 aus dem Client-Dump.
-  const FEFF = 2192 / 2353; // = 93,16 %
+  // kostet eine Charge T8.3 (10 Stueck) 2.192 Fokus.
+  //
+  // Der Wert bleibt 2192/2353, obwohl `craftingfocus` laut Audit-Befund 1
+  // (im Spiel belegt 19.09.2026) je STUECK gilt und der Rohfokus der Charge
+  // damit 10 x 2.353 = 23.530 betraegt. Grund: dieser Rechner multipliziert
+  // FEFF mit dem Dumpwert und behandelt das Ergebnis als Fokus je Charge.
+  // f x (2192/2353) ist identisch mit f x 10 x (2192/23530), die beiden
+  // Lesarten kuerzen sich hier also heraus, weil FEFF direkt gegen die
+  // Messung geeicht ist. Deshalb war und ist dieser Reiter unberuehrt vom
+  // Bugfix in js/rechenkern.js. Der Prozentwert ist allerdings nur relativ
+  // zum Dumpwert je Stueck zu lesen; die echte Fokus-Effizienz ist 9,32 %
+  // (2.192 von 23.530), entsprechend FCE 34.242.
+  const FEFF = 2192 / 2353;
 
   function spanne(id, stadt) {
     const s = M.sell(id, stadt), b = M.buy(id, stadt);

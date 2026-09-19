@@ -1106,8 +1106,12 @@ const REGELN = (function () {
     pruefe("Steuer 1.751.184 -> 70.047", nahe(sug.steuer, 70047, 1), String(sug.steuer));
     pruefe("Einstellgebuehr 1.751.184 -> 43.780", nahe(sug.gebuehr, 43780, 1), String(sug.gebuehr));
 
-    pruefe("Fokus 2.353 bei 1.022 FCE -> 2.192", nahe(fokusKosten(2353, 1022, 1), 2192, 1), String(fokusKosten(2353, 1022, 1)));
-    pruefe("Fokus 2.353 bei 55.000 FCE -> 52", nahe(fokusKosten(2353, 55000, 1), 52, 1), String(fokusKosten(2353, 55000, 1)));
+    // Bezugsgroesse: `craftingfocus` gilt je Stueck (Audit-Befund 1, im Spiel
+    // belegt 19.09.2026). Der Rindfleischeintopf T8.3 hat amountcrafted 10, der
+    // Rohfokus einer ganzen Charge ist also 10 x 2.353 = 23.530. Abgelesen im
+    // Craft-Fenster: 2.192 je Charge, das entspricht FCE 34.242.
+    pruefe("Fokus 23.530 (Charge T8.3) bei 34.242 FCE -> 2.192", nahe(fokusKosten(23530, 34242, 1), 2192, 1), String(fokusKosten(23530, 34242, 1)));
+    pruefe("Fokus 23.530 (Charge T8.3) bei 55.000 FCE (Kochbaum voll) -> 520", nahe(fokusKosten(23530, 55000, 1), 520, 1), String(fokusKosten(23530, 55000, 1)));
 
     pruefe("Stoffhelm (cloth_helmet) in Lymhurst: kein Craft-Bonus", !hatCraftBonus("cloth_helmet", "Lymhurst"));
     pruefe("Faser (fiber) in Lymhurst: Veredelungsbonus +0,40", hatVeredelBonus("fiber", "Lymhurst"));
