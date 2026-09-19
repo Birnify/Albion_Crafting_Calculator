@@ -1,5 +1,10 @@
 {
   "permissions": {
-    "defaultMode": "auto"
+    "allow": [
+      "WebFetch(domain:wiki.albiononline.com)",
+      "WebFetch(domain:europe.albion-online-data.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)"
+    ]
   }
 }
