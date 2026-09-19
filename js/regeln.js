@@ -422,12 +422,16 @@ const REGELN = (function () {
   // wird keiner erfunden - das Item faellt auf den allgemeinen FCE-Wert der
   // Einstellungen zurueck, genau wie T2-/T3-Veredeln.
   //
-  // OFFEN, klein: ob ALCOHOL (Kartoffelschnaps, Maisfusel, Kuerbisfusel)
-  // wirklich unter "Kochzutaten" haengt. Die Wiki-Seite `Alchemy` fuehrt diese
-  // drei als Zutaten des Alchemistenlabors, der Dump gibt ihnen aber
-  // craftingcategory "food". Innerhalb des Koch-Baums ist "Kochzutaten" der
-  // einzige Zutatenknoten, deshalb hier dort einsortiert. Betrifft nur den
-  // Unique-Anteil dieser drei Items, nicht die Knotenliste selbst.
+  // WIDERLEGT am 19.09.2026, Korrektur steht aus: ALCOHOL (Kartoffelschnaps,
+  // Klarer Fusel, Kuerbisschnaps) haengt NICHT unter "Kochzutaten". Soerens
+  // Screenshots des Fensters "Alchemist-Handwerksspezialisierung" zeigen
+  // "Alkohol" als eigenen Knoten im ALCHEMISTEN-Baum (16 Knoten, s.
+  // AUDIT-2026-09-13.md Befund 4). Die Wiki-Seite `Alchemy` lag also richtig,
+  // der Dump gibt den drei Items trotzdem craftingcategory "food".
+  // Bewusst noch nicht umgestellt: die Korrektur gehoert zur Trank-Umsetzung,
+  // und die haengt am fehlenden Mutual-Wert des Alchemisten-Baums. Bis dahin
+  // bleibt die alte Einsortierung stehen; sie betrifft nur den Unique-Anteil
+  // dieser drei Items, nicht die Knotenliste selbst.
   // -----------------------------------------------------------------------
 
   const SPEZ_KNOTEN = {

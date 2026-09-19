@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.11 · Backlog-Punkt 6 geklärt: die „astronomischen Werte" waren kein Rechenfehler, die Alle-Wege-Tabelle weist die erwarteten Versuche jetzt aus
+Stand: 2026-09-19 · Version: v3.1.11 · Schicksalsbrett-Ablesung für Nebenhände und Alchemist festgehalten (nur Dokumentation, Code unverändert)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -44,6 +44,34 @@ alle 7 Hauptstädte und alle 5 Qualitätsstufen abrufen. Kein Bezug zum
 Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
+
+## Ablesung festgehalten (19.09.2026, nur Dokumentation, keine Codeänderung)
+
+Sören hat zehn Screenshots aus dem Spiel geschickt: die Fenster
+"Foliant-", "Fackel-" und "Schild-Handwerksspezialisierung" sowie vier
+Ausschnitte der "Alchemist-Handwerksspezialisierung". Zwei belegte Befunde
+daraus, beide in `AUDIT-2026-09-13.md` mit voller Zuordnungstabelle:
+
+- **Nebenhände haben drei getrennte Bäume, nicht einen** (Foliant, Fackel,
+  Schild), mit je sechs Knoten. Die 18 decken die 18 abgeleiteten
+  `offhand`-Gruppen exakt ab. Damit ist der erste der beiden Blocker von
+  Audit-Befund 11 weg.
+- **Der Alchemisten-Baum hat 16 Knoten**, nicht die im Wiki gelesenen 8. Sie
+  decken alle 15 `potion`-Gruppen ab, plus einen eigenen Knoten **Alkohol**.
+  Die bisherige Einsortierung von `ALCOHOL` unter "Kochzutaten" im Koch-Baum
+  ist damit widerlegt.
+
+**Bewusst noch nichts umgesetzt.** Beiden Bäumen fehlt der Mutual-Wert, und
+ohne ihn wäre jede Knotenliste eine Zahl, die schlechter rechnet als der
+Freitext-Fallback: bei den Tränken ergäbe 16 Knoten mit dem bisherigen Mutual
+30 einen Endwert von 76.000 FCE gegen die 52.000 aus dem Wiki. Erbeten
+(19.09.2026): das Details-Panel je eines Trank- und eines Schild-Knotens, ein
+Bild der Ebene darüber wegen des Meisterschaftsknotens, und das
+Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
+
+Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
+
+---
 
 ## Aktueller Stand (v3.1.10, Audit-Befund 1 behoben: Fokus-Grundwert gilt je Stück, 19.09.2026)
 

@@ -433,15 +433,30 @@ Tier-Präfix). Das ist eine Näherung, die zu viele Knoten liefert.
   mehrere `craftingcategory`-Werte können sich einen Schicksalsbrett-Baum
   teilen. Die Gebührengruppe bleibt getrennt, `meat_*` läuft weiter unter
   "Tierhaltung".
-- **Tränke: weiter offen.** 15 abgeleitete Gruppen gegen 8 echte
-  Alchemistenknoten. Dass die Zahl nicht stimmt, ist belegt; welche Gruppen
-  die echten Knoten sind, nicht. Es fehlt ein Screenshot des
-  Alchemisten-Baums, die Wiki-Seiten dazu liefern 403.
+- **Tränke: Knotenliste abgelesen (19.09.2026), Umsetzung steht aus.** Sören
+  hat vier Ausschnitte des Fensters "Alchemist-Handwerksspezialisierung"
+  geschickt. Es enthält **16 Knoten**, in dieser Reihenfolge: Heilungstrank,
+  Energietrank, Trank des Riesenwuchses, Resistenztrank, Klebriger Trank,
+  Gifttrank, Unsichtbarkeitstrank, Beruhigender Trank, Reinigungstrank,
+  Säurehaltiger Trank, Berserkertrank, Höllenfeuertrank, Sammeltrank, Tornado
+  in der Flasche, **Alkohol**, Lebensschutztrank. Sie decken alle 15
+  `potion`-Gruppen des Dumps ab, ohne Rest. Die Zuordnung Knoten zu Gruppe
+  steht in `AUDIT-2026-09-13.md`, Befund 4.
+  **Noch nicht umgesetzt, weil der Mutual-Wert fehlt:** die App führt Tränke
+  mit 8 Knoten und 30 Mutual, passend zum Wiki-Endwert 52.000 FCE. Mit 16
+  Knoten ergäbe dieselbe Formel 76.000. Rechnerisch ginge 52.000 bei 16 Knoten
+  mit Mutual 15 auf; das ist aber eine Rechnung und kein Beleg. Es fehlt das
+  Details-Panel eines Trankknotens und die Antwort, ob es einen getrennten
+  Alchemisten-Meisterschaftsknoten gibt.
+- **`ALCOHOL` hängt NICHT unter "Kochzutaten".** Dieselben Screenshots zeigen
+  Alkohol als eigenen Knoten im **Alchemisten**-Baum. Die bisherige
+  Einsortierung im Koch-Baum ist damit widerlegt; die Wiki-Seite `Alchemy`
+  lag richtig. Derselbe Fall wie beim rohen Fleisch, nur umgekehrt: eine
+  `food`-Kategorie in einem fremden Baum. `SPEZ_FAMILIE` bildet bisher nur
+  ganze Kategorien ab und reicht dafür nicht, die Zuordnung muss je Gruppe
+  möglich sein. Korrektur steht zusammen mit der Trank-Umsetzung aus.
 - **Ohne Knoten, bewusst:** `T8_MEAL_SPECIAL_FOOD_DRAKE_EGG`
-  (Jungdrachenei-Kekse), im Fenster gibt es keinen passenden Knoten. Klein und
-  offen: ob `ALCOHOL` wirklich unter "Kochzutaten" hängt (die Wiki-Seite
-  `Alchemy` führt Kartoffelschnaps und Co. als Zutaten des Alchemistenlabors,
-  der Dump gibt ihnen aber `craftingcategory: food`).
+  (Jungdrachenei-Kekse), im Fenster gibt es keinen passenden Knoten.
 
 **Bezugsgröße: `craftingfocus` gilt je Stück (Audit-Befund 1, geklärt und
 behoben 19.09.2026).** Früher stand hier, die Wiki-Tabellen für Speisen/Tränke
@@ -591,15 +606,27 @@ Dumps dorthin abgebildet werden müssen.
   aber nur die eine Kategorie. Die Item-Namen sind zu uneinheitlich für eine
   saubere Regel: `T4_OFF_BOOK`, `T4_OFF_SHIELD`, `T4_OFF_HORN_KEEPER`,
   `T4_OFF_LAMP_UNDEAD`, `T4_OFF_ORB_MORGANA`, `T4_OFF_TALISMAN_AVALON` und weitere.
-  **Offener Audit-Befund 11 (19.09.2026, nachgeprüft):** die FCE-Formel selbst
-  ist für offhand im Grundsatz belegbar (Wiki "Crafting"-Übersichtstabelle
-  nennt eigene Unique-/Mutual-Werte: unique 250, mutual 90 in der ersten
-  Gruppe, 15 in den übrigen), nur nützt das ohne die Gruppenzuordnung nichts,
-  und genau die ist aus den Item-Namen nicht sauber ableitbar (18 abgeleitete
-  Nebenhand-Gruppen). `SPEZ_TYP` kennt außerdem nur einen Mutual-Wert je Typ.
-  Für `knuckles` sind gar keine Werte bekannt. Beides bleibt deshalb beim
-  Freitext-Fallback; Gebührengruppe und Stadtbonus sind für beide gepflegt,
-  es entsteht also kein stiller Rechenfehler.
+  **Audit-Befund 11, Gruppenzuordnung abgelesen (19.09.2026):** Sören hat
+  sechs Screenshots geschickt. Sie zeigen, dass Nebenhände im Spiel **drei
+  getrennte Spezialisierungsbäume** haben, nicht einen: "Foliant-",
+  "Fackel-" und "Schild-Handwerksspezialisierung", jeder mit genau sechs
+  Knoten. Die 3 x 6 = 18 Knoten decken die 18 abgeleiteten Nebenhand-Gruppen
+  exakt ab; die vollständige Zuordnungstabelle steht in
+  `AUDIT-2026-09-13.md`, Befund 11. Der Satz oben, die Item-Namen seien für
+  eine saubere Regel zu uneinheitlich, bleibt richtig, ist aber gegenstandslos
+  geworden: statt einer Regel braucht es eine gepflegte Liste wie
+  `SPEZ_KNOTEN.food`.
+  **Weiter offen, deshalb noch nicht umgesetzt:** die FCE-Werte. Die
+  Wiki-Übersichtstabelle nennt unique 250, mutual 90 in der ersten Gruppe und
+  15 in den übrigen; mit den drei Bäumen hat das jetzt eine naheliegende
+  Entsprechung (eigener Baum gegen die zwei Geschwisterbäume), nachprüfbar ist
+  es aus dem Cloud-Thread aber nicht. `SPEZ_TYP` kennt außerdem nur einen
+  Mutual-Wert je Typ und braucht dafür eine Erweiterung. Ungeklärt ist auch,
+  ob Nebenhände einen getrennten Meisterschaftsknoten haben oder unter einer
+  Waffen-Meisterschaft hängen. Für `knuckles` sind weiterhin weder Screenshot
+  noch FCE-Werte vorhanden (acht abgeleitete Gruppen). Beides bleibt deshalb
+  beim Freitext-Fallback; Gebührengruppe und Stadtbonus sind für beide
+  gepflegt, es entsteht also kein stiller Rechenfehler.
 - `knuckles` (Kampfhandschuhe) taucht in keiner Gebäudeliste des Wikis auf,
   auch keine FCE-Werte bekannt.
 - `meat_chicken`, `meat_cow`, `meat_goat`, `meat_goose`, `meat_pig`, `meat_sheep`
