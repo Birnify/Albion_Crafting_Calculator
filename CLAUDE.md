@@ -71,11 +71,16 @@ auch nicht nötig (reines Archiv, kein aktives Arbeitsziel).
   belegt der Grundwert bei Stufe 0 (elf Wiki-Werte stimmen exakt), und die
   Bezugsgröße stimmt (beide Zahlen je Charge, nicht je Stück).
 
-  1.022 FCE entspricht rechnerisch etwa Meisterschaftsstufe 34 bei
-  **Spezialisierungsstufe 0** auf den Rindfleischeintopf (34 × 30 = 1.020).
-  Nachzusehen am Schicksalsbrett unter dem Rindfleischeintopf-Knoten. Bis der
-  Nutzer widerspricht, gilt weiterhin der **abgelesene** Wert für die Rechnung,
-  nur die Beschreibung „Maximalstufe" ist damit hinfällig. **Offener Audit-
+  **Am 19.09.2026 am Schicksalsbrett nachgesehen, und das entscheidet die
+  Frage.** Die Koch-Handwerksspezialisierung steht auf Suppen 18, Salate 2,
+  Pasteten 2, Braten 18, Omelette 0, **Eintöpfe 100**, Sandwiches 0,
+  Kochzutaten 19, Fleisch 51, Stufensumme 210. Daraus folgt
+  `FCE(Eintöpfe) = 250 × 100 + 30 × 210 + 30 × Meisterschaft = 31.300 + 30 ×
+  Meisterschaft`, also ein Wert zwischen 31.300 und 34.300. **1.022 ist in
+  diesem Bereich nicht erreichbar**, 34.243 dagegen schon (Meisterschaft 98).
+  Damit ist die Lesart „der Dump-Fokuswert gilt je Stück" bestätigt und die
+  Division durch `amountcrafted` in `craftKandidat()` ist falsch, s.
+  `AUDIT-2026-09-13.md` Befund 1. Noch nicht umgesetzt. **Offener Audit-
   Befund 1 (19.09.2026):** die Wiki-Tabelle für Speisen-Fokus stimmt exakt mit
   den Dump-Werten überein, unabhängig von `amountcrafted` - die im Projekt
   lange gültige Annahme "Wiki je Stück, Dump je Charge" ist damit widerlegt,
@@ -410,11 +415,32 @@ Tier-Präfix). Das ist eine Näherung, die zu viele Knoten liefert.
   sondern fallen auf den allgemeinen FCE-Wert der Einstellungen zurück; ein
   Mutual-Bonus ist laut Wiki ein Bonus auf Knoten, und für T2/T3 gibt es
   keinen.
-- **Speisen und Tränke: weiter offen.** 25 abgeleitete Gruppen gegen 9 echte
-  Kochknoten, 15 gegen 8 Alchemistenknoten. Dass die Zahl nicht stimmt, ist
-  belegt; welche der abgeleiteten Gruppen die echten Knoten sind, nicht. Das
-  braucht eine Ablesung der Knotennamen am Schicksalsbrett, bis dahin wird
-  dort nichts geändert.
+- **Speisen: behoben (19.09.2026, v3.1.9).** Statt der Ableitung steht jetzt
+  eine gepflegte Knotenliste (`REGELN.SPEZ_KNOTEN.food`), belegt durch
+  Screenshots des Nutzers vom Fenster "Koch-Handwerksspezialisierung". Es hat
+  genau neun Knoten, in dieser Reihenfolge: **Suppen, Salate, Pasteten,
+  Braten, Omelette, Eintöpfe, Sandwiches, Kochzutaten, Fleisch.** Die 25
+  abgeleiteten Gruppen werden darauf abgebildet; Fisch- und Avalon-Varianten
+  liegen beim selben Knoten wie ihr Bauernhof-Gegenstück, der Seegras-Salat
+  bei den Salaten und der gegrillte Fisch bei den Pasteten (Wiki `Cooking`,
+  Abschnitt "Chef Masteries", wörtlich). Gegenprobe: neun Knoten auf Stufe 100
+  plus Meisterschaft 100 ergeben exakt die 55.000 FCE, die das Wiki als
+  Endwert nennt.
+- **Das rohe Fleisch gehört in den Koch-Baum, nicht in einen eigenen.** Der
+  Knoten "Fleisch" steht im selben Fenster, die Items tragen im Dump aber
+  `meat_chicken` bis `meat_sheep`. Dafür gibt es jetzt `REGELN.SPEZ_FAMILIE`:
+  mehrere `craftingcategory`-Werte können sich einen Schicksalsbrett-Baum
+  teilen. Die Gebührengruppe bleibt getrennt, `meat_*` läuft weiter unter
+  "Tierhaltung".
+- **Tränke: weiter offen.** 15 abgeleitete Gruppen gegen 8 echte
+  Alchemistenknoten. Dass die Zahl nicht stimmt, ist belegt; welche Gruppen
+  die echten Knoten sind, nicht. Es fehlt ein Screenshot des
+  Alchemisten-Baums, die Wiki-Seiten dazu liefern 403.
+- **Ohne Knoten, bewusst:** `T8_MEAL_SPECIAL_FOOD_DRAKE_EGG`
+  (Jungdrachenei-Kekse), im Fenster gibt es keinen passenden Knoten. Klein und
+  offen: ob `ALCOHOL` wirklich unter "Kochzutaten" hängt (die Wiki-Seite
+  `Alchemy` führt Kartoffelschnaps und Co. als Zutaten des Alchemistenlabors,
+  der Dump gibt ihnen aber `craftingcategory: food`).
 
 **Achtung, Bezugsgröße (Audit-Befund 1, 19.09.2026, weiterhin ungeklärt,
 widerlegt die vorherige Zeile dieses Abschnitts):** früher stand hier, die

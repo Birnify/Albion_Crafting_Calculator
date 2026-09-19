@@ -117,7 +117,13 @@ const RECHENKERN = (function () {
    */
   function fceFuer(item, cc, opts) {
     if (cc) {
-      const knotenSchluessel = cc + "|" + REGELN.gruppenSchluesselVonItem(item, cc);
+      // Der Knotenschluessel haengt an der Spezialisierungsfamilie, nicht an
+      // der craftingcategory: rohes Fleisch (meat_*) faellt unter den
+      // Koch-Baum und damit unter "food|FLEISCH", genau so, wie ui.js den
+      // Eintrag aus dem Speisen-Panel schreibt. Fuer alle uebrigen Kategorien
+      // ist die Familie die Kategorie selbst, also unveraendert.
+      const familie = REGELN.spezFamilieVonKategorie(cc);
+      const knotenSchluessel = familie + "|" + REGELN.gruppenSchluesselVonItem(item, cc);
       if (opts.fceUeberschreibungen[knotenSchluessel] != null) return opts.fceUeberschreibungen[knotenSchluessel];
       if (opts.fceUeberschreibungen[cc] != null) return opts.fceUeberschreibungen[cc];
     }

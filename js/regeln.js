@@ -391,6 +391,104 @@ const REGELN = (function () {
     return (cc && KATEGORIE_ZU_SPEZTYP[cc]) || null;
   }
 
+  // -----------------------------------------------------------------------
+  // Ausdruecklich gepflegte Schicksalsbrett-Knoten (Audit-Befund 4)
+  //
+  // Die automatische Ableitung aus dem Rezeptgraphen (spezialisierungsGruppen()
+  // weiter unten) trifft bei Speisen die echte Knotenzahl nicht: sie liefert 25
+  // Gruppen, im Spiel gibt es 9 Knoten. Anders als beim Veredeln laesst sich
+  // das nicht aus einer Tier-Regel herleiten, deshalb steht die Zuordnung hier
+  // von Hand.
+  //
+  // BELEG: Screenshots des Nutzers vom 19.09.2026, Fenster "Koch-Handwerks-
+  // spezialisierung" (Landwirtschaft), alle neun Knoten in dieser Reihenfolge
+  // sichtbar: Suppen, Salate, Pasteten, Braten, Omelette, Eintoepfe,
+  // Sandwiches, Kochzutaten, Fleisch. Das deckt sich mit der Wiki-Angabe
+  // "8 additional specialization nodes" plus dem eigenen (s. CLAUDE.md
+  // "Fokuskosten"). Die Zuordnung der Sonderfaelle stammt aus der Wiki-Seite
+  // `Cooking`, Abschnitt "Chef Masteries", woertlich: der Seegras-Salat ist
+  // "The T1 salad Seaweed Salad" (also Salate), der gegrillte Fisch steht unter
+  // dem Pasteten-Knoten ("Craft Grilled Fish (T1) or better to gain fame",
+  // "The Grilled Fish reduces cooldowns by 3.8%"), und die Fischvarianten
+  // liegen jeweils beim selben Knoten wie ihr Bauernhof-Gegenstueck.
+  //
+  // Zugeordnet wird ueber PRAEFIXE des tierlosen Gruppenschluessels, nicht ueber
+  // feste Item-Listen: so wandern kuenftige Varianten (MEAL_STEW_IRGENDWAS)
+  // automatisch in den richtigen Knoten, statt beim naechsten Dump-Lauf
+  // stillschweigend zu verschwinden.
+  //
+  // NICHT ZUGEORDNET, bewusst: MEAL_SPECIAL_FOOD_DRAKE_EGG (Jungdrachenei-
+  // Kekse). Im Schicksalsbrett-Fenster taucht kein passender Knoten auf, also
+  // wird keiner erfunden - das Item faellt auf den allgemeinen FCE-Wert der
+  // Einstellungen zurueck, genau wie T2-/T3-Veredeln.
+  //
+  // OFFEN, klein: ob ALCOHOL (Kartoffelschnaps, Maisfusel, Kuerbisfusel)
+  // wirklich unter "Kochzutaten" haengt. Die Wiki-Seite `Alchemy` fuehrt diese
+  // drei als Zutaten des Alchemistenlabors, der Dump gibt ihnen aber
+  // craftingcategory "food". Innerhalb des Koch-Baums ist "Kochzutaten" der
+  // einzige Zutatenknoten, deshalb hier dort einsortiert. Betrifft nur den
+  // Unique-Anteil dieser drei Items, nicht die Knotenliste selbst.
+  // -----------------------------------------------------------------------
+
+  const SPEZ_KNOTEN = {
+    food: [
+      { schluessel: "SUPPEN", label: "Suppen", praefixe: ["MEAL_SOUP"] },
+      { schluessel: "SALATE", label: "Salate", praefixe: ["MEAL_SALAD", "MEAL_SEAWEEDSALAD"] },
+      { schluessel: "PASTETEN", label: "Pasteten", praefixe: ["MEAL_PIE", "MEAL_GRILLEDFISH"] },
+      { schluessel: "BRATEN", label: "Braten", praefixe: ["MEAL_ROAST"] },
+      { schluessel: "OMELETTE", label: "Omelette", praefixe: ["MEAL_OMELETTE"] },
+      { schluessel: "EINTOEPFE", label: "Eintoepfe", praefixe: ["MEAL_STEW"] },
+      { schluessel: "SANDWICHES", label: "Sandwiches", praefixe: ["MEAL_SANDWICH"] },
+      { schluessel: "KOCHZUTATEN", label: "Kochzutaten", praefixe: ["ALCOHOL", "BREAD", "BUTTER", "FLOUR"] },
+      { schluessel: "FLEISCH", label: "Fleisch", praefixe: ["MEAT"] },
+    ],
+  };
+
+  // Kategorien, die sich EINEN Schicksalsbrett-Baum teilen. Das rohe Fleisch
+  // (craftingcategory meat_chicken ... meat_sheep) hat im Spiel keinen eigenen
+  // Baum, sondern haengt als Knoten "Fleisch" im Koch-Baum - im Screenshot
+  // desselben Fensters, gleich unter "Kochzutaten". Fuer die Gebuehrengruppe
+  // bleiben die sechs Kategorien getrennt (KATEGORIE_ZU_GEBAEUDE fuehrt sie
+  // weiter unter "Tierhaltung"), nur die FCE-Rechnung teilt sich den Baum.
+  const SPEZ_FAMILIE = {
+    meat_chicken: "food",
+    meat_cow: "food",
+    meat_goat: "food",
+    meat_goose: "food",
+    meat_pig: "food",
+    meat_sheep: "food",
+  };
+
+  /**
+   * Die Spezialisierungsfamilie einer craftingcategory: die Kategorie, unter
+   * deren Schicksalsbrett-Baum sie faellt. Fuer fast alle Kategorien sie
+   * selbst, s. SPEZ_FAMILIE fuer die Ausnahmen.
+   * @param {?string} cc
+   * @returns {?string}
+   */
+  function spezFamilieVonKategorie(cc) {
+    if (!cc) return cc || null;
+    return SPEZ_FAMILIE[cc] || cc;
+  }
+
+  /**
+   * Der Knoten, unter den ein tierloser Gruppenschluessel faellt, oder null,
+   * wenn die Familie keine gepflegte Knotenliste hat oder der Schluessel zu
+   * keinem Knoten gehoert.
+   * @param {?string} familie
+   * @param {string} basisSchluessel Gruppenschluessel ohne Tier-Praefix
+   */
+  function knotenVonBasisSchluessel(familie, basisSchluessel) {
+    const knoten = SPEZ_KNOTEN[familie];
+    if (!knoten) return null;
+    const b = String(basisSchluessel || "");
+    for (let i = 0; i < knoten.length; i++) {
+      const treffer = knoten[i].praefixe.some((pr) => b === pr || b.indexOf(pr) === 0);
+      if (treffer) return knoten[i];
+    }
+    return null;
+  }
+
   /**
    * Gruppenschluessel eines Items fuer die Schicksalsbrett-Knotenableitung.
    * Zwei GEGENSAETZLICHE Regeln je nach Knotentyp (Bug behoben 05.09.2026,
@@ -424,7 +522,14 @@ const REGELN = (function () {
     if (spezTypVonKategorie(cc) === "veredeln") {
       return s.replace(/_LEVEL\d+$/, "");
     }
-    return s.replace(/^T\d+_/, "");
+    const basis = s.replace(/^T\d+_/, "");
+    // Gepflegte Knotenliste (Speisen, s. SPEZ_KNOTEN): mehrere abgeleitete
+    // Gruppen teilen sich EINEN Knoten, deshalb hier auf dessen Schluessel
+    // abbilden. Ohne Treffer bleibt der abgeleitete Schluessel stehen; er ist
+    // dann kein echter Knoten (s. istEchterKnoten) und faellt auf den
+    // allgemeinen FCE-Wert zurueck.
+    const knoten = knotenVonBasisSchluessel(spezFamilieVonKategorie(cc), basis);
+    return knoten ? knoten.schluessel : basis;
   }
 
   /**
@@ -446,11 +551,15 @@ const REGELN = (function () {
    *    die Mutual-Summe auf bis zu 7 x 3.000 = 21.000 statt 15.000 aufgeblaeht,
    *    also den erreichbaren Endwert auf 46.000 statt 40.000 FCE.
    *
-   * food und potion sind bewusst NICHT gefiltert: DASS die App dort zu viele
-   * Gruppen ableitet (25 statt 9 Kochknoten, 15 statt 8 Alchemistenknoten) ist
-   * belegt, WELCHE der abgeleiteten Gruppen die echten Knoten sind aber nicht.
-   * Das braucht eine Schicksalsbrett-Ablesung, s. AUDIT-2026-09-13.md Befund 4;
-   * bis dahin wird nichts geraten.
+   *  - Speisen: seit 19.09.2026 gibt es eine ausdrueckliche Knotenliste
+   *    (SPEZ_KNOTEN.food, aus den Schicksalsbrett-Screenshots des Nutzers).
+   *    Dann gilt: echter Knoten ist genau, was dort steht.
+   *
+   * potion ist weiterhin NICHT gefiltert: DASS die App dort zu viele Gruppen
+   * ableitet (15 statt 8 Alchemistenknoten) ist belegt, WELCHE die echten sind
+   * aber nicht - die Wiki-Seiten dazu liefern 403, und ein Screenshot des
+   * Alchemisten-Baums fehlt. S. AUDIT-2026-09-13.md Befund 4; bis dahin wird
+   * nichts geraten.
    *
    * Schluessel ohne Tier-Praefix (Ausruestung, Testschluessel) bleiben immer
    * gueltig.
@@ -458,6 +567,14 @@ const REGELN = (function () {
    * @param {string} gruppenSchluessel
    */
   function istEchterKnoten(cc, gruppenSchluessel) {
+    const familie = spezFamilieVonKategorie(cc);
+    const knoten = SPEZ_KNOTEN[familie];
+    if (knoten) {
+      // Gepflegte Knotenliste: nur was dort steht, ist ein Knoten. Das gilt
+      // ausdruecklich auch fuer Stufen, die aus einer frueheren Sitzung noch
+      // unter den alten, abgeleiteten Schluesseln in localStorage stehen.
+      return knoten.some((k) => k.schluessel === gruppenSchluessel);
+    }
     if (spezTypVonKategorie(cc) !== "veredeln") return true;
     const treffer = /^T(\d+)_/.exec(String(gruppenSchluessel || ""));
     return !treffer || Number(treffer[1]) >= 4;
@@ -473,15 +590,31 @@ const REGELN = (function () {
   function spezialisierungsGruppen(cc, graph) {
     const g = aktuellerGraph(graph);
     if (!g || !cc) return [];
+    const familie = spezFamilieVonKategorie(cc);
+    const knotenListe = SPEZ_KNOTEN[familie];
     const gruppen = {};
     Object.keys(g.items).forEach((item) => {
       const node = g.items[item];
-      if (!node || node.cc !== cc) return;
-      const schluessel = gruppenSchluesselVonItem(item, cc);
-      if (!istEchterKnoten(cc, schluessel)) return; // z.B. T2-/T3-Veredeln, s. Befund 4
+      if (!node || !node.cc) return;
+      // Bei einer gepflegten Knotenliste zaehlen ALLE Kategorien derselben
+      // Familie mit (rohes Fleisch haengt im Koch-Baum, s. SPEZ_FAMILIE),
+      // sonst wie bisher genau die eine Kategorie.
+      if (knotenListe ? spezFamilieVonKategorie(node.cc) !== familie : node.cc !== cc) return;
+      const schluessel = gruppenSchluesselVonItem(item, node.cc);
+      if (!istEchterKnoten(cc, schluessel)) return; // z.B. T2-/T3-Veredeln oder ein Item ohne Knoten, s. Befund 4
       if (!gruppen[schluessel]) gruppen[schluessel] = { schluessel, items: [] };
       gruppen[schluessel].items.push(item);
     });
+    if (knotenListe) {
+      // Reihenfolge und Beschriftung wie im Schicksalsbrett-Fenster, nicht
+      // alphabetisch: der Nutzer traegt die Stufen anhand des Spielfensters ein.
+      return knotenListe
+        .filter((k) => gruppen[k.schluessel])
+        .map((k) => {
+          gruppen[k.schluessel].items.sort();
+          return { schluessel: k.schluessel, label: k.label, items: gruppen[k.schluessel].items };
+        });
+    }
     return Object.keys(gruppen)
       .sort()
       .map((k) => {
@@ -1059,12 +1192,88 @@ const REGELN = (function () {
       ["T4_CLOTH", "T5_CLOTH", "T6_CLOTH", "T7_CLOTH", "T8_CLOTH"].every((k) => istEchterKnoten("fiber", k) === true)
     );
     pruefe(
-      "istEchterKnoten: nicht-veredelnde Kategorien bleiben ungefiltert (food/potion sind bewusst offen, s. Befund 4)",
-      istEchterKnoten("food", "MEAL_STEW") === true &&
-        istEchterKnoten("food", "FLOUR") === true &&
-        istEchterKnoten("potion", "POTION_HEAL") === true &&
-        istEchterKnoten("sword", "MAIN_SWORD") === true
+      "istEchterKnoten: Kategorien ohne gepflegte Knotenliste bleiben ungefiltert (potion ist bewusst offen, s. Befund 4)",
+      istEchterKnoten("potion", "POTION_HEAL") === true && istEchterKnoten("sword", "MAIN_SWORD") === true
     );
+
+    // -- Audit-Befund 4, Speisen (19.09.2026): gepflegte Knotenliste ---------
+    pruefe(
+      "SPEZ_KNOTEN.food: genau die neun Knoten aus dem Schicksalsbrett-Fenster, in Fensterreihenfolge",
+      SPEZ_KNOTEN.food.map((k) => k.schluessel).join(",") ===
+        "SUPPEN,SALATE,PASTETEN,BRATEN,OMELETTE,EINTOEPFE,SANDWICHES,KOCHZUTATEN,FLEISCH",
+      SPEZ_KNOTEN.food.map((k) => k.schluessel).join(",")
+    );
+    pruefe(
+      "istEchterKnoten (Speisen): nur die neun gepflegten Schluessel zaehlen, alte abgeleitete Gruppen nicht mehr",
+      istEchterKnoten("food", "EINTOEPFE") === true &&
+        istEchterKnoten("food", "MEAL_STEW") === false &&
+        istEchterKnoten("food", "MEAL_STEW_FISH") === false &&
+        istEchterKnoten("food", "FLOUR") === false
+    );
+    pruefe(
+      "gruppenSchluesselVonItem (Speisen): Grundgericht, Fisch- und Avalon-Variante landen auf demselben Knoten",
+      ["T4_MEAL_STEW", "T8_MEAL_STEW_FISH", "T8_MEAL_STEW_AVALON"].every(
+        (i) => gruppenSchluesselVonItem(i, "food") === "EINTOEPFE"
+      )
+    );
+    pruefe(
+      "gruppenSchluesselVonItem (Speisen): Seegras-Salat gehoert zu den Salaten, gegrillter Fisch zu den Pasteten (Wiki 'Cooking')",
+      gruppenSchluesselVonItem("T1_MEAL_SEAWEEDSALAD", "food") === "SALATE" &&
+        gruppenSchluesselVonItem("T1_MEAL_GRILLEDFISH", "food") === "PASTETEN"
+    );
+    pruefe(
+      "gruppenSchluesselVonItem (Speisen): Brot, Mehl, Butter und Alkohol bilden den Kochzutaten-Knoten",
+      ["T4_BREAD", "T3_FLOUR", "T4_BUTTER", "T6_ALCOHOL"].every((i) => gruppenSchluesselVonItem(i, "food") === "KOCHZUTATEN")
+    );
+    pruefe(
+      "gruppenSchluesselVonItem: rohes Fleisch faellt ueber die Familie auf den Fleisch-Knoten des Koch-Baums",
+      gruppenSchluesselVonItem("T8_MEAT", "meat_cow") === "FLEISCH" &&
+        gruppenSchluesselVonItem("T3_MEAT", "meat_chicken") === "FLEISCH"
+    );
+    pruefe(
+      "spezFamilieVonKategorie: meat_* gehoert zum Koch-Baum, alles andere bleibt es selbst",
+      spezFamilieVonKategorie("meat_goat") === "food" &&
+        spezFamilieVonKategorie("food") === "food" &&
+        spezFamilieVonKategorie("sword") === "sword" &&
+        spezFamilieVonKategorie(null) === null
+    );
+    pruefe(
+      "gruppenSchluesselVonItem (Speisen): ein Item ohne passenden Knoten behaelt seinen abgeleiteten Schluessel und ist kein echter Knoten",
+      gruppenSchluesselVonItem("T8_MEAL_SPECIAL_FOOD_DRAKE_EGG", "food") === "MEAL_SPECIAL_FOOD_DRAKE_EGG" &&
+        istEchterKnoten("food", "MEAL_SPECIAL_FOOD_DRAKE_EGG") === false
+    );
+    (function () {
+      // Gegenprobe mit den Stufen aus Soerens Screenshots vom 19.09.2026:
+      // Suppen 18, Salate 2, Pasteten 2, Braten 18, Omelette 0, Eintoepfe 100,
+      // Sandwiches 0, Kochzutaten 19, Fleisch 51. Summe 210.
+      const stufen = {
+        SUPPEN: 18, SALATE: 2, PASTETEN: 2, BRATEN: 18, OMELETTE: 0,
+        EINTOEPFE: 100, SANDWICHES: 0, KOCHZUTATEN: 19, FLEISCH: 51,
+      };
+      const erwartet = 100 * 250 + 210 * 30; // eigener Unique + Mutual ALLER Knoten inkl. eigenem
+      pruefe(
+        "fceAusSpezialisierungsknoten (Eintoepfe, Nutzerstufen 19.09.2026): 25.000 Unique + 6.300 Mutual = 31.300 FCE ohne Meisterschaft",
+        fceAusSpezialisierungsknoten("food", "EINTOEPFE", stufen, 0) === erwartet,
+        fceAusSpezialisierungsknoten("food", "EINTOEPFE", stufen, 0) + " vs " + erwartet
+      );
+      pruefe(
+        "fceAusSpezialisierungsknoten (Speisen): eine alte, abgeleitete Stufe aus localStorage zaehlt nicht mehr mit",
+        fceAusSpezialisierungsknoten("food", "EINTOEPFE", Object.assign({ MEAL_STEW: 100 }, stufen), 0) === erwartet
+      );
+      // Unabhaengige Gegenprobe der Knotenzahl: das Wiki nennt 55.000 FCE als
+      // Endwert fuer den Kochbaum (s. CLAUDE.md "Fokuskosten"). Mit neun
+      // Knoten auf Stufe 100 und Meisterschaft 100 erreicht die App genau das -
+      // mit acht oder zehn Knoten ginge die Rechnung nicht auf.
+      const voll = {};
+      SPEZ_KNOTEN.food.forEach((k) => {
+        voll[k.schluessel] = 100;
+      });
+      pruefe(
+        "fceAusSpezialisierungsknoten (Speisen): neun Knoten auf Stufe 100 plus Meisterschaft 100 ergeben exakt den Wiki-Endwert 55.000 FCE",
+        fceAusSpezialisierungsknoten("food", "EINTOEPFE", voll, 100) === 55000,
+        String(fceAusSpezialisierungsknoten("food", "EINTOEPFE", voll, 100))
+      );
+    })();
     pruefe(
       "istEchterKnoten: Schluessel ohne Tier-Praefix bleiben auch beim Veredeln gueltig",
       istEchterKnoten("fiber", "A") === true
@@ -1241,6 +1450,36 @@ const REGELN = (function () {
           JSON.stringify(gruppen.map((g) => g.schluessel))
         );
       })();
+      (function () {
+        // Audit-Befund 4 (19.09.2026): die Speisen-Knotenliste muss den Graphen
+        // vollstaendig abdecken - bis auf die bewusst nicht zugeordneten
+        // Jungdrachenei-Kekse, fuer die es im Spiel keinen Knoten gibt.
+        const gruppen = spezialisierungsGruppen("food");
+        pruefe(
+          "spezialisierungsGruppen(food): genau die neun Schicksalsbrett-Knoten, in Fensterreihenfolge",
+          gruppen.map((g) => g.schluessel).join(",") ===
+            "SUPPEN,SALATE,PASTETEN,BRATEN,OMELETTE,EINTOEPFE,SANDWICHES,KOCHZUTATEN,FLEISCH",
+          JSON.stringify(gruppen.map((g) => g.schluessel))
+        );
+        const fleisch = gruppen.find((g) => g.schluessel === "FLEISCH");
+        pruefe(
+          "spezialisierungsGruppen(food): der Fleisch-Knoten sammelt die meat_*-Kategorien mit ein (T3_MEAT bis T8_MEAT)",
+          !!fleisch && fleisch.items.length === 6 && fleisch.items.indexOf("T8_MEAT") !== -1,
+          JSON.stringify(fleisch)
+        );
+        const ohneKnoten = [];
+        Object.keys(REZEPTGRAPH.items).forEach((i) => {
+          const node = REZEPTGRAPH.items[i];
+          if (!node || !node.cc || spezFamilieVonKategorie(node.cc) !== "food") return;
+          if (!istEchterKnoten("food", gruppenSchluesselVonItem(i, node.cc))) ohneKnoten.push(i);
+        });
+        pruefe(
+          "spezialisierungsGruppen(food): einziges Item ohne Knoten sind die Jungdrachenei-Kekse (kein Knoten im Spiel, bewusst nicht erfunden)",
+          ohneKnoten.length === 1 && ohneKnoten[0] === "T8_MEAL_SPECIAL_FOOD_DRAKE_EGG",
+          JSON.stringify(ohneKnoten)
+        );
+      })();
+
       (function () {
         // Audit-Befund 4 (19.09.2026): der Rezeptgraph enthaelt je Veredelungs-
         // kette sieben Tier-Stufen (T2 bis T8), echte Schicksalsbrett-Knoten
@@ -1566,6 +1805,9 @@ const REGELN = (function () {
     KATEGORIE_ZU_SPEZTYP,
     spezTypVonKategorie,
     gruppenSchluesselVonItem,
+    SPEZ_KNOTEN,
+    SPEZ_FAMILIE,
+    spezFamilieVonKategorie,
     istEchterKnoten,
     spezialisierungsGruppen,
     fceAusSpezialisierungsknoten,

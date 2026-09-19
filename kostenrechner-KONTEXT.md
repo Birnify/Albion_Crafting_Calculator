@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.8 · Global Discount aus dem live abgerufenen Goldpreis, wirkt auf die Reroll-Kosten (Audit-Befund 9 behoben)
+Stand: 2026-09-19 · Version: v3.1.9 · Die neun echten Kochknoten aus dem Schicksalsbrett statt 25 abgeleiteter Gruppen (Audit-Befund 4 für Speisen behoben)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -44,6 +44,67 @@ alle 7 Hauptstädte und alle 5 Qualitätsstufen abrufen. Kein Bezug zum
 Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
+
+## Aktueller Stand (v3.1.9, die neun echten Kochknoten, 19.09.2026)
+
+**Auslöser:** Sören hat drei Screenshots des Fensters
+"Koch-Handwerksspezialisierung" geschickt. Damit war die Knotenfrage für
+Speisen entschieden, die vorher nur als "braucht eine Ablesung" offen stand.
+
+**Die neun Knoten, in Fensterreihenfolge:** Suppen, Salate, Pasteten, Braten,
+Omelette, Eintöpfe, Sandwiches, Kochzutaten, Fleisch. Die App leitete dafür
+bisher 25 Gruppen ab.
+
+**Umgesetzt (Audit-Befund 4, Speisen-Teil):**
+
+- `js/regeln.js`: neue Tabelle `SPEZ_KNOTEN` (bisher nur `food`) mit den neun
+  Knoten, ihren Anzeigenamen und den Präfixen des tierlosen
+  Gruppenschlüssels. Bewusst Präfixe statt fester Item-Listen: künftige
+  Varianten (`MEAL_STEW_IRGENDWAS`) wandern damit automatisch in den richtigen
+  Knoten, statt beim nächsten Dump-Lauf still zu verschwinden.
+- Neue Tabelle `SPEZ_FAMILIE` plus `spezFamilieVonKategorie()`: mehrere
+  `craftingcategory`-Werte können sich einen Schicksalsbrett-Baum teilen. Nötig
+  für den Knoten "Fleisch", dessen Items `meat_chicken` bis `meat_sheep`
+  tragen, im Spiel aber im Koch-Fenster stehen. Die Gebührengruppe bleibt
+  davon unberührt (`meat_*` weiter unter "Tierhaltung").
+- `gruppenSchluesselVonItem()`, `istEchterKnoten()` und
+  `spezialisierungsGruppen()` arbeiten jetzt über die Knotenliste, wo es eine
+  gibt. `spezialisierungsGruppen()` liefert sie in Fensterreihenfolge statt
+  alphabetisch, damit sich das Panel neben dem Spielfenster abtippen lässt,
+  und bringt den echten Knotennamen als `label` mit ("Suppen" statt
+  "Möhrensuppe").
+- `js/rechenkern.js`: `fceFuer()` bildet den Knotenschlüssel über die Familie,
+  damit rohes Fleisch auf `food|FLEISCH` trifft.
+- `js/ui.js`: zwei kleine Stellen. Das Panel nutzt das `label`, wenn es eines
+  gibt, und die Liste der "verwendeten" Kategorien läuft über die Familie,
+  damit rohes Fleisch im Bauplan das Speisen-Panel öffnet statt sechs eigener.
+
+**Unabhängige Gegenprobe, als Test verankert:** das Wiki nennt 55.000 FCE als
+Endwert des Kochbaums. Neun Knoten auf Stufe 100 plus Meisterschaft 100 ergeben
+jetzt exakt `25.000 + 9 × 3.000 + 3.000 = 55.000`. Mit acht oder zehn Knoten
+ginge das nicht auf, die Knotenzahl ist damit doppelt belegt.
+
+**Bewusst ohne Knoten:** `T8_MEAL_SPECIAL_FOOD_DRAKE_EGG`
+(Jungdrachenei-Kekse), im Fenster gibt es keinen passenden Knoten. Klein und
+offen: ob `ALCOHOL` wirklich unter "Kochzutaten" hängt.
+
+**Tränke bleiben offen**, dort fehlt derselbe Screenshot; die Wiki-Seiten
+`Potion`/`Potions`/`Alchemist` liefern 403.
+
+**Nebenbefund, wichtig und nicht Teil dieses Pakets: Audit-Befund 1 ist durch
+dieselben Screenshots rechnerisch entschieden.** Aus den Stufen folgt
+`FCE(Eintöpfe) = 31.300 + 30 × Meisterschaft`, also 31.300 bis 34.300. Die
+Lesart "Dump-Fokus je Stück" verlangt 34.243 und passt, die Lesart "je Charge"
+verlangt 1.022 und ist in diesem Bereich unerreichbar. Die Division durch
+`amountcrafted` in `craftKandidat()` ist damit falsch; betroffen sind 120
+Speise-, 172 Trank-, 15 Steinblock- und sechs Tierhaltungs-Rezepte. Umsetzung
+steht aus, s. `AUDIT-2026-09-13.md` Befund 1.
+
+**Getestet:** `tests/test.html` headless über Chromium/Playwright,
+**433/433 grün** (419 bisherige, 14 neue für die Knotenliste, die
+Familienzuordnung und die 55.000-Gegenprobe).
+
+---
 
 ## Aktueller Stand (v3.1.8, Global Discount, 19.09.2026)
 

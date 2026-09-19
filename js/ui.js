@@ -207,7 +207,10 @@ const UI = (function () {
   function spezKnotenAnzeigeGruppen(cc) {
     return REGELN.spezialisierungsGruppen(cc).map((g) => {
       const repraesentant = g.items[0];
-      return { schluessel: g.schluessel, name: nameVonExtern(repraesentant, g.schluessel), items: g.items };
+      // Gepflegte Knoten (Speisen) bringen ihren echten Namen aus dem
+      // Schicksalsbrett mit ("Suppen"), abgeleitete Gruppen behelfen sich
+      // weiterhin mit dem Namen ihres tiefsten Items ("Moehrensuppe").
+      return { schluessel: g.schluessel, name: g.label || nameVonExtern(repraesentant, g.schluessel), items: g.items };
     });
   }
 
@@ -1994,7 +1997,11 @@ const UI = (function () {
      * spezTypVonKategorie() gefiltert (nicht jede Kategorie hat ein Modell).
      */
     function renderSpezialisierungsknoten(r) {
-      const verwendete = (r && !r.gesperrt ? sammleVerwendeteKategorien(r.weg) : []).filter((cc) => REGELN.spezTypVonKategorie(cc));
+      // Ueber die Spezialisierungsfamilie, damit rohes Fleisch im Bauplan das
+      // Speisen-Panel oeffnet statt sechs eigene (s. REGELN.SPEZ_FAMILIE).
+      const verwendete = Array.from(
+        new Set((r && !r.gesperrt ? sammleVerwendeteKategorien(r.weg) : []).map((cc) => REGELN.spezFamilieVonKategorie(cc)))
+      ).filter((cc) => REGELN.spezTypVonKategorie(cc));
       const alle = ALLE_KATEGORIEN.filter((cc) => REGELN.spezTypVonKategorie(cc));
       const liste = (zustand.spezKnotenAlleZeigen ? alle.slice() : verwendete).slice().sort();
       spezKnotenContainerEl.innerHTML = "";
