@@ -616,6 +616,131 @@ const PREISE = (function () {
   }
 
   // ---------------------------------------------------------------------
+  // Absatz je Qualitaet (Reiter "Schnelles Geld", js/chancen.js, 19.09.2026)
+  //
+  // Unterschied zu volumenAbrufen() oben: dort wird je Markt-ID EIN Wert
+  // gefuehrt (7-Tage-Summe), und weil history/ pro Item MEHRERE Zeilen
+  // liefert (je eine je Qualitaet), gewinnt dort die zuletzt gelesene Zeile.
+  // Fuer ein Rohmaterial ist das folgenlos (nur Qualitaet 1 wird gehandelt),
+  // fuer Ausruestung waere es falsch. Hier deshalb ausdruecklich nach
+  // Qualitaet getrennt.
+  //
+  // Am 19.09.2026 gegen die echte API geprueft (T4_BAG, Lymhurst):
+  //  - history/ liefert je Listeneintrag "location", "item_id", "quality"
+  //    und "data" mit "item_count", "avg_price", "timestamp".
+  //  - Der Parameter "qualities" wird von history/ IGNORIERT: ein Abruf mit
+  //    qualities=4 bzw. qualities=5 lieferte unveraendert alle vier
+  //    vorhandenen Qualitaetszeilen. Deshalb wird er hier gar nicht erst
+  //    gesetzt und stattdessen die ganze Antwort ausgewertet.
+  //
+  // WAS DIE ZAHL IST: item_count ist die von den Data-Client-Meldungen der
+  // Spieler ERFASSTE gehandelte Stueckzahl, nicht der garantiert vollstaendige
+  // Marktumsatz (s. CLAUDE.md, Abschnitt "Albion Online Data Project API" und
+  // "Bekannte Grenze"). Sie ist damit eine Untergrenze, kein amtlicher Absatz.
+  // Die Oberflaeche muss das so benennen.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Wertet eine history/-Zeile zu einem Tagesdurchschnitt aus. Reine Funktion
+   * ohne Netzzugriff, deshalb offline testbar.
+   *
+   * Gezaehlt werden die Tageswerte der letzten `tageFenster` Tage vor `jetzt`;
+   * Tage ohne Handel fehlen in der Antwort und zaehlen damit als 0, der
+   * Durchschnitt wird bewusst durch die volle Fensterbreite geteilt (sonst
+   * saehe ein Item mit einem einzigen Handelstag aus wie ein Dauerlaeufer).
+   * Ohne verwertbaren Zeitstempel wird auf die letzten `tageFenster`
+   * Listeneintraege zurueckgefallen.
+   *
+   * @param {object} zeile Eintrag der history/-Antwort
+   * @param {number} tageFenster Fensterbreite in Tagen
+   * @param {number} [jetzt] Millisekunden seit Epoch (Default: Date.now())
+   * @returns {?{id:string, stadt:string, qualitaet:number, stueckJeTag:number, stueckGesamt:number, tageFenster:number, mengengewichteterPreis:?number}}
+   */
+  function normalisiereAbsatzZeile(zeile, tageFenster, jetzt) {
+    if (!zeile || !zeile.item_id) return null;
+    const fenster = tageFenster > 0 ? tageFenster : 7;
+    const bis = jetzt == null ? Date.now() : jetzt;
+    const von = bis - fenster * 24 * 60 * 60 * 1000;
+    const daten = Array.isArray(zeile.data) ? zeile.data : [];
+    const mitZeit = daten.filter((x) => {
+      if (!x || !x.timestamp) return false;
+      const t = typeof REGELN !== "undefined" && REGELN.parseApiDatumUtc ? REGELN.parseApiDatumUtc(x.timestamp) : NaN;
+      return isFinite(t);
+    });
+    const relevant = mitZeit.length
+      ? mitZeit.filter((x) => {
+          const t = REGELN.parseApiDatumUtc(x.timestamp);
+          return t >= von && t <= bis;
+        })
+      : daten.slice(-fenster);
+    const stueckGesamt = relevant.reduce((a, x) => a + (x.item_count || 0), 0);
+    const gewichtet = relevant.reduce((a, x) => a + (x.avg_price || 0) * (x.item_count || 0), 0);
+    return {
+      id: zeile.item_id,
+      stadt: zeile.location,
+      qualitaet: zeile.quality || 1,
+      stueckJeTag: stueckGesamt / fenster,
+      stueckGesamt,
+      tageFenster: fenster,
+      mengengewichteterPreis: stueckGesamt > 0 ? Math.round(gewichtet / stueckGesamt) : null,
+    };
+  }
+
+  /**
+   * Fasst eine ganze history/-Antwort nach Markt-ID und Qualitaet zusammen.
+   * Rein, offline testbar.
+   * @returns {Object<string, Object<number, object>>} id -> qualitaet(1..5) -> Eintrag
+   */
+  function absatzAusAntwort(zeilen, tageFenster, jetzt) {
+    const out = {};
+    (zeilen || []).forEach((zeile) => {
+      const e = normalisiereAbsatzZeile(zeile, tageFenster, jetzt);
+      if (!e) return;
+      if (!out[e.id]) out[e.id] = {};
+      out[e.id][e.qualitaet] = e;
+    });
+    return out;
+  }
+
+  /**
+   * Ruft den erfassten Tagesabsatz je Qualitaet ab. Wie volumenAbrufen()
+   * bewusst OHNE localStorage-Cache, nur fuer die laufende Sitzung; gleiche
+   * Drossel-Disziplin (50er-Bloecke, 1,5 s Pause, Backoff bei 429).
+   *
+   * @param {string[]} ids Markt-IDs
+   * @param {object} [opts]
+   * @param {string} [opts.stadt=STADT_DEFAULT]
+   * @param {number} [opts.tageFenster=7]
+   * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
+   * @returns {Promise<Object<string, Object<number, object>>>} id -> qualitaet -> Eintrag ({} = nichts erfasst)
+   */
+  async function absatzAbrufen(ids, opts) {
+    opts = opts || {};
+    const stadt = opts.stadt || STADT_DEFAULT;
+    const tageFenster = opts.tageFenster || 7;
+    const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
+
+    const eindeutigeIds = Array.from(new Set(ids));
+    const ergebnis = {};
+    const gesamt = eindeutigeIds.length;
+    let erledigt = 0;
+    aufFortschritt(erledigt, gesamt);
+    if (!gesamt) return ergebnis;
+
+    for (const block of bloecke(eindeutigeIds, BLOCKGROESSE)) {
+      const zeilen = await holeHistorieBlock(block, stadt);
+      const teil = absatzAusAntwort(zeilen, tageFenster);
+      block.forEach((id) => {
+        ergebnis[id] = teil[id] || {};
+      });
+      erledigt += block.length;
+      aufFortschritt(erledigt, gesamt);
+      await warte(PAUSE_MS);
+    }
+    return ergebnis;
+  }
+
+  // ---------------------------------------------------------------------
   // Eigenpreise (nicht handelbare Zutaten). Volle Pflegeoberflaeche ist P6,
   // hier nur Speicherung und Zugriff.
   // ---------------------------------------------------------------------
@@ -954,6 +1079,9 @@ const PREISE = (function () {
     eigenpreiseAlle,
     normalisiereHistorieZeile,
     volumenAbrufen,
+    normalisiereAbsatzZeile,
+    absatzAusAntwort,
+    absatzAbrufen,
     normalisiereGoldAntwort,
     goldpreisAbrufen,
     selbsttest,

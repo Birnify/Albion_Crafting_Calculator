@@ -70,6 +70,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 <script src="../js/ui.js"></script>
 <script src="../js/tabs.js"></script>
 <script src="../js/preisvergleich.js"></script>
+<script src="../js/chancen.js"></script>
 <script src="../js/eintopf-daten.js"></script>
 <script src="../js/eintopf-preise.js"></script>
 <script src="../js/eintopf-rechenkern.js"></script>
@@ -95,6 +96,83 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 
   // ---- js/preisvergleich.js (App-Fusion, Paket A+B, 13.09.2026) ----
   PREISVERGLEICH.selbsttest().forEach((e) => pruefe("preisvergleich: " + e.name, e.ok, e.details));
+
+  // ---- js/chancen.js (Reiter "Schnelles Geld", 19.09.2026) ----
+  CHANCEN.selbsttest().forEach((e) => pruefe("chancen: " + e.name, e.ok, e.details));
+
+  // ---- rechenkern: opts.nurDirekteEbene (Grundlage des Reiters "Schnelles Geld") ----
+  (function () {
+    // Stoff ist am Markt teuer (5.000), Faser dagegen billig. Ueber den ganzen
+    // Baum lohnt sich deshalb das Selbstveredeln, auf der direkten Ebene muss
+    // der Stoff gekauft werden. Genau diesen Unterschied pinnt der Test.
+    const preise = {
+      T4_CLOTH: { sell: { preis: 5000, kein: false, datum: "" }, buy: { kein: true } },
+      T4_FIBER: { sell: { preis: 10, kein: false, datum: "" }, buy: { kein: true } },
+      T3_CLOTH: { sell: { preis: 10, kein: false, datum: "" }, buy: { kein: true } },
+      T3_FIBER: { sell: { preis: 5, kein: false, datum: "" }, buy: { kein: true } },
+      T2_CLOTH: { sell: { preis: 5, kein: false, datum: "" }, buy: { kein: true } },
+      T2_FIBER: { sell: { preis: 2, kein: false, datum: "" }, buy: { kein: true } },
+    };
+    const basis = { preise, stationssaetze: { Magierturm: 400, Weber: 400 }, fce: 0, fokuswert: 0 };
+    const voll = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, basis);
+    const direkt = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, Object.assign({}, basis, { nurDirekteEbene: true }));
+    const zutatTyp = (r) => r.weg && r.weg.zutaten && r.weg.zutaten[0] && r.weg.zutaten[0].weg && r.weg.zutaten[0].weg.typ;
+    pruefe(
+      "rechenkern: ohne nurDirekteEbene veredelt der Baum den Stoff selbst (unveraendertes Verhalten)",
+      voll.weg.typ === "craften" && zutatTyp(voll) === "craften",
+      voll.weg.typ + " / Zutat " + zutatTyp(voll)
+    );
+    pruefe(
+      "rechenkern: nurDirekteEbene zwingt die Zutat auf Kaufen, der Wurzelknoten bleibt craftbar",
+      direkt.weg.typ === "craften" && zutatTyp(direkt) === "kaufen",
+      direkt.weg.typ + " / Zutat " + zutatTyp(direkt)
+    );
+    pruefe(
+      "rechenkern: nurDirekteEbene ist teurer, weil der teure Stoff gekauft statt veredelt wird",
+      direkt.silber > voll.silber,
+      Math.round(voll.silber) + " -> " + Math.round(direkt.silber)
+    );
+    pruefe(
+      "rechenkern: nurDirekteEbene aendert nichts, wenn die Zutat ohnehin gekauft wird (Gleichstand ohne Alternativrezept)",
+      RECHENKERN.kosten("T4_CLOTH", 0, 1, { preise: { T4_CLOTH: preise.T4_CLOTH } }).silber ===
+        RECHENKERN.kosten("T4_CLOTH", 0, 1, { preise: { T4_CLOTH: preise.T4_CLOTH }, nurDirekteEbene: true }).silber,
+      "je " + RECHENKERN.kosten("T4_CLOTH", 0, 1, { preise: { T4_CLOTH: preise.T4_CLOTH } }).silber
+    );
+  })();
+
+  // ---- preise: Absatz je Qualitaet (history/ liefert eine Zeile JE Qualitaet) ----
+  (function () {
+    const jetzt = Date.parse("2026-09-19T12:00:00Z");
+    const antwort = [
+      {
+        item_id: "T4_BAG",
+        location: "Lymhurst",
+        quality: 1,
+        data: [
+          { item_count: 70, avg_price: 1000, timestamp: "2026-09-18T00:00:00" },
+          { item_count: 70, avg_price: 2000, timestamp: "2026-09-17T00:00:00" },
+          { item_count: 999, avg_price: 1, timestamp: "2026-08-01T00:00:00" },
+        ],
+      },
+      { item_id: "T4_BAG", location: "Lymhurst", quality: 4, data: [{ item_count: 7, avg_price: 5000, timestamp: "2026-09-18T00:00:00" }] },
+    ];
+    const aus = PREISE.absatzAusAntwort(antwort, 7, jetzt);
+    pruefe(
+      "preise: absatzAusAntwort trennt nach Qualitaet, statt die letzte Zeile gewinnen zu lassen",
+      aus.T4_BAG && Math.abs(aus.T4_BAG[1].stueckJeTag - 20) < 1e-9 && Math.abs(aus.T4_BAG[4].stueckJeTag - 1) < 1e-9,
+      JSON.stringify({ q1: aus.T4_BAG && aus.T4_BAG[1].stueckJeTag, q4: aus.T4_BAG && aus.T4_BAG[4].stueckJeTag })
+    );
+    pruefe(
+      "preise: normalisiereAbsatzZeile zaehlt nur Tage im Fenster, Tage ohne Handel zaehlen als 0",
+      aus.T4_BAG[1].stueckGesamt === 140,
+      aus.T4_BAG[1].stueckGesamt
+    );
+    pruefe(
+      "preise: mengengewichteter Preis im Fenster (1.500), nicht durch den alten Ausreisser verzerrt",
+      aus.T4_BAG[1].mengengewichteterPreis === 1500,
+      aus.T4_BAG[1].mengengewichteterPreis
+    );
+  })();
 
   // ---- js/rechenkern.js: Kein Preis => Weg gesperrt, NIEMALS Kosten 0 ----
   (function () {

@@ -72,6 +72,15 @@ const RECHENKERN = (function () {
       silberRabattFaktor: o.silberRabattFaktor != null && isFinite(o.silberRabattFaktor) ? o.silberRabattFaktor : 1,
       tagesbonus: o.tagesbonus || {}, // craftingcategory -> "silber"|"gold"
       maxTiefe: o.maxTiefe || STANDARD_MAX_TIEFE,
+      // "Schnelles Geld"-Reiter (js/chancen.js, 19.09.2026): true = Zutaten
+      // werden IMMER gekauft, nur der Wurzelknoten selbst darf gecraftet,
+      // verzaubert oder hochgerollt werden. Das ist die Frage "was kostet mich
+      // eine Charge, wenn ich das Material auf der direkten Ebene einkaufe" -
+      // ausdrueckliche Vorgabe des Nutzers fuer diesen Reiter. Der
+      // Kostenrechner-Reiter laesst die Option weg und rechnet unveraendert
+      // ueber den ganzen Rezeptbaum. Gilt ab Tiefe 1; der Reroll-Weg laeuft
+      // bewusst auf derselben Tiefe wie die Wurzel weiter (s. rerollKandidat).
+      nurDirekteEbene: !!o.nurDirekteEbene,
       // Hoechstalter eines Marktpreises in Minuten (Datum aus preise.js,
       // sell_price_min_date/buy_price_max_date). null = keine Grenze. Ohne
       // diese Sperre wuerde ein wochenalter Preis unveraendert als gueltig
@@ -987,7 +996,7 @@ const RECHENKERN = (function () {
     alle.push(rerollKandidat(item, stufe, qualitaet, opts, tiefe, pfad));
 
     const node = opts.graph.items[item];
-    if (node) {
+    if (node && !(opts.nurDirekteEbene && tiefe > 0)) {
       const rezepte = REGELN.rezepteFuerStufe(node, stufe);
       const cc = node.cc || null;
       const fokusRegel = fokusRegelFuer(item, stufe, cc, opts);
@@ -1049,7 +1058,9 @@ const RECHENKERN = (function () {
     alle.push(kaufKandidat(item, stufe, opts));
 
     const node = opts.graph.items[item];
-    if (node) {
+    // opts.nurDirekteEbene (s. normOpts): ab Tiefe 1 bleibt nur der
+    // Kaufen-Weg stehen, Craften/Verzaubern der Zutat entfaellt.
+    if (node && !(opts.nurDirekteEbene && tiefe > 0)) {
       // Rezeptsuche ueber REGELN.rezepteFuerStufe(), NICHT hier von Hand
       // nachbauen: el-Knoten (verzauberte Rohstoffe, Runen, Seelen, Relikte)
       // haben kein e-Feld, ihre Rezepte stehen immer in node.r und gelten

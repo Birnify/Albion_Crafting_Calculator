@@ -120,6 +120,36 @@ const UI = (function () {
     }
   }
 
+  /**
+   * Fuegt die kategorieweite Freitext-Ausnahme (einstellungen.fceAusnahmen,
+   * "cc" -> FCE) und die aus dem Spezialisierungsknoten-Panel abgeleiteten,
+   * knotenspezifischen Werte ("cc|Gruppe" -> FCE) zu EINER Map zusammen, s.
+   * RECHENKERN.fceFuer() fuer die Vorrangreihenfolge. Eine Kategorie liefert
+   * nur dann Knoten-Werte, wenn der Nutzer dort tatsaechlich etwas
+   * eingetragen hat (Summe aller Stufen inkl. Meisterschaft > 0) - sonst
+   * bliebe ein blosses Oeffnen des Panels (alle Stufen 0) faelschlich eine
+   * Ueberschreibung auf "0 FCE" statt weiterhin den Freitext/globalen Wert
+   * gelten zu lassen.
+   *
+   * Seit 19.09.2026 auf Modulebene und als Parameterfunktion, damit der
+   * Reiter "Schnelles Geld" (js/chancen.js) mit exakt denselben FCE-Werten
+   * rechnet wie der Kostenrechner, statt die Logik zu kopieren.
+   */
+  function fceUeberschreibungenAus(einstellungen) {
+    const out = Object.assign({}, einstellungen.fceAusnahmen);
+    Object.keys(einstellungen.spezialisierung || {}).forEach((cc) => {
+      if (!REGELN.spezTypVonKategorie(cc)) return;
+      const eintrag = einstellungen.spezialisierung[cc] || {};
+      const knotenStufen = eintrag.knoten || {};
+      const summe = Object.values(knotenStufen).reduce((a, b) => a + (b || 0), 0) + (eintrag.meisterschaft || 0);
+      if (summe <= 0) return;
+      REGELN.spezialisierungsGruppen(cc).forEach((g) => {
+        out[cc + "|" + g.schluessel] = REGELN.fceAusSpezialisierungsknoten(cc, g.schluessel, knotenStufen, eintrag.meisterschaft);
+      });
+    });
+    return out;
+  }
+
   function einstellungenSchreiben(e) {
     try {
       localStorage.setItem(EINSTELLUNGEN_KEY, JSON.stringify(e));
@@ -1062,18 +1092,7 @@ const UI = (function () {
     }
 
     function fceUeberschreibungenFuerOpts() {
-      const out = Object.assign({}, einstellungen.fceAusnahmen);
-      Object.keys(einstellungen.spezialisierung || {}).forEach((cc) => {
-        if (!REGELN.spezTypVonKategorie(cc)) return;
-        const eintrag = einstellungen.spezialisierung[cc] || {};
-        const knotenStufen = eintrag.knoten || {};
-        const summe = Object.values(knotenStufen).reduce((a, b) => a + (b || 0), 0) + (eintrag.meisterschaft || 0);
-        if (summe <= 0) return;
-        REGELN.spezialisierungsGruppen(cc).forEach((g) => {
-          out[cc + "|" + g.schluessel] = REGELN.fceAusSpezialisierungsknoten(cc, g.schluessel, knotenStufen, eintrag.meisterschaft);
-        });
-      });
-      return out;
+      return fceUeberschreibungenAus(einstellungen);
     }
 
     function baueOpts() {
@@ -2539,6 +2558,8 @@ const UI = (function () {
 
   return {
     defaultEinstellungen,
+    einstellungenLesen,
+    fceUeberschreibungenAus,
     sammleVerwendeteKategorien,
     sammleVerwendeteGebaeude,
     naechstbesteAlternative,

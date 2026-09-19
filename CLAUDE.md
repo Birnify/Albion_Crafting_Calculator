@@ -161,6 +161,19 @@ der Zeit oder gar nicht; Wartezeit und Ausfallrisiko sind nicht modelliert.
   nichts Verwertbares kommt.
 - `history/` mit `time-scale=24` gibt Tageswerte, mit `time-scale=1` Stundenwerte.
   `item_count` ist die tatsächlich gehandelte Stückzahl, nicht die Angebotsmenge.
+- **`history/` liefert je Item eine Zeile JE QUALITÄT, und der Parameter
+  `qualities` wird dabei ignoriert** (19.09.2026 gegen die echte API abgelesen,
+  `T4_BAG`, Lymhurst: die Antwort enthielt vier Einträge mit `quality` 1 bis 4;
+  Abrufe mit `qualities=4` und `qualities=5` lieferten unverändert dieselben
+  vier Einträge). Schlüssel eines Eintrags: `location`, `item_id`, `quality`,
+  `data` mit `item_count`, `avg_price`, `timestamp`. Wer Zeilen nur nach
+  `item_id` ablegt, überschreibt die Qualitäten gegenseitig. `prices/` dagegen
+  wertet `qualities=1,2,3,4,5` korrekt aus und liefert eine Zeile je Qualität.
+- **`item_count` ist eine Untergrenze, kein amtlicher Absatz.** Gemeldet wird
+  nur, was Spieler mit laufendem Data-Client gesehen haben (s. auch "Bekannte
+  Grenze" unten). Jede Oberfläche, die die Zahl zeigt, muss das so benennen;
+  der Reiter „Schnelles Geld" schreibt deshalb „verkauft/Tag" und nicht
+  „Absatz".
 - Zeitstempel sind **UTC**. Umrechnung in Ortszeit gehört in den Browser.
 - Die API **drosselt aggressiv** (HTTP 429). Anfragen sequenziell mit ~1,5 s Pause
   senden und bei 429 mit wachsender Wartezeit wiederholen. Parallele Blöcke laufen ins Limit.
@@ -799,6 +812,7 @@ dort) - der Git-Commit bleibt dort trotzdem Pflicht.
 | `AUDIT-2026-09-13.md` | Code-Audit gegen das offizielle Wiki, mit Umsetzungsstatus je Befund |
 | `EINTOPF-KONTEXT-ARCHIV.md` | Historische Fachdokumentation des archivierten, eigenständigen Eintopf-Rechners; weiterhin die Quelle für `js/eintopf-*.js` |
 | `Kostenrechner.html`, `js/*.js` | Die App |
+| `js/chancen.js` | Reiter „Schnelles Geld": lohnende Crafts je Schicksalsbrett-Knoten |
 | `rezepte.js`, `item-namen.js` | Von `build_graph.py` erzeugt, nicht von Hand bearbeiten |
 | `build_graph.py` | Erzeugt `rezepte.js`/`item-namen.js` neu, braucht den Client-Dump |
 | `design.md` | Verbindliche Design-Spezifikation (Farben/Typografie/Bausteine) |

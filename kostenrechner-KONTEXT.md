@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.11 · Schicksalsbrett-Ablesung für Nebenhände und Alchemist festgehalten (nur Dokumentation, Code unverändert)
+Stand: 2026-09-19 · Version: v3.2.0 · Neuer Reiter „Schnelles Geld": lohnende Crafts je Schicksalsbrett-Knoten, mit erfasstem Tagesabsatz
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -12,10 +12,10 @@ Stand: 2026-09-19 · Version: v3.1.11 · Schicksalsbrett-Ablesung für Nebenhän
 
 ## Was ist das?
 
-**Seit v3.0.0 eine App mit drei Bereichen** ("Albion Werkzeuge", sichtbarer
+**Seit v3.2.0 eine App mit vier Bereichen** (bis v3.1.11 drei) ("Albion Werkzeuge", sichtbarer
 Titel in der Oberfläche, Ordner-/Repo-Name bleibt bewusst `Kostenrechner`, s.
 Nutzer-Entscheidung unten): oben eine Reiterumschaltung
-(Kostenrechner/Eintopf-Rechner/Preisvergleich, `js/tabs.js`). Jeder Bereich
+(Kostenrechner/Eintopf-Rechner/Preisvergleich/Schnelles Geld, `js/tabs.js`). Jeder Bereich
 bleibt fachlich eigenständig (eigener Rechenkern/eigener Zustand), das ist
 Architektur-Zusammenführung, keine inhaltliche Vermischung.
 
@@ -70,6 +70,82 @@ Bild der Ebene darüber wegen des Meisterschaftsknotens, und das
 Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
+
+---
+
+## Aktueller Stand (v3.2.0, Reiter „Schnelles Geld", 19.09.2026)
+
+**Auftrag (Sören, 19.09.2026):** „ich möchte in der Webapp die Möglichkeit
+haben auf Crafting Knoten Ebene mir anzeigen zu lassen was es sich gerade zu
+craften lohnt. ich möchte filtern können nach absatzzahlen und gewinn."
+Nachgeschoben: „mache mir die eingaben wirklich einfach und nicht so viele
+Felder die ich ausfüllen kann. es geht um das schnelle geld."
+
+**Bereich 4, Schnelles Geld** (`js/chancen.js`, neuer Reiter): einen
+Schicksalsbrett-Knoten wählen (z. B. „Gelehrtengugel"), und die Liste zeigt je
+Tier, Verzauberungsstufe und Qualität, wie viel davon am Tag gehandelt wird,
+was eine Einheit kostet, was nach Steuer und Einstellgebühr übrig bleibt, die
+Marge und den Gewinn je Tag. Sortiert nach Gewinn je Tag.
+
+**Drei Eingaben, mehr nicht** (Nutzer-Vorgabe): Knoten, „mindestens
+verkauft/Tag" (Vorgabe 5), „Mindestgewinn %" (Vorgabe 5). Stadt, Kauf- und
+Verkaufsweg, Premium, FCE, Spezialisierungsknoten, Stationsgebühren,
+Fokuswert und Höchstalter der Preise kommen unverändert aus den Einstellungen
+des Kostenrechner-Reiters, damit dieselben Werte nicht an zwei Stellen
+gepflegt werden müssen.
+
+**Die Absatzzahl ist geprüft und bewusst vorsichtig benannt.** `history/`
+liefert je Item eine Zeile **je Qualität** mit Tageswerten (`item_count`,
+`avg_price`, `timestamp`), am 19.09.2026 gegen die echte API abgelesen
+(T4_BAG, Lymhurst, Qualitäten 1 bis 4). Der Parameter `qualities` wird von
+`history/` **ignoriert**, ein Abruf mit `qualities=4` bzw. `=5` lieferte
+unverändert alle vorhandenen Qualitätszeilen; deshalb wird er gar nicht erst
+gesetzt und stattdessen die ganze Antwort ausgewertet. Die Spalte heißt
+„verkauft/Tag" und die Fußzeile sagt ausdrücklich, dass nur gemeldet wird, was
+Spieler mit laufendem Data-Client sehen, die echte Zahl also eher höher liegt.
+Das Wort „Absatz" steht bewusst nirgends in der Oberfläche.
+
+**Gerechnet wird auf der direkten Ebene**, wie vom Nutzer vorgegeben
+(„unter berücksichtigung der Beschaffungskosten der Materialien auf der
+direkten Ebene"). Dafür hat `js/rechenkern.js` eine neue Option
+`nurDirekteEbene`: ab Tiefe 1 bleibt nur der Kaufen-Weg stehen, der
+Wurzelknoten selbst darf weiter gecraftet, verzaubert und hochgerollt werden.
+Ohne die Option verhält sich der Rechenkern unverändert, der
+Kostenrechner-Reiter rechnet also weiter über den ganzen Rezeptbaum.
+
+**Umgesetzt:**
+
+- `js/chancen.js` (neu): Knotenliste je Gebäude (375 Knoten in 15 Gebäuden,
+  abgeleitet aus `REGELN.spezialisierungsGruppen`, also dieselbe Liste wie im
+  FCE-Panel), Knotennamen aus dem deutschen Item-Namen ohne Tier-Titel
+  („Gelehrtengugel des Adepten" → „Gelehrtengugel"), Kandidatenbildung,
+  Erlösrechnung, Zeilenbau, Filter und Sortierung, dazu die Oberfläche.
+- `js/preise.js`: `normalisiereAbsatzZeile()`, `absatzAusAntwort()` und
+  `absatzAbrufen()`. Anders als `volumenAbrufen()` (dort gewinnt bei mehreren
+  Qualitätszeilen die zuletzt gelesene, bei Rohstoffen folgenlos, bei
+  Ausrüstung wäre es falsch) wird hier nach Qualität getrennt. Tage ohne
+  Handel zählen als 0, geteilt wird durch die volle Fensterbreite.
+- `js/rechenkern.js`: `opts.nurDirekteEbene`.
+- `js/ui.js`: `einstellungenLesen()` und die neue, parameterisierte
+  `fceUeberschreibungenAus(einstellungen)` sind jetzt exportiert, damit der
+  neue Reiter mit exakt denselben FCE-Werten rechnet statt die Logik zu
+  kopieren. Die bisherige innere Fassung ruft sie auf, Verhalten unverändert.
+- `Kostenrechner.html`: Reiterknopf, Reiterinhalt, CSS, Skript.
+
+**Im Browser gegengeprüft** (headless Chromium, `fetch` durch synthetische,
+aber schemagetreue Antworten ersetzt, weil die echte API aus einem
+Cloud-Thread gesperrt ist): Knotenauswahl gefüllt, Suche läuft durch, Tabelle
+rendert, Fokusangabe erscheint, keine Konsolenfehler aus eigenem Code.
+
+**Getestet:** `tests/test.html` headless über Chromium/Playwright,
+**467/467 grün** (446 bisherige, 21 neue: 14 für `js/chancen.js`, 4 für
+`nurDirekteEbene`, 3 für die Absatzauswertung).
+
+**Offen, bewusst:** der echte Datenabruf ist aus der Cloud nicht prüfbar,
+Sören sieht beim ersten Öffnen, ob plausible Stückzahlen erscheinen. Ein
+Kaufen-Weg kann in der Liste stehen, wenn Kaufen billiger ist als Craften; das
+ist gewollt (auch Weiterverkauf ist schnelles Geld) und steht in der
+Weg-Spalte.
 
 ---
 
@@ -412,6 +488,12 @@ Kostenrechner/
                               ITEM_NAMEN.alle, Live-Preise ueber alle Staedte/Qualitaeten,
                               eigener Realm/Retry/localStorage-Schluessel (bewusst kein
                               gemeinsamer Code mit preise.js), PREISVERGLEICH.selbsttest()
+    chancen.js                neu v3.2.0, Reiter "Schnelles Geld": Knotenliste je Gebaeude
+                              (aus REGELN.spezialisierungsGruppen), Kandidaten je Stufe und
+                              Qualitaet, Erloes nach Steuer/Einstellgebuehr, Absatz je Tag
+                              aus PREISE.absatzAbrufen, Filter und Sortierung,
+                              CHANCEN.selbsttest(); rechnet ueber RECHENKERN.kosten mit
+                              opts.nurDirekteEbene und den Einstellungen des Kostenrechners
     eintopf-daten.js          neu v3.1.0, migriert aus eintopf_update.py (STEWS/SAUCE/FISH/
                               ITEM_VALUE, Rindfleischeintopf T8_MEAL_STEW), reine
                               Sprachumstellung Python->JS, keine Werteaenderung
