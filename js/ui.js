@@ -1103,8 +1103,24 @@ const UI = (function () {
       heroEl.className = "hero";
       const wegLabel = { kaufen: "Kaufen", craften: "Craften", verzaubern: "Verzaubern", reroll: "Craften + Reroll" }[r.weg.typ] || r.weg.typ;
       const gewinnInfo = berechneGewinn(r);
+      // Bugfix Audit-Befund 7 (19.09.2026): Speisen/Traenke/Werkzeuge (ausser
+      // Angelrute) sind nicht qualifizierbar, s. REGELN.istQualifizierbar()
+      // und rechenkern.js/kostenBeiQualitaet(). Wurde eine Zielqualitaet >
+      // Normal eingestellt, aber fuer DIESES Item ignoriert (Ergebnis ist
+      // effektiv Normal), macht das die Oberflaeche transparent, statt
+      // stillschweigend eine Qualitaetsstufe zu zeigen, die nicht wirkt.
+      const wurzelNode = REZEPTGRAPH && REZEPTGRAPH.items[zustand.item];
+      const qualitaetIgnoriert =
+        (einstellungen.qualitaetsIndex || 0) > 0 && wurzelNode && !REGELN.istQualifizierbar(zustand.item, wurzelNode.cc || null);
       let html = "<div class='cols'>";
-      html += "<div><div class='k'>Guenstigster Weg</div><div class='v'>" + wegLabel + "</div></div>";
+      html +=
+        "<div><div class='k'>Guenstigster Weg</div><div class='v'>" +
+        wegLabel +
+        "</div>" +
+        (qualitaetIgnoriert
+          ? "<div class='w'>Nicht qualifizierbar (Speisen/Traenke/Werkzeuge), Zielqualitaet wird fuer dieses Item ignoriert</div>"
+          : "") +
+        "</div>";
       html += "<div><div class='k'>Kosten</div><div class='v'>" + formatSilber(r.silber) + "</div><div class='w'>Silber</div></div>";
       html += "<div><div class='k'>Fokus</div><div class='v'>" + formatFokus(r.fokus) + "</div></div>";
       if (gewinnInfo) {

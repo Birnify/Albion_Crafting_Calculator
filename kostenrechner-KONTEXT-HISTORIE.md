@@ -7,6 +7,110 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung, 14.09.2026)
+
+**Vorheriger Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel)**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** vier weitere, durch das offizielle Wiki belegte Befunde aus
+`AUDIT-2026-09-13.md` beheben, vom Nutzer in dieser Reihenfolge angefordert:
+Befund 5, 6, 12, 10 ("und alle Befunde die du sonst noch ohne mich machen
+kannst"). Komplett autonom umgesetzt (Nutzer schlief), ohne
+`albion-cycle-orchestrator` (weiterhin nicht über das Agent-Tool aufrufbar).
+
+**Umgesetzt** (`js/regeln.js`, `js/rechenkern.js`, `js/ui.js`,
+`js/eintopf-rechenkern.js`, `tests/test.html`):
+
+1. **Befund 5, `shapeshifterstaff` fehlte in allen drei Kategorie-Tabellen.**
+   `KATEGORIE_ZU_SPEZTYP.shapeshifterstaff = "waffen_ruestung"` (Wiki nennt
+   keine abweichende Struktur). `STADTBONUS.Caerleon.craft` um
+   `shapeshifterstaff` ergänzt (Wiki "Resource_return_rate", Zeile
+   Caerleon/Weapons: "War Gloves, Shapeshifter Staff", klar belegt). Für das
+   Gebäude **kein Beleg gefunden** (Crafting-Seite, Hunter's-Lodge-Seite und
+   Shapeshifter-Seite gezielt durchsucht, auch im rohen HTML, kein einziges
+   Vorkommen) - deshalb wie `offhand`/`knuckles`/`meat_*` eine eigene
+   Gebührengruppe ("Wandlerstab") statt einer erfundenen Zuordnung zur
+   Jägerhütte.
+2. **Befund 6, `gatherergear` fälschlich als `werkzeug_fused` eingeordnet.**
+   Wiki "Specializations" trennt beide ausdrücklich: `werkzeug_fused` hat 250
+   Unique + 60 Mutual in einem verschmolzenen Knoten ohne eigene
+   Meisterschaft, Sammlerausrüstung dagegen 250 Unique + **nur 30** Mutual je
+   eigenem Knoten plus eine separate, hier als Meisterschaftsfeld modellierte
+   Komponente von 60 FCE je Stufe (im Spiel eigentlich der geteilte fused
+   Werkzeug-Meisterschaftsknoten, s. Codekommentar für die bewusste
+   Vereinfachung). Neuer `SPEZ_TYP.gatherergear`, Gegenprobe exakt gegen den
+   wörtlichen Wiki-Wert (ein Knoten + Meisterschaft auf Stufe 100 = 34.000
+   FCE).
+3. **Befund 12, zwei leicht verschiedene RRR-Konstanten (kosmetisch).**
+   `js/eintopf-rechenkern.js`s `RET_OHNE=0,152` ist eine EIGENE, unabhängig im
+   Spiel abgelesene Messung, `js/regeln.js`s `RRR_GRUNDPRODUKTION=0,18`
+   liefert über die Formel 0,152542... - beide sind demselben Spielwert aus
+   zwei verschiedenen Quellen zugeordnet (Screenshot vs. Formel), keine
+   davon wurde geändert (Regel "Belegte Werte nie ohne neuen Beleg ändern").
+   Nur Kommentare in beiden Dateien ergänzt, die den Zusammenhang erklären.
+4. **Befund 10, Craft-Wurf und Reroll wurden nie kombiniert.** Neue Funktion
+   `REGELN.qualitaetsVerteilung(chancenpunkte)`: volle
+   Wahrscheinlichkeitsverteilung über die gelandete Qualität eines
+   Craft-Versuchs (nicht nur Erfolg/Misserfolg gegen ein Ziel wie die
+   bestehende `qualitaetWurfErfolgswahrscheinlichkeit()`, die unverändert
+   bleibt). `craftBeiQualitaetKandidat()` in `rechenkern.js` rechnet jetzt bei
+   jedem Qualitäts-Wurf-Weg (kein `preservequality`) zwei Strategien
+   gegeneinander - "immer neu craften bis ein Versuch direkt trifft"
+   (bisheriges Verhalten, unverändert als Fallback) und "einmal craften, die
+   gelandete Qualität danach hochrerollen" (neu, Materialien/Fokus nur
+   einmal, Reroll kostet laut Spielregel keinen Fokus) - und wählt die
+   günstigere über den Zielwert. Neues Feld `weg.qualitaetsart` kann jetzt
+   auch `"wurf+reroll"` sein, `weg.erwarteterRerollSilber` neu. `js/ui.js` an
+   beiden Stellen (Bauplan-Detailzeile, Tooltip) um diesen Fall ergänzt, sonst
+   keine Logikänderung.
+
+**Getestet:** `js/regeln.js` selbsttest() um 33 neue Tests erweitert:
+`qualitaetsVerteilung` gegen die bereits getestete
+`qualitaetWurfErfolgswahrscheinlichkeit` gegengeprüft (Tail-Summe muss exakt
+übereinstimmen, fünf Bonuswerte), plus `shapeshifterstaff`/`gatherergear`-
+Tabellen- und Formel-Tests (u. a. Wiki-Gegenprobe 34.000 FCE für einen vollen
+Gathergear-Knoten). `tests/test.html` um zwei Integrationstests für die
+Craften+Reroll-Kombination ergänzt (reales Item `T4_MAIN_SWORD`, ein
+Szenario, in dem die neue Strategie klar gewinnen muss (teure Materialien,
+Zielqualität Meisterwerk, 0 Bonus, ~24 Mio. Silber nach alter Rechnung
+vs. tatsächlich 2,12 Mio.), ein Szenario, in dem die alte Strategie weiterhin
+gewinnen muss (billige Materialien, Zielqualität Gut), beide mit exakten
+Regressionswerten). **377/377 grün** (344 + 33 neue), über den lokalen Server
+im Browser ausgeführt, keine Konsolenfehler.
+
+**Gehärtet:** `Kostenrechner.html` über den lokalen Server geladen, keine
+Konsolenfehler. Wegen der Uhrzeit (Nutzer schlief) keine vertiefte manuelle
+Klick-Gegenprobe der neuen Craften+Reroll-Anzeige im Bauplan wie bei
+Befund 5/6 am Vortag - die Node-Gegenrechnung und die beiden neuen
+Integrationstests decken die Kernlogik ab, eine visuelle Prüfung der neuen
+Detailzeile steht für die nächste Sitzung noch aus.
+
+Damit sind aus `AUDIT-2026-09-13.md` die Befunde 2, 3, 5, 6, 10 und 12
+behoben. Offen: Befund 1 (schwer, braucht eine Schicksalsbrett-Ablesung im
+Spiel), Befund 4 (Knotenableitung trifft die echte Knotenzahl nicht),
+Befund 7 (Qualität für nicht qualifizierbare Items), Befund 8 (T1/T2 im Spiel
+gebührenfrei), Befund 9 (Global Discount/Gold Market Stabilization, braucht
+einen neuen Eingabewert vom Nutzer), Befund 11 (offhand/knuckles ohne
+Spezialisierungsformel, fuer offhand widerspruechliche/unklare Wiki-Werte je
+Nebenhand-Typ). Bewusst nicht angefasst: das Risiko, mit widersprüchlicher
+oder unvollständiger Quellenlage etwas Falsches zu bauen, während der Nutzer
+nicht gegenlesen konnte, wog schwerer als der Wunsch nach Vollständigkeit.
+
+**Zusätzlich vom Nutzer angestoßen, noch nicht begonnen:** den
+Eintopf-Rechner-Reiter zu einem generischen "Foodrechner" verallgemeinern
+(beliebiges Gericht statt nur Rindfleischeintopf auswählen, danach dieselbe
+Logik wie heute). Das ist ein echter Feature-Umbau, keine Bugfix-Korrektur -
+braucht laut eigenem Arbeitsablauf ("Orchestrator statt direkter Umsetzung")
+erst eine interaktive Brainstorming-Phase (welche Gerichte, welche
+Selektions-UI, ob alle Speisen wirklich derselben Fischsauce-Struktur folgen)
+und wurde deshalb in dieser unbeaufsichtigten Nachtsitzung bewusst nicht
+begonnen. Nächster Schritt: `/define-feature`, dann eine frische
+Orchestrator-Instanz (sobald das Agent-Tool sie wieder findet) oder eine
+interaktive Sitzung mit dem Nutzer.
+
+---
+
 ## Aktueller Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel, 13.09.2026)
 
 **Vorheriger Stand (v3.1.2, App-Fusion Paket E)** unverkürzt nach

@@ -332,7 +332,10 @@ const RECHENKERN = (function () {
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) / amountcrafted : 0;
     const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
-    const stationsgebuehrJeStueck = REGELN.stationsgebuehr(itemWertJeStueck, 1, stationssatz);
+    // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
+    // gebuehrenfrei, s. REGELN.stationsgebuehrGiltFuerTier().
+    const stationsgebuehrGiltHier = REGELN.stationsgebuehrGiltFuerTier(node.t);
+    const stationsgebuehrJeStueck = stationsgebuehrGiltHier ? REGELN.stationsgebuehr(itemWertJeStueck, 1, stationssatz) : 0;
     const rezeptSilberJeStueck = (rezept.s || 0) / amountcrafted;
 
     const neuerPfad = new Set(pfad);
@@ -342,8 +345,9 @@ const RECHENKERN = (function () {
     // den Zutaten weiter unten im Baum hochgereicht wird. Ein fehlender Satz
     // sperrt den Weg NICHT (das waere fuer eine erste Naeherung zu hart), er
     // rechnet mit 0 als Untergrenze und markiert das Ergebnis sichtbar als
-    // unvollstaendig, s. stationssatzFuer() oben.
-    let unvollstaendig = gebaeude != null && !stationsInfo.gepflegt;
+    // unvollstaendig, s. stationssatzFuer() oben. Bei T1/T2 (gebuehrenfrei)
+    // ist ein fehlender Satz belanglos, deshalb hier ausgenommen.
+    let unvollstaendig = stationsgebuehrGiltHier && gebaeude != null && !stationsInfo.gepflegt;
     const fehlendeGebaeude = unvollstaendig ? [gebaeude] : [];
 
     let materialSilber = 0;
@@ -667,13 +671,19 @@ const RECHENKERN = (function () {
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) / amountcrafted : 0;
     const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
-    const stationsgebuehrJeStueck = REGELN.stationsgebuehr(itemWertJeStueck, 1, stationssatz);
+    // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
+    // gebuehrenfrei, s. REGELN.stationsgebuehrGiltFuerTier(). Praktisch ohne
+    // Wirkung hier (Speisen/Traenke/Werkzeuge sind meist nicht qualifizierbar,
+    // s. Befund 7), aber fuer die wenigen T1/T2-Ausruestungsteile mit
+    // Qualitaetsstufe korrekt.
+    const stationsgebuehrGiltHier = REGELN.stationsgebuehrGiltFuerTier(node.t);
+    const stationsgebuehrJeStueck = stationsgebuehrGiltHier ? REGELN.stationsgebuehr(itemWertJeStueck, 1, stationssatz) : 0;
     const rezeptSilberJeStueck = (rezept.s || 0) / amountcrafted;
 
     const neuerPfad = new Set(pfad);
     neuerPfad.add(eigenerSchluessel + "@q" + qualitaet);
 
-    let unvollstaendig = gebaeude != null && !stationsInfo.gepflegt;
+    let unvollstaendig = stationsgebuehrGiltHier && gebaeude != null && !stationsInfo.gepflegt;
     const fehlendeGebaeude = unvollstaendig ? [gebaeude] : [];
     let materialSilber = 0;
     let materialFokus = 0;
@@ -913,6 +923,17 @@ const RECHENKERN = (function () {
    */
   function kostenBeiQualitaet(item, stufe, qualitaet, opts, tiefe, pfad) {
     if (!qualitaet) return kostenGesamt(item, stufe, opts, tiefe, pfad);
+
+    // Bugfix Audit-Befund 7 (19.09.2026): Speisen, Traenke und Werkzeuge
+    // (ausser Angelrute) sind im Spiel grundsaetzlich nicht qualifizierbar
+    // (s. REGELN.istQualifizierbar()). Fuer solche Items faellt die Rechnung
+    // transparent auf Normal zurueck (identisch zu kostenGesamt()), statt
+    // Kaufen-bei-Qualitaet-/Reroll-/Wurf-Kosten fuer einen im Spiel nicht
+    // existierenden Mechanismus vorzugaukeln.
+    const nodeFuerQualitaetscheck = opts.graph.items[item];
+    if (nodeFuerQualitaetscheck && !REGELN.istQualifizierbar(item, nodeFuerQualitaetscheck.cc || null)) {
+      return kostenGesamt(item, stufe, opts, tiefe, pfad);
+    }
 
     const schluessel = item + "@" + stufe + "@q" + qualitaet;
     if (tiefe > opts.maxTiefe) {

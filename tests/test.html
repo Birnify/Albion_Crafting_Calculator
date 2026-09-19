@@ -1408,6 +1408,74 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Regressionstest Befund 7: nicht qualifizierbare Items ignorieren
+  // qualitaetsIndex (Bugfix Audit-Befund 7, 19.09.2026, s. AUDIT-2026-09-13.md)
+  // -----------------------------------------------------------------------
+  (function () {
+    if (typeof REZEPTGRAPH === "undefined" || !REZEPTGRAPH.items["T8_MEAL_STEW"]) {
+      pruefe("Regressionstest Befund 7 uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+    const preise = {
+      T8_PUMPKIN: { sell: { preis: 100, kein: false }, buy: { preis: 0, kein: true } },
+      T4_BREAD: { sell: { preis: 100, kein: false }, buy: { preis: 0, kein: true } },
+      T8_MEAT: { sell: { preis: 100, kein: false }, buy: { preis: 0, kein: true } },
+      T1_FISHSAUCE_LEVEL1: { sell: { preis: 500, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const optsBasis = { preise, preiseQualitaet: {}, stationssaetze: { Kueche: 380 }, stadt: "Lymhurst", fce: 0, fokuswert: 0, qualitaetsChancenpunkte: 500 };
+    const normal = RECHENKERN.kosten("T8_MEAL_STEW", 1, 1, Object.assign({}, optsBasis, { qualitaetsIndex: 0 }));
+    const mitZielqualitaet = RECHENKERN.kosten("T8_MEAL_STEW", 1, 1, Object.assign({}, optsBasis, { qualitaetsIndex: 2 }));
+    pruefe("Befund 7: T8_MEAL_STEW (Speise) loesbar, mit und ohne Zielqualitaet", !normal.gesperrt && !mitZielqualitaet.gesperrt);
+    pruefe(
+      "Befund 7: Zielqualitaet 'Herausragend' auf einer Speise aendert das Ergebnis NICHT (Speisen nicht qualifizierbar)",
+      normal.silber === mitZielqualitaet.silber && normal.fokus === mitZielqualitaet.fokus,
+      normal.silber + "/" + normal.fokus + " vs " + mitZielqualitaet.silber + "/" + mitZielqualitaet.fokus
+    );
+    pruefe(
+      "Befund 7: kein qualitaetsart-Feld gesetzt (Weg laeuft ueber den normalen kostenGesamt()-Pfad, nicht ueber craftBeiQualitaetKandidat)",
+      mitZielqualitaet.weg.qualitaetsart === undefined,
+      String(mitZielqualitaet.weg.qualitaetsart)
+    );
+  })();
+
+  // -----------------------------------------------------------------------
+  // Regressionstest Befund 8: T1/T2 gebuehrenfrei (Bugfix Audit-Befund 8,
+  // 19.09.2026, s. AUDIT-2026-09-13.md)
+  // -----------------------------------------------------------------------
+  (function () {
+    if (typeof REZEPTGRAPH === "undefined" || !REZEPTGRAPH.items["T2_BAG"]) {
+      pruefe("Regressionstest Befund 8 uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+    const preise = {
+      T2_CLOTH: { sell: { preis: 10, kein: false }, buy: { preis: 0, kein: true } },
+      T2_LEATHER: { sell: { preis: 10, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const mitSatz = RECHENKERN.kosten("T2_BAG", 0, 1, {
+      preise, preiseQualitaet: {}, stationssaetze: { Werkzeugmacher: 380 }, stadt: "Lymhurst", fce: 0, fokuswert: 0, qualitaetsIndex: 0, qualitaetsChancenpunkte: 0,
+    });
+    const ohneSatz = RECHENKERN.kosten("T2_BAG", 0, 1, {
+      preise, preiseQualitaet: {}, stationssaetze: {}, stadt: "Lymhurst", fce: 0, fokuswert: 0, qualitaetsIndex: 0, qualitaetsChancenpunkte: 0,
+    });
+    pruefe("Befund 8: T2_BAG (T2) loesbar", !mitSatz.gesperrt && !ohneSatz.gesperrt);
+    pruefe(
+      "Befund 8: T2_BAG hat trotz gesetztem Stationssatz (380) keine Stationsgebuehr (T2 gebuehrenfrei)",
+      mitSatz.weg.stationsgebuehrJeStueck === 0,
+      String(mitSatz.weg.stationsgebuehrJeStueck)
+    );
+    pruefe(
+      "Befund 8: T2_BAG bleibt auch OHNE gepflegten Stationssatz vollstaendig (die fehlende Angabe ist belanglos, da gebuehrenfrei)",
+      ohneSatz.unvollstaendig === false,
+      String(ohneSatz.unvollstaendig)
+    );
+    pruefe(
+      "Befund 8: Ergebnis mit und ohne Stationssatz identisch (Satz wirkt sich bei T2 nicht mehr aus)",
+      mitSatz.silber === ohneSatz.silber,
+      mitSatz.silber + " vs " + ohneSatz.silber
+    );
+  })();
+
+  // -----------------------------------------------------------------------
   // Regressionstest Craften+Reroll-Kombination (Bugfix Audit-Befund 10,
   // 14.09.2026, s. AUDIT-2026-09-13.md): bei einem Qualitaets-Wurf-Weg (keine
   // preservequality-Zutat) rechnet craftBeiQualitaetKandidat() jetzt zwei

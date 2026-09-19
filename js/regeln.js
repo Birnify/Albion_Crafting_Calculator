@@ -45,6 +45,29 @@ const REGELN = (function () {
 
   const QUALITAETEN = ["Normal", "Gut", "Herausragend", "Exzellent", "Meisterwerk"];
 
+  // Bugfix Audit-Befund 7 (19.09.2026, s. AUDIT-2026-09-13.md): Speisen und
+  // Traenke sind grundsaetzlich nicht qualifizierbar (Wiki "Item_Quality",
+  // woertlich: "All consumables can not be qualified. Consumables are foods,
+  // and potions."), ebenso Werkzeuge bis auf die Angelrute (Wiki, woertlich:
+  // "All the tools except fishing rod can not be qualified"). Die Angelrute
+  // ist im Rezeptgraphen an "FISHINGROD" im uniquename erkennbar (T3-T8,
+  // inkl. Avalon-Varianten, durchgaengiges Namensmuster im Dump).
+  const NICHT_QUALIFIZIERBAR_KATEGORIEN = new Set(["food", "potion", "tools"]);
+
+  /**
+   * Ob ein Item ueberhaupt qualifizierbar ist (Craft-Qualitaetswurf, Reroll,
+   * Kauf-bei-Qualitaet). `cc` fehlt/unbekannt: bewusst NICHT einschraenken
+   * (koennte alles sein, s. gleiches Vorgehen wie stationssatzFuer()/
+   * stationsgebuehrGiltFuerTier() bei fehlender Angabe - konservativ in die
+   * Richtung "kein neuer Fehler", hier aber andersherum: nicht qualifizierbar
+   * ist die EINSCHRAENKUNG, also gilt bei Unsicherheit "qualifizierbar").
+   */
+  function istQualifizierbar(item, cc) {
+    if (!cc || !NICHT_QUALIFIZIERBAR_KATEGORIEN.has(cc)) return true;
+    if (cc === "tools" && /FISHINGROD/.test(String(item || ""))) return true;
+    return false;
+  }
+
   // Craft-Qualitaetswurf, Basistabelle OHNE Bonus (Korn, Entwickler-Forumspost,
   // verlinkt vom offiziellen Wiki "Item_Quality", s. ../../CLAUDE.md
   // "Craft-Qualitaetswurf"). Summe = 1 (68,9+25+5+1+0,1 %).
@@ -619,6 +642,19 @@ const REGELN = (function () {
     return Math.max(0, wert);
   }
 
+  /**
+   * Ob fuer ein Item mit Tier `tier` ueberhaupt eine Stationsgebuehr anfaellt
+   * (Bugfix Audit-Befund 8, 19.09.2026, s. AUDIT-2026-09-13.md). Wiki
+   * "Building", woertlich: "This fee does not affect any service that does
+   * not cost Silver, such as refining and crafting Tier 2 or lower items."
+   * Ein fehlendes Tier (null/undefined) gilt konservativ als gebuehrenpflichtig
+   * (kein stillschweigender Rabatt bei fehlender Angabe, dieselbe Vorsicht
+   * wie bei stationssatzFuer() in rechenkern.js).
+   */
+  function stationsgebuehrGiltFuerTier(tier) {
+    return tier == null || tier > 2;
+  }
+
   // -----------------------------------------------------------------------
   // Steuer und Einstellungsgebuehr (Verkaufsseite bzw. eigene Kauforder)
   // -----------------------------------------------------------------------
@@ -1077,6 +1113,35 @@ const REGELN = (function () {
       nahe(stationsgebuehr(576, 10, 380), 2462.4, 1),
       String(stationsgebuehr(576, 10, 380))
     );
+
+    // Bugfix Audit-Befund 8 (19.09.2026): T1/T2 gebuehrenfrei.
+    pruefe("stationsgebuehrGiltFuerTier(1) = false (T1 gebuehrenfrei laut Wiki)", stationsgebuehrGiltFuerTier(1) === false);
+    pruefe("stationsgebuehrGiltFuerTier(2) = false (T2 gebuehrenfrei laut Wiki)", stationsgebuehrGiltFuerTier(2) === false);
+    pruefe("stationsgebuehrGiltFuerTier(3) = true (ab T3 gebuehrenpflichtig)", stationsgebuehrGiltFuerTier(3) === true);
+    pruefe("stationsgebuehrGiltFuerTier(8) = true", stationsgebuehrGiltFuerTier(8) === true);
+    pruefe(
+      "stationsgebuehrGiltFuerTier(null/undefined) = true (fehlendes Tier gilt konservativ als gebuehrenpflichtig)",
+      stationsgebuehrGiltFuerTier(null) === true && stationsgebuehrGiltFuerTier(undefined) === true
+    );
+
+    // Bugfix Audit-Befund 7 (19.09.2026): Speisen/Traenke/Werkzeuge (ausser
+    // Angelrute) sind nicht qualifizierbar.
+    pruefe("istQualifizierbar(T8_MEAL_STEW, food) = false (Speisen nicht qualifizierbar)", istQualifizierbar("T8_MEAL_STEW", "food") === false);
+    pruefe("istQualifizierbar(T4_POTION_HEAL, potion) = false (Traenke nicht qualifizierbar)", istQualifizierbar("T4_POTION_HEAL", "potion") === false);
+    pruefe(
+      "istQualifizierbar(T4_2H_TOOL_PICK, tools) = false (Werkzeuge ausser Angelrute nicht qualifizierbar)",
+      istQualifizierbar("T4_2H_TOOL_PICK", "tools") === false
+    );
+    pruefe(
+      "istQualifizierbar(T4_2H_TOOL_FISHINGROD, tools) = true (Wiki-Ausnahme Angelrute)",
+      istQualifizierbar("T4_2H_TOOL_FISHINGROD", "tools") === true
+    );
+    pruefe(
+      "istQualifizierbar(T4_2H_TOOL_FISHINGROD_AVALON, tools) = true (Avalon-Angelrute ebenfalls)",
+      istQualifizierbar("T4_2H_TOOL_FISHINGROD_AVALON", "tools") === true
+    );
+    pruefe("istQualifizierbar(T4_MAIN_SWORD, sword) = true (gewoehnliche Ausruestung unveraendert qualifizierbar)", istQualifizierbar("T4_MAIN_SWORD", "sword") === true);
+    pruefe("istQualifizierbar(irgendein Item, ohne cc) = true (unbekannte Kategorie nicht einschraenken)", istQualifizierbar("IRGENDWAS", null) === true);
     pruefe(
       "fokusMultiplikator: negative FCE wird bei 0 gekappt, Multiplikator bleibt <= 1 (nie mehr als voller Rohfokus)",
       fokusMultiplikator(-500) === fokusMultiplikator(0) && fokusMultiplikator(-500) === 1,
@@ -1279,6 +1344,8 @@ const REGELN = (function () {
     RRR_TAGESBONUS_GOLD,
     FOKUS_HALBIERUNG_FCE,
     QUALITAETEN,
+    NICHT_QUALIFIZIERBAR_KATEGORIEN,
+    istQualifizierbar,
     QUALITAETSWURF_BASIS,
     REROLL_UEBERGANG,
     REROLL_FAKTOR,
@@ -1303,6 +1370,7 @@ const REGELN = (function () {
     qualitaetsVerteilung,
     rezeptHatPreservequality,
     stationsgebuehr,
+    stationsgebuehrGiltFuerTier,
     steuerUndGebuehr,
     kaufKostenJeStueck,
     parseApiDatumUtc,

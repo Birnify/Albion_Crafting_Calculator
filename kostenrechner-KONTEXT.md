@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-14 · Version: v3.1.4 · Vier Audit-Befunde (5/6/12/10): shapeshifterstaff ergänzt, gatherergear-FCE korrigiert, RRR-Konstanten dokumentiert, Craften+Reroll-Strategie kombiniert
+Stand: 2026-09-19 · Version: v3.1.5 · Befund 7 und 8: Qualität für nicht qualifizierbare Items ignoriert, T1/T2 gebührenfrei
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -45,107 +45,69 @@ Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
 
-## Aktueller Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung, 14.09.2026)
+## Aktueller Stand (v3.1.5, Befund 7 und 8 aus dem Audit, 19.09.2026)
 
-**Vorheriger Stand (v3.1.3, Bugfix Spezialisierungsknoten-FCE-Formel)**
+**Vorheriger Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung)**
 unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
 (Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** vier weitere, durch das offizielle Wiki belegte Befunde aus
-`AUDIT-2026-09-13.md` beheben, vom Nutzer in dieser Reihenfolge angefordert:
-Befund 5, 6, 12, 10 ("und alle Befunde die du sonst noch ohne mich machen
-kannst"). Komplett autonom umgesetzt (Nutzer schlief), ohne
-`albion-cycle-orchestrator` (weiterhin nicht über das Agent-Tool aufrufbar).
+**Auftrag:** die beiden Audit-Befunde beheben, die in der Nacht-Sitzung
+(v3.1.4) fälschlich als "braucht den Nutzer" eingestuft worden waren, obwohl
+sie klare, unstrittige Wiki-Fakten ohne jede Ermessensfrage sind - Korrektur
+dieser Fehleinschätzung direkt zu Beginn dieser Sitzung, bevor die eigentlich
+nutzerbedürftigen Befunde (1, 4, 9, 11) angegangen werden.
 
 **Umgesetzt** (`js/regeln.js`, `js/rechenkern.js`, `js/ui.js`,
-`js/eintopf-rechenkern.js`, `tests/test.html`):
+`tests/test.html`):
 
-1. **Befund 5, `shapeshifterstaff` fehlte in allen drei Kategorie-Tabellen.**
-   `KATEGORIE_ZU_SPEZTYP.shapeshifterstaff = "waffen_ruestung"` (Wiki nennt
-   keine abweichende Struktur). `STADTBONUS.Caerleon.craft` um
-   `shapeshifterstaff` ergänzt (Wiki "Resource_return_rate", Zeile
-   Caerleon/Weapons: "War Gloves, Shapeshifter Staff", klar belegt). Für das
-   Gebäude **kein Beleg gefunden** (Crafting-Seite, Hunter's-Lodge-Seite und
-   Shapeshifter-Seite gezielt durchsucht, auch im rohen HTML, kein einziges
-   Vorkommen) - deshalb wie `offhand`/`knuckles`/`meat_*` eine eigene
-   Gebührengruppe ("Wandlerstab") statt einer erfundenen Zuordnung zur
-   Jägerhütte.
-2. **Befund 6, `gatherergear` fälschlich als `werkzeug_fused` eingeordnet.**
-   Wiki "Specializations" trennt beide ausdrücklich: `werkzeug_fused` hat 250
-   Unique + 60 Mutual in einem verschmolzenen Knoten ohne eigene
-   Meisterschaft, Sammlerausrüstung dagegen 250 Unique + **nur 30** Mutual je
-   eigenem Knoten plus eine separate, hier als Meisterschaftsfeld modellierte
-   Komponente von 60 FCE je Stufe (im Spiel eigentlich der geteilte fused
-   Werkzeug-Meisterschaftsknoten, s. Codekommentar für die bewusste
-   Vereinfachung). Neuer `SPEZ_TYP.gatherergear`, Gegenprobe exakt gegen den
-   wörtlichen Wiki-Wert (ein Knoten + Meisterschaft auf Stufe 100 = 34.000
-   FCE).
-3. **Befund 12, zwei leicht verschiedene RRR-Konstanten (kosmetisch).**
-   `js/eintopf-rechenkern.js`s `RET_OHNE=0,152` ist eine EIGENE, unabhängig im
-   Spiel abgelesene Messung, `js/regeln.js`s `RRR_GRUNDPRODUKTION=0,18`
-   liefert über die Formel 0,152542... - beide sind demselben Spielwert aus
-   zwei verschiedenen Quellen zugeordnet (Screenshot vs. Formel), keine
-   davon wurde geändert (Regel "Belegte Werte nie ohne neuen Beleg ändern").
-   Nur Kommentare in beiden Dateien ergänzt, die den Zusammenhang erklären.
-4. **Befund 10, Craft-Wurf und Reroll wurden nie kombiniert.** Neue Funktion
-   `REGELN.qualitaetsVerteilung(chancenpunkte)`: volle
-   Wahrscheinlichkeitsverteilung über die gelandete Qualität eines
-   Craft-Versuchs (nicht nur Erfolg/Misserfolg gegen ein Ziel wie die
-   bestehende `qualitaetWurfErfolgswahrscheinlichkeit()`, die unverändert
-   bleibt). `craftBeiQualitaetKandidat()` in `rechenkern.js` rechnet jetzt bei
-   jedem Qualitäts-Wurf-Weg (kein `preservequality`) zwei Strategien
-   gegeneinander - "immer neu craften bis ein Versuch direkt trifft"
-   (bisheriges Verhalten, unverändert als Fallback) und "einmal craften, die
-   gelandete Qualität danach hochrerollen" (neu, Materialien/Fokus nur
-   einmal, Reroll kostet laut Spielregel keinen Fokus) - und wählt die
-   günstigere über den Zielwert. Neues Feld `weg.qualitaetsart` kann jetzt
-   auch `"wurf+reroll"` sein, `weg.erwarteterRerollSilber` neu. `js/ui.js` an
-   beiden Stellen (Bauplan-Detailzeile, Tooltip) um diesen Fall ergänzt, sonst
-   keine Logikänderung.
+1. **Befund 8, keine Stationsgebühr für T1/T2.** Wiki "Building", wörtlich:
+   "This fee does not affect any service that does not cost Silver, such as
+   refining and crafting Tier 2 or lower items." Neue Funktion
+   `REGELN.stationsgebuehrGiltFuerTier(tier)` (fehlendes Tier gilt konservativ
+   weiter als gebührenpflichtig). In `craftKandidat()` und
+   `craftBeiQualitaetKandidat()` (`rechenkern.js`) eingebaut: Stationsgebühr
+   wird bei T1/T2 auf 0 gesetzt, ein fehlender Stationssatz macht das Ergebnis
+   dort auch nicht mehr "unvollständig" (die Angabe ist bei Gebührenfreiheit
+   belanglos). Betrifft 35 Graph-Items.
+2. **Befund 7, Qualität für nicht qualifizierbare Items.** Wiki
+   "Item_Quality", wörtlich: "All consumables can not be qualified" und "All
+   the tools except fishing rod can not be qualified". Neue Funktion
+   `REGELN.istQualifizierbar(item, cc)`: `food`/`potion` immer false,
+   `tools` false außer bei `FISHINGROD` im uniquename (Wiki-Ausnahme, im Dump
+   konsistent benannt über alle Tiers/Avalon-Varianten).
+   `kostenBeiQualitaet()` in `rechenkern.js` delegiert für solche Items direkt
+   an `kostenGesamt()` (identisch zu Zielqualität Normal), statt
+   Kaufen-bei-Qualität/Reroll/Wurf-Kosten für einen im Spiel nicht
+   existierenden Mechanismus vorzugaukeln. `js/ui.js`/`renderHero()` zeigt bei
+   ignorierter Zielqualität jetzt einen Hinweis ("Nicht qualifizierbar ...,
+   Zielqualität wird für dieses Item ignoriert"), live im Browser an
+   `T8_MEAL_STEW` mit Zielqualität "Herausragend" geprüft. Betrifft 65
+   Speise-, 43 Tränke- und 89 Werkzeug-Items (minus die Angelrute-Ausnahme).
 
-**Getestet:** `js/regeln.js` selbsttest() um 33 neue Tests erweitert:
-`qualitaetsVerteilung` gegen die bereits getestete
-`qualitaetWurfErfolgswahrscheinlichkeit` gegengeprüft (Tail-Summe muss exakt
-übereinstimmen, fünf Bonuswerte), plus `shapeshifterstaff`/`gatherergear`-
-Tabellen- und Formel-Tests (u. a. Wiki-Gegenprobe 34.000 FCE für einen vollen
-Gathergear-Knoten). `tests/test.html` um zwei Integrationstests für die
-Craften+Reroll-Kombination ergänzt (reales Item `T4_MAIN_SWORD`, ein
-Szenario, in dem die neue Strategie klar gewinnen muss (teure Materialien,
-Zielqualität Meisterwerk, 0 Bonus, ~24 Mio. Silber nach alter Rechnung
-vs. tatsächlich 2,12 Mio.), ein Szenario, in dem die alte Strategie weiterhin
-gewinnen muss (billige Materialien, Zielqualität Gut), beide mit exakten
-Regressionswerten). **377/377 grün** (344 + 33 neue), über den lokalen Server
-im Browser ausgeführt, keine Konsolenfehler.
+**Getestet:** `js/regeln.js` selbsttest() um 13 neue Tests erweitert
+(`stationsgebuehrGiltFuerTier`: T1/T2 false, ab T3 true, fehlendes Tier
+konservativ true; `istQualifizierbar`: food/potion/tools false, Angelrute
+und Avalon-Angelrute Ausnahme true, gewöhnliche Ausrüstung unverändert true,
+unbekannte Kategorie true). `tests/test.html` um 7 Integrationstests
+ergänzt (reale Items `T8_MEAL_STEW`/`T2_BAG`: Zielqualität ändert bei der
+Speise weder Silber noch Fokus und setzt kein `qualitaetsart`-Feld;
+`T2_BAG` hat trotz gesetztem Stationssatz 380 keine Gebühr und bleibt auch
+ohne gepflegten Satz vollständig). **396/396 grün** (377 + 19 neue), über
+den lokalen Server im Browser ausgeführt, keine Konsolenfehler.
 
-**Gehärtet:** `Kostenrechner.html` über den lokalen Server geladen, keine
-Konsolenfehler. Wegen der Uhrzeit (Nutzer schlief) keine vertiefte manuelle
-Klick-Gegenprobe der neuen Craften+Reroll-Anzeige im Bauplan wie bei
-Befund 5/6 am Vortag - die Node-Gegenrechnung und die beiden neuen
-Integrationstests decken die Kernlogik ab, eine visuelle Prüfung der neuen
-Detailzeile steht für die nächste Sitzung noch aus.
+**Gehärtet:** live im Browser geprüft (`Kostenrechner.html` über den lokalen
+Server, direkte DOM-Steuerung statt Klick-Simulation wegen eines leeren
+Screenshots): Zielqualität auf "Herausragend" gestellt, Rindfleischeintopf
+gesucht und ausgewählt - der neue Hinweistext erscheint exakt wie erwartet,
+Kosten/Fokus unverändert gegenüber Normal-Qualität.
 
-Damit sind aus `AUDIT-2026-09-13.md` die Befunde 2, 3, 5, 6, 10 und 12
-behoben. Offen: Befund 1 (schwer, braucht eine Schicksalsbrett-Ablesung im
-Spiel), Befund 4 (Knotenableitung trifft die echte Knotenzahl nicht),
-Befund 7 (Qualität für nicht qualifizierbare Items), Befund 8 (T1/T2 im Spiel
-gebührenfrei), Befund 9 (Global Discount/Gold Market Stabilization, braucht
-einen neuen Eingabewert vom Nutzer), Befund 11 (offhand/knuckles ohne
-Spezialisierungsformel, fuer offhand widerspruechliche/unklare Wiki-Werte je
-Nebenhand-Typ). Bewusst nicht angefasst: das Risiko, mit widersprüchlicher
-oder unvollständiger Quellenlage etwas Falsches zu bauen, während der Nutzer
-nicht gegenlesen konnte, wog schwerer als der Wunsch nach Vollständigkeit.
-
-**Zusätzlich vom Nutzer angestoßen, noch nicht begonnen:** den
-Eintopf-Rechner-Reiter zu einem generischen "Foodrechner" verallgemeinern
-(beliebiges Gericht statt nur Rindfleischeintopf auswählen, danach dieselbe
-Logik wie heute). Das ist ein echter Feature-Umbau, keine Bugfix-Korrektur -
-braucht laut eigenem Arbeitsablauf ("Orchestrator statt direkter Umsetzung")
-erst eine interaktive Brainstorming-Phase (welche Gerichte, welche
-Selektions-UI, ob alle Speisen wirklich derselben Fischsauce-Struktur folgen)
-und wurde deshalb in dieser unbeaufsichtigten Nachtsitzung bewusst nicht
-begonnen. Nächster Schritt: `/define-feature`, dann eine frische
-Orchestrator-Instanz (sobald das Agent-Tool sie wieder findet) oder eine
-interaktive Sitzung mit dem Nutzer.
+Damit sind aus `AUDIT-2026-09-13.md` zusätzlich die Befunde 7 und 8 behoben,
+zusammen mit v3.1.3/v3.1.4 also 2, 3, 5, 6, 7, 8, 10, 12. Offen bleiben
+Befund 1 (braucht eine Schicksalsbrett-Ablesung im Spiel), Befund 4
+(Knotenableitung trifft die echte Knotenzahl nicht), Befund 9 (Global
+Discount/Gold Market Stabilization, braucht einen neuen Eingabewert), Befund
+11 (offhand/knuckles ohne Spezialisierungsformel) - alle vier werden jetzt,
+mit dem Nutzer im Gespräch, angegangen.
 
 ---
 
@@ -204,7 +166,12 @@ gatherergear-Tabellen, qualitaetsVerteilung()) + `js/rechenkern.js`
 (craftBeiQualitaetKandidat() Craften+Reroll-Kombination) + `js/ui.js`
 (neuer qualitaetsart-Fall) + `js/eintopf-rechenkern.js` (nur Kommentar) +
 `tests/test.html` (33 neue Tests) geaendert, s. "Aktueller Stand" und
-`AUDIT-2026-09-13.md` Befund 5/6/10/12):
+`AUDIT-2026-09-13.md` Befund 5/6/10/12) plus Befund 7+8 (v3.1.5,
+`js/regeln.js` (istQualifizierbar(), stationsgebuehrGiltFuerTier()) +
+`js/rechenkern.js` (kostenBeiQualitaet()/craftKandidat()/
+craftBeiQualitaetKandidat()) + `js/ui.js` (renderHero()-Hinweis) +
+`tests/test.html` (20 neue Tests) geaendert, s. "Aktueller Stand" und
+`AUDIT-2026-09-13.md` Befund 7/8):
 
 ```
 Kostenrechner/
@@ -278,13 +245,16 @@ Kostenrechner/
                               ergaenzt, SPEZ_TYP.gatherergear eigener Typ (vorher faelschlich
                               werkzeug_fused), neue Funktion qualitaetsVerteilung() (volle
                               Wurf-Qualitaetsverteilung, Basis fuer die Craften+Reroll-
-                              Kombination in rechenkern.js) v3.1.4, s. "Aktueller Stand" und
-                              AUDIT-2026-09-13.md Befund 5/6/10): itemWert, RRR, Stationsgebuehr
+                              Kombination in rechenkern.js) v3.1.4; neue Funktionen
+                              stationsgebuehrGiltFuerTier() (T1/T2 gebuehrenfrei) und
+                              istQualifizierbar() (Speisen/Traenke/Werkzeuge ausser Angelrute
+                              nicht qualifizierbar) v3.1.5, s. AUDIT-2026-09-13.md Befund 7/8):
+                              itemWert, RRR, Stationsgebuehr
                               (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
                               rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
                               qualitaetsVerteilung()/rerollKostenZuQualitaet(),
                               Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1/v3.1.3/v3.1.4).
-                              Unveraendert seit v3.1.4.
+                              Unveraendert seit v3.1.5.
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
                               Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
                               fceFuer() um Knoten-Ebene erweitert v1.5.0, reicht cc an
@@ -302,7 +272,11 @@ Kostenrechner/
                               Craften vs. Craften+Reroll ueber REGELN.qualitaetsVerteilung()/
                               rerollKostenZuQualitaet()) und waehlt die guenstigere, neue Felder
                               weg.qualitaetsart="wurf+reroll"/weg.erwarteterRerollSilber v3.1.4,
-                              s. AUDIT-2026-09-13.md Befund 10. Unveraendert seit v3.1.4.
+                              s. AUDIT-2026-09-13.md Befund 10. craftKandidat()/
+                              craftBeiQualitaetKandidat() setzen die Stationsgebuehr bei T1/T2
+                              auf 0, kostenBeiQualitaet() delegiert fuer nicht qualifizierbare
+                              Items direkt an kostenGesamt() v3.1.5, s. Befund 7/8. Unveraendert
+                              seit v3.1.5.
     ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
                               Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0,
                               Bauplan-Knoten als Karten statt Fliesstext v1.3.0; Qualitaet-
@@ -323,7 +297,9 @@ Kostenrechner/
                               (Meisterschaftsfeld-Sichtbarkeit haengt schon vorher an
                               typ.einFeld) v3.1.3; neuer Fall weg.qualitaetsart==="wurf+reroll"
                               an beiden Detailzeilen-Stellen (Bauplan-Karte, Tooltip) ergaenzt
-                              v3.1.4, s. AUDIT-2026-09-13.md Befund 10):
+                              v3.1.4; renderHero() zeigt einen Hinweis, wenn die eingestellte
+                              Zielqualitaet fuer das gewaehlte Item ignoriert wird (nicht
+                              qualifizierbar) v3.1.5, s. AUDIT-2026-09-13.md Befund 7):
                               Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
                               Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
   kostenrechner-PLAN.md
@@ -362,7 +338,10 @@ Kostenrechner/
   Versionen/v3.1.2 - App-Fusion Paket E, alte eigenstaendige Eintopf-Rechner-Dateien archiviert/
   Versionen/v3.1.3 - Bugfix Spezialisierungsknoten-FCE-Formel/
   Versionen/v3.1.4 - Vier Audit-Befunde (shapeshifterstaff, gatherergear, RRR-Kommentare, Craften+Reroll)/
-  tests/test.html           377 Tests (338 bisherige + 33 neu fuer shapeshifterstaff/
+  Versionen/v3.1.5 - Befund 7 und 8, Qualitaet ignoriert und T1-T2 gebuehrenfrei/
+  tests/test.html           396 Tests (377 bisherige + 19 neu fuer istQualifizierbar()/
+                              stationsgebuehrGiltFuerTier() und deren Integration, v3.1.5;
+                              338 davon + 33 neu fuer shapeshifterstaff/
                               gatherergear/qualitaetsVerteilung()/Craften+Reroll-Kombination,
                               v3.1.4; 335 davon + 3 neu/angepasst fuer
                               fceAusSpezialisierungsknoten(), v3.1.3, Bugfix
