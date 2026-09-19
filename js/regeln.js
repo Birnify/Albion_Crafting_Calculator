@@ -423,6 +423,42 @@ const REGELN = (function () {
   }
 
   /**
+   * Ist ein abgeleiteter Gruppenschluessel im Spiel ueberhaupt ein
+   * Schicksalsbrett-Knoten? (Audit-Befund 4, 19.09.2026.)
+   *
+   * Die Ableitung aus dem Rezeptgraphen (s. spezialisierungsGruppen()) liefert
+   * mehr Gruppen als es echte Knoten gibt. Hier gefiltert wird bisher nur der
+   * Fall, der sauber belegt ist:
+   *
+   *  - Veredeln: echte Knoten existieren erst ab T4. Beleg, Wiki
+   *    "Specializations", Abschnitt Refining: die voll ausgebaute Kette ergibt
+   *    40.000 FCE = 25.000 Unique + 15.000 Mutual, und 15.000 = 5 x 3.000,
+   *    also genau FUENF Knoten je Kette (T4 bis T8); ebenso CLAUDE.md
+   *    "Fokuskosten": "Erreichbare Endwerte laut Wiki: 40.000 FCE fuer
+   *    T4-T8-Veredeln". Der Rezeptgraph enthaelt daneben T2-/T3-Veredelungs-
+   *    rezepte (die kosten zwar Fokus, haben aber keinen eigenen Knoten). Die
+   *    tauchten bis hierher als zwei zusaetzliche Eingabefelder auf und haben
+   *    die Mutual-Summe auf bis zu 7 x 3.000 = 21.000 statt 15.000 aufgeblaeht,
+   *    also den erreichbaren Endwert auf 46.000 statt 40.000 FCE.
+   *
+   * food und potion sind bewusst NICHT gefiltert: DASS die App dort zu viele
+   * Gruppen ableitet (25 statt 9 Kochknoten, 15 statt 8 Alchemistenknoten) ist
+   * belegt, WELCHE der abgeleiteten Gruppen die echten Knoten sind aber nicht.
+   * Das braucht eine Schicksalsbrett-Ablesung, s. AUDIT-2026-09-13.md Befund 4;
+   * bis dahin wird nichts geraten.
+   *
+   * Schluessel ohne Tier-Praefix (Ausruestung, Testschluessel) bleiben immer
+   * gueltig.
+   * @param {?string} cc
+   * @param {string} gruppenSchluessel
+   */
+  function istEchterKnoten(cc, gruppenSchluessel) {
+    if (spezTypVonKategorie(cc) !== "veredeln") return true;
+    const treffer = /^T(\d+)_/.exec(String(gruppenSchluessel || ""));
+    return !treffer || Number(treffer[1]) >= 4;
+  }
+
+  /**
    * Alle Spezialisierungsknoten-Gruppen einer Kategorie, abgeleitet aus dem
    * Rezeptgraphen (nicht von Hand gepflegt): jedes Item mit dieser
    * craftingcategory, gruppiert nach gruppenSchluesselVonItem(). Sortiert
@@ -437,6 +473,7 @@ const REGELN = (function () {
       const node = g.items[item];
       if (!node || node.cc !== cc) return;
       const schluessel = gruppenSchluesselVonItem(item, cc);
+      if (!istEchterKnoten(cc, schluessel)) return; // z.B. T2-/T3-Veredeln, s. Befund 4
       if (!gruppen[schluessel]) gruppen[schluessel] = { schluessel, items: [] };
       gruppen[schluessel].items.push(item);
     });
@@ -472,8 +509,16 @@ const REGELN = (function () {
     const typ = SPEZ_TYP[spezTypVonKategorie(cc)];
     if (!typ) return 0;
     const stufen = knotenStufen || {};
-    let fce = Math.max(0, stufen[gruppenSchluessel] || 0) * typ.unique;
+    // istEchterKnoten() filtert Gruppen, die es im Spiel gar nicht gibt
+    // (Befund 4). Das gilt auch fuer bereits gespeicherte Stufen aus einer
+    // frueheren Sitzung: sonst wirkte ein alter T2-/T3-Veredeln-Eintrag aus
+    // localStorage weiter als Mutual-Anteil, obwohl das Feld nicht mehr
+    // angezeigt wird.
+    let fce = istEchterKnoten(cc, gruppenSchluessel)
+      ? Math.max(0, stufen[gruppenSchluessel] || 0) * typ.unique
+      : 0;
     Object.keys(stufen).forEach((k) => {
+      if (!istEchterKnoten(cc, k)) return;
       fce += Math.max(0, stufen[k] || 0) * typ.mutual; // inkl. des eigenen Knotens (Befund 2)
     });
     if (!typ.einFeld) fce += Math.max(0, meisterschaftsstufe || 0) * typ.mastery;
@@ -948,6 +993,51 @@ const REGELN = (function () {
         gruppenSchluesselVonItem("T4_HEAD_CLOTH_SET1", "cloth_helmet") === "HEAD_CLOTH_SET1"
     );
 
+    // -- Audit-Befund 4 (19.09.2026): echte Veredelungsknoten erst ab T4 ----
+    pruefe(
+      "istEchterKnoten(fiber, T2_CLOTH/T3_CLOTH) = false (kein Schicksalsbrett-Knoten unter T4)",
+      istEchterKnoten("fiber", "T2_CLOTH") === false && istEchterKnoten("fiber", "T3_CLOTH") === false
+    );
+    pruefe(
+      "istEchterKnoten(fiber, T4_CLOTH..T8_CLOTH) = true (die fuenf echten Knoten der Kette)",
+      ["T4_CLOTH", "T5_CLOTH", "T6_CLOTH", "T7_CLOTH", "T8_CLOTH"].every((k) => istEchterKnoten("fiber", k) === true)
+    );
+    pruefe(
+      "istEchterKnoten: nicht-veredelnde Kategorien bleiben ungefiltert (food/potion sind bewusst offen, s. Befund 4)",
+      istEchterKnoten("food", "MEAL_STEW") === true &&
+        istEchterKnoten("food", "FLOUR") === true &&
+        istEchterKnoten("potion", "POTION_HEAL") === true &&
+        istEchterKnoten("sword", "MAIN_SWORD") === true
+    );
+    pruefe(
+      "istEchterKnoten: Schluessel ohne Tier-Praefix bleiben auch beim Veredeln gueltig",
+      istEchterKnoten("fiber", "A") === true
+    );
+
+    (function () {
+      // Befund 4: eine alte, aus einer frueheren Sitzung gespeicherte T2-/T3-
+      // Stufe darf den Mutual-Anteil nicht mehr aufblaehen. Fuenf echte Knoten
+      // auf Stufe 100 ergeben 40.000 FCE (Wiki-Endwert), zwei zusaetzliche
+      // T2-/T3-Eintraege duerfen daran nichts aendern.
+      const nurEcht = { T4_CLOTH: 100, T5_CLOTH: 100, T6_CLOTH: 100, T7_CLOTH: 100, T8_CLOTH: 100 };
+      const mitAltlast = Object.assign({ T2_CLOTH: 100, T3_CLOTH: 100 }, nurEcht);
+      pruefe(
+        "fceAusSpezialisierungsknoten (Veredeln): fuenf echte Knoten T4-T8 auf Stufe 100 ergeben den Wiki-Endwert 40.000 FCE",
+        fceAusSpezialisierungsknoten("fiber", "T4_CLOTH", nurEcht, 0) === 40000,
+        fceAusSpezialisierungsknoten("fiber", "T4_CLOTH", nurEcht, 0)
+      );
+      pruefe(
+        "fceAusSpezialisierungsknoten (Veredeln): gespeicherte T2-/T3-Stufen zaehlen nicht mehr mit (Befund 4, vorher 46.000)",
+        fceAusSpezialisierungsknoten("fiber", "T4_CLOTH", mitAltlast, 0) === 40000,
+        fceAusSpezialisierungsknoten("fiber", "T4_CLOTH", mitAltlast, 0)
+      );
+      pruefe(
+        "fceAusSpezialisierungsknoten (Veredeln): ein T2-Knoten als Ziel bekommt keinen Unique-Anteil, nur den Mutual-Anteil der echten Knoten",
+        fceAusSpezialisierungsknoten("fiber", "T2_CLOTH", mitAltlast, 0) === 15000,
+        fceAusSpezialisierungsknoten("fiber", "T2_CLOTH", mitAltlast, 0)
+      );
+    })();
+
     (function () {
       // waffen_ruestung: unique 250, mutual 30, mastery 30. Knoten A Stufe 10,
       // Knoten B Stufe 5, Meisterschaft 3. Mutual wirkt seit dem Fix (Befund 2,
@@ -1094,6 +1184,20 @@ const REGELN = (function () {
           !gruppen.some((g) => /^CLOTH/.test(g.schluessel)),
           JSON.stringify(gruppen.map((g) => g.schluessel))
         );
+      })();
+      (function () {
+        // Audit-Befund 4 (19.09.2026): der Rezeptgraph enthaelt je Veredelungs-
+        // kette sieben Tier-Stufen (T2 bis T8), echte Schicksalsbrett-Knoten
+        // gibt es aber nur fuenf (T4 bis T8, Wiki-Endwert 40.000 FCE). Die
+        // beiden ueberzaehligen Gruppen tauchten vorher als Eingabefelder auf.
+        ["fiber", "ore", "rock", "hide", "wood"].forEach((cc) => {
+          const gruppen = spezialisierungsGruppen(cc);
+          pruefe(
+            "spezialisierungsGruppen(" + cc + "): genau 5 Knoten (T4 bis T8), keine T2-/T3-Gruppe mehr",
+            gruppen.length === 5 && !gruppen.some((g) => /^T[123]_/.test(g.schluessel)),
+            JSON.stringify(gruppen.map((g) => g.schluessel))
+          );
+        });
       })();
     } else {
       pruefe("spezialisierungsGruppen-Gegenproben uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
@@ -1362,6 +1466,7 @@ const REGELN = (function () {
     KATEGORIE_ZU_SPEZTYP,
     spezTypVonKategorie,
     gruppenSchluesselVonItem,
+    istEchterKnoten,
     spezialisierungsGruppen,
     fceAusSpezialisierungsknoten,
     rerollUebergaenge,

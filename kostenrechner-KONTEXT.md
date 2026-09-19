@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.1.6 · Repo für Claude Projects eigenständig gemacht (CLAUDE.md, Agenten, Skill, Eintopf-Archiv ins Repo kopiert)
+Stand: 2026-09-19 · Version: v3.1.7 · Audit-Befund 4 für Veredeln behoben (Knoten erst ab T4), Befund 9 und 11 nachgeprüft und begründet offen gelassen
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -45,75 +45,74 @@ Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
 ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
 Abschnitt "Aktueller Stand" unten für Details.
 
-## Aktueller Stand (v3.1.6, Repo für Claude Projects eigenständig gemacht, 19.09.2026)
+## Aktueller Stand (v3.1.7, Audit-Befund 4 für Veredeln behoben, 19.09.2026)
 
-**Vorheriger Stand (v3.1.5, Befund 7 und 8 aus dem Audit)** unverkürzt nach
-`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
-"Entwicklungsweise / Mitarbeit" unten).
+**Vorheriger Stand (v3.1.6, Repo für Claude Projects eigenständig gemacht)**
+unverkürzt nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert
+(Schlankheitsregel, s. "Entwicklungsweise / Mitarbeit" unten).
 
-**Auftrag:** dieses Repository so weit eigenständig machen, dass eine
-Claude-Code-Projekt-Anbindung (Beta, nur ans GitHub-Repo, keine lokalen
-Dateien) alles Nötige vorfindet, um direkt weiterzuarbeiten. Auslöser:
-Recherche zu "Claude Projects" (`code.claude.com/docs/en/claude-projects`)
-ergab die zentrale Einschränkung "Threads don't pick up anything from the
-Claude Code setup on your own machine" - alles, was bisher eine Ebene höher
-im lokalen Albion-Ordner lag (Root-`CLAUDE.md`, `.claude/agents/`,
-`.claude/skills/`, die historische `KONTEXT.md`), war für einen reinen
-Projekt-Thread unerreichbar.
+**Auftrag:** die drei noch offenen Audit-Befunde 4, 9 und 11 aus
+`AUDIT-2026-09-13.md` durchgehen, jeden gegen den Code prüfen und die klaren
+Fälle umsetzen. Befund 1 gehört nicht dazu, der wird getrennt geklärt.
 
-**Umgesetzt** (nur neue Dateien plus Pfadkorrekturen in Kommentaren/Doku,
-keine Rechenkern-/Regel-Logik verändert):
+**Befund 4 (Knotenableitung trifft die echte Knotenzahl nicht): für Veredeln
+umgesetzt, für Speisen/Tränke bewusst offen gelassen.**
 
-- `CLAUDE.md` (neu, ~450 Zeilen): konsolidierte, ans Repo angepasste Kopie
-  der Root-Datei. Spielregeln/-formeln vollständig übernommen, dabei alle
-  seit 14./19.09.2026 behobenen Audit-Befunde (2, 3, 5, 6, 7, 8, 10) direkt
-  in die betroffenen Formel-Abschnitte eingearbeitet statt nur verlinkt, und
-  die noch offenen Befunde (1, 4, 9, 11) an den jeweils betroffenen Stellen
-  vermerkt. "Kontext-Dateien"- und "Dateien"-Tabellen auf repo-lokale Pfade
-  umgestellt, Pizza-Absatz entfernt (kein Bestandteil dieses Repos). Kopfnotiz
-  hält fest: die Root-Datei bleibt die maßgebliche für lokale Sitzungen im
-  Albion-Ordner, beide Kopien müssen inhaltlich gepflegt bleiben.
-- `EINTOPF-KONTEXT-ARCHIV.md` (neu): Kopie der historischen Eintopf-Rechner-
-  Fachdokumentation (vorher nur als `../KONTEXT.md` erreichbar), unverkürzt,
-  nur die Kopfnotiz und zwei `Kostenrechner/`-Pfadpräfixe angepasst.
-- `.claude/agents/albion-cycle-orchestrator.md` (neu, ins Repo kopiert): alle
-  Pfadverweise auf repo-lokale Dateien umgestellt (kein `Kostenrechner/`-
-  Präfix mehr nötig, da bereits im Repo), der harte lokale Windows-Pfad im
-  Fließtext entfernt, Hinweis ergänzt, dass Schritte wie der
-  `Versionen/`-Schnappschuss in einem Cloud-Thread ohne lokales Dateisystem
-  eventuell nicht sinnvoll ausführbar sind.
-- `.claude/agents/rechenkern-pruefer.md`, `oberflaechen-pruefer.md` (neu, ins
-  Repo kopiert, kleine Pfadkorrekturen), `spieldaten-pruefer.md` (unverändert
-  kopiert, enthielt keine Außenpfade).
-- `.claude/skills/define-feature/SKILL.md` (neu, ins Repo kopiert, Pfade auf
-  `kostenrechner-PLAN.md`/`EINTOPF-KONTEXT-ARCHIV.md` ohne Präfix umgestellt).
-- In den bereits vorhandenen Dateien `js/regeln.js`, `js/preise.js`,
-  `js/eintopf-rechenkern.js`, `kostenrechner-KONTEXT.md`,
-  `kostenrechner-PLAN.md`, `AUDIT-2026-09-13.md`, `README.md`,
-  `build_graph.py`: alle `../CLAUDE.md`/`../../CLAUDE.md`-Kommentarverweise
-  auf die neue lokale `CLAUDE.md` umgebogen, `../KONTEXT.md` auf
-  `EINTOPF-KONTEXT-ARCHIV.md`. Reine Text-/Kommentaränderungen, keine
-  Logik betroffen. `kostenrechner-KONTEXT-HISTORIE.md` bewusst NICHT
-  angefasst (historische Aufzeichnung, Pfade galten zum jeweiligen
-  Zeitpunkt korrekt).
+- Neue Funktion `REGELN.istEchterKnoten(cc, gruppenSchluessel)`: filtert
+  abgeleitete Gruppen, die es im Spiel gar nicht als Schicksalsbrett-Knoten
+  gibt. Bisher gefiltert wird nur der belegte Fall, Veredeln unter T4. Beleg:
+  der Wiki-Endwert einer voll ausgebauten Kette ist 40.000 FCE = 25.000 Unique
+  + 15.000 Mutual, und 15.000 = 5 x 3.000, also genau fünf Knoten je Kette
+  (T4 bis T8). Der Rezeptgraph liefert dagegen sieben (T2 bis T8).
+- Gewirkt hat das an zwei Stellen: `spezialisierungsGruppen()` zeigt die beiden
+  Gruppen nicht mehr als Eingabefelder, und `fceAusSpezialisierungsknoten()`
+  ignoriert sie auch dann, wenn aus einer früheren Sitzung noch eine Stufe
+  dafür in `localStorage` steht. Der erreichbare Endwert je Kette liegt damit
+  wieder bei 40.000 statt 46.000 FCE.
+- **Nebenwirkung, bewusst so:** T2-/T3-Veredelungsschritte im Rezeptbaum
+  bekommen jetzt gar keinen aus Knotenstufen abgeleiteten FCE-Wert mehr
+  (vorher den Mutual-Anteil) und fallen auf den allgemeinen FCE-Wert der
+  Einstellungen zurück. Begründung: ein Mutual-Bonus ist laut Wiki ein Bonus
+  auf Knoten, und für T2/T3 gibt es keinen. Der verankerte
+  Fokus-Regressionswert der Königlichen Gugel steigt dadurch von 1.087,45 auf
+  1.099,71, also rund 1 %; der Testkommentar in `tests/test.html` hält das
+  fest, wie schon beim Befund-2/3-Fix am 13.09.2026.
+- **Speisen (25 abgeleitete Gruppen gegen 9 echte Kochknoten) und Tränke (15
+  gegen 8) bleiben unverändert.** Dass die Zahl nicht stimmt, ist belegt;
+  welche der abgeleiteten Gruppen die echten Knoten sind, nicht. Das braucht
+  eine Ablesung der Knotennamen am Schicksalsbrett. Nichts geraten.
 
-**Bewusst außerhalb dieses Repos belassen:** die Original-Excel-Tabellen, das
-Archiv der eigenständigen Eintopf-Rechner-App
-(`Archiv/Eintopf-Rechner (eigenstaendig, vor App-Fusion)/`) und dessen
-`Versionen/`-Historie, das fremde `Pizza/`-Projekt. Alles reines Archiv bzw.
-kein Bestandteil dieser App, ein Projekt-Thread braucht es nicht.
+**Befund 9 (Global Discount / Gold Market Stabilization): nachgeprüft, bewusst
+nicht umgesetzt.** Es fehlen drei Dinge, und keines steht in einer belegfähigen
+Quelle: die Rechenart (wie geht der Rabatt in die Formel ein), der Umfang (ob
+außer den Reroll-Kosten auch die Stationsgebühr betroffen ist, dazu sagt
+`CLAUDE.md` nur "vermutlich") und der Wert selbst, der live schwankt und nur im
+Spiel ablesbar ist. Ein Eingabefeld ohne geklärte Formel wäre ein Ratewert mit
+Quellenanstrich.
 
-**Getestet:** `tests/test.html` vor und nach der Umstellung ausgeführt,
-**396/396 grün** in beiden Fällen (reine Kommentar-/Dokuänderungen, keine
-Regression zu erwarten und keine aufgetreten).
+**Befund 11 (`offhand`/`knuckles` ohne Spezialisierungs-Unterstützung):
+nachgeprüft, bewusst nicht umgesetzt.** Die im Audit zitierte Struktur "unique
+250, mutual 90 in der ersten Gruppe, 15 in den übrigen" lässt sich nicht
+abbilden: `SPEZ_TYP` kennt einen Mutual-Wert je Typ, und welche der 18
+abgeleiteten Nebenhand-Gruppen "die erste" ist, steht nirgends; `CLAUDE.md`
+hält ausdrücklich fest, dass die Item-Namen dafür zu uneinheitlich sind. Für
+`knuckles` sind überhaupt keine Werte bekannt. Kein stiller Rechenfehler im
+Betrieb: beide Kategorien sind in `KATEGORIE_ZU_GEBAEUDE` als eigene
+Gebührengruppe und in `STADTBONUS` (offhand Martlock, knuckles Caerleon)
+gepflegt, nur das Knoten-Panel fehlt und der Freitext-FCE-Fallback greift.
 
-**Offen, nicht Teil dieses Pakets:** ob ein Cloud-Projekt-Thread tatsächlich
-dieselben Werkzeuge zur Verfügung hat wie eine lokale Sitzung (insbesondere
-Browser-Zugriff aufs offizielle Wiki für künftige Audit-Arbeit), ist
-ungeklärt und an mehreren Stellen in der neuen `CLAUDE.md` als offene Frage
-vermerkt statt stillschweigend vorausgesetzt. Die eigentliche Einrichtung des
-Projekts (Claude GitHub App installieren, Repo als Kontext hinzufügen) ist
-Sache des Nutzers auf claude.ai, nicht in dieser Sitzung durchführbar.
+**Werkzeuglage im Cloud-Projekt-Thread, für die nächste Sitzung festgehalten:**
+`WebFetch` auf `wiki.albiononline.com/wiki/Crafting` antwortet mit HTTP 403,
+`wiki/Specializations` und `wiki/Item_Quality` antworten zwar, geben die
+Tabellen und die gesuchten Sätze aber nicht heraus. Für Befund 9 und 11 war die
+Wiki-Seite von hier aus also nicht nachprüfbar; die Zitate im Audit stammen aus
+dem In-App-Browser-Lauf vom 13.09.2026. Ein `Versionen/`-Schnappschuss entfällt
+hier mangels lokalem Dateisystem, der Git-Commit ist die Historie.
+
+**Getestet:** `tests/test.html` headless über Chromium/Playwright ausgeführt,
+**408/408 grün** (396 bisherige, 12 neue für `istEchterKnoten()` und die
+Gruppenzahl je Veredelungskette; ein bestehender Regressionsanker wurde auf den
+neuen, begründeten Wert gezogen).
 
 ---
 
@@ -254,13 +253,15 @@ Kostenrechner/
                               Kombination in rechenkern.js) v3.1.4; neue Funktionen
                               stationsgebuehrGiltFuerTier() (T1/T2 gebuehrenfrei) und
                               istQualifizierbar() (Speisen/Traenke/Werkzeuge ausser Angelrute
-                              nicht qualifizierbar) v3.1.5, s. AUDIT-2026-09-13.md Befund 7/8):
+                              nicht qualifizierbar) v3.1.5, s. AUDIT-2026-09-13.md Befund 7/8;
+                              neue Funktion istEchterKnoten() (Veredelungsknoten erst ab T4),
+                              wirkt in spezialisierungsGruppen() UND im Mutual-Anteil von
+                              fceAusSpezialisierungsknoten() v3.1.7, s. Befund 4):
                               itemWert, RRR, Stationsgebuehr
                               (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
                               rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
                               qualitaetsVerteilung()/rerollKostenZuQualitaet(),
-                              Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1/v3.1.3/v3.1.4).
-                              Unveraendert seit v3.1.5.
+                              Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1/v3.1.3/v3.1.4/v3.1.7).
     rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
                               Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
                               fceFuer() um Knoten-Ebene erweitert v1.5.0, reicht cc an
@@ -356,7 +357,10 @@ Kostenrechner/
   Versionen/v3.1.4 - Vier Audit-Befunde (shapeshifterstaff, gatherergear, RRR-Kommentare, Craften+Reroll)/
   Versionen/v3.1.5 - Befund 7 und 8, Qualitaet ignoriert und T1-T2 gebuehrenfrei/
   Versionen/v3.1.6 - Repo fuer Claude Projects eigenstaendig gemacht/
-  tests/test.html           396 Tests (377 bisherige + 19 neu fuer istQualifizierbar()/
+  tests/test.html           408 Tests (396 bisherige + 12 neu fuer istEchterKnoten() und die
+                              Knotenzahl je Veredelungskette, v3.1.7; dabei ein bestehender
+                              Fokus-Regressionsanker von 1.087,45 auf 1.099,71 gezogen, s.
+                              "Aktueller Stand"; 377 davon + 19 fuer istQualifizierbar()/
                               stationsgebuehrGiltFuerTier() und deren Integration, v3.1.5;
                               338 davon + 33 neu fuer shapeshifterstaff/
                               gatherergear/qualitaetsVerteilung()/Craften+Reroll-Kombination,

@@ -389,14 +389,26 @@ hat 8 (**52.000 FCE maximal**). Beleg wie oben: Wiki-Seite `Specializations`,
 Abschnitt „Farming Specializations", Unterabschnitt zu Chef- und
 Alchemist-Meisterschaft, 05.09.2026.
 
-**Offener Audit-Befund 4 (19.09.2026):** die App leitet ihre
+**Audit-Befund 4, teilweise behoben (19.09.2026, v3.1.7):** die App leitet ihre
 Spezialisierungsknoten-Liste NICHT von Hand, sondern automatisch aus dem
 Rezeptgraphen ab (alle Items derselben `craftingcategory`, gruppiert ohne
-Tier-Präfix). Das ist eine Näherung, die bei Veredeln zu viele Knoten liefert
-(auch T2/T3, obwohl echte Knoten laut Wiki erst ab T4 existieren) und bei
-Speisen/Tränken vermutlich ebenfalls (25 abgeleitete Gruppen bei Speisen
-gegen 9 echte Knoten laut Wiki), aber noch nicht mit Sicherheit zuordenbar
-ist, welche der abgeleiteten Gruppen echte Knoten sind. Noch offen.
+Tier-Präfix). Das ist eine Näherung, die zu viele Knoten liefert.
+
+- **Veredeln: behoben.** Echte Knoten existieren erst ab T4 (Wiki-Endwert
+  40.000 FCE = 25.000 Unique + 15.000 Mutual, und 15.000 = 5 x 3.000, also
+  genau fünf Knoten je Kette). `REGELN.istEchterKnoten()` wirft die
+  T2-/T3-Gruppen deshalb aus `spezialisierungsGruppen()` und aus dem
+  Mutual-Anteil in `fceAusSpezialisierungsknoten()`, auch für bereits
+  gespeicherte Stufen. Folge, bewusst so: T2-/T3-Veredelungsschritte im
+  Rezeptbaum bekommen keinen aus Knotenstufen abgeleiteten FCE-Wert mehr,
+  sondern fallen auf den allgemeinen FCE-Wert der Einstellungen zurück; ein
+  Mutual-Bonus ist laut Wiki ein Bonus auf Knoten, und für T2/T3 gibt es
+  keinen.
+- **Speisen und Tränke: weiter offen.** 25 abgeleitete Gruppen gegen 9 echte
+  Kochknoten, 15 gegen 8 Alchemistenknoten. Dass die Zahl nicht stimmt, ist
+  belegt; welche der abgeleiteten Gruppen die echten Knoten sind, nicht. Das
+  braucht eine Ablesung der Knotennamen am Schicksalsbrett, bis dahin wird
+  dort nichts geändert.
 
 **Achtung, Bezugsgröße (Audit-Befund 1, 19.09.2026, weiterhin ungeklärt,
 widerlegt die vorherige Zeile dieses Abschnitts):** früher stand hier, die
@@ -483,11 +495,15 @@ Der große Sprung des Faktors bei Exzellent (27,5 statt 6,6) passt zur niedrigen
 Meisterwerk-Chance (0,5 %) und macht das letzte Rerollen deutlich teurer als die
 vorigen Stufen.
 
-**Offener Audit-Befund 9 (19.09.2026):** live im Spiel schwankende Rabatte
-(Global Discount, Gold Market Stabilization) wirken laut Wiki zusätzlich auf
-Reroll-Kosten ("Reroll costs are affected by both Global Discount and Gold
+**Offener Audit-Befund 9 (19.09.2026, nachgeprüft):** live im Spiel schwankende
+Rabatte (Global Discount, Gold Market Stabilization) wirken laut Wiki zusätzlich
+auf Reroll-Kosten ("Reroll costs are affected by both Global Discount and Gold
 Market Stabilization") und vermutlich auch auf die Stationsgebühr, sind aber
-in der App nicht modelliert. Braucht ein neues Eingabefeld, sobald gewünscht.
+in der App nicht modelliert. Bewusst nicht umgesetzt: die Quellenlage nennt
+weder die Rechenart (multiplikativ? auf welche Größen?) noch einen Wert, und
+ob die Stationsgebühr überhaupt betroffen ist, ist nur eine Vermutung. Braucht
+eine Nutzer-Entscheidung plus eine Ablesung im Spiel, nicht nur ein
+Eingabefeld.
 
 **Craft-Wurf und Reroll kombinieren (Bugfix 14.09.2026, s. Befund 10):** ein
 Craft-Versuch, der die Zielqualität verfehlt, landet nicht "nichts", sondern
@@ -524,10 +540,15 @@ Dumps dorthin abgebildet werden müssen.
   aber nur die eine Kategorie. Die Item-Namen sind zu uneinheitlich für eine
   saubere Regel: `T4_OFF_BOOK`, `T4_OFF_SHIELD`, `T4_OFF_HORN_KEEPER`,
   `T4_OFF_LAMP_UNDEAD`, `T4_OFF_ORB_MORGANA`, `T4_OFF_TALISMAN_AVALON` und weitere.
-  **Offener Audit-Befund 11 (19.09.2026):** die FCE-Formel selbst ist für
-  offhand inzwischen belegbar (Wiki "Crafting"-Übersichtstabelle nennt
-  eigene Unique-/Mutual-Werte, uneinheitlich je Nebenhand-Typ), nur die
-  Gebäudefrage bleibt offen.
+  **Offener Audit-Befund 11 (19.09.2026, nachgeprüft):** die FCE-Formel selbst
+  ist für offhand im Grundsatz belegbar (Wiki "Crafting"-Übersichtstabelle
+  nennt eigene Unique-/Mutual-Werte: unique 250, mutual 90 in der ersten
+  Gruppe, 15 in den übrigen), nur nützt das ohne die Gruppenzuordnung nichts,
+  und genau die ist aus den Item-Namen nicht sauber ableitbar (18 abgeleitete
+  Nebenhand-Gruppen). `SPEZ_TYP` kennt außerdem nur einen Mutual-Wert je Typ.
+  Für `knuckles` sind gar keine Werte bekannt. Beides bleibt deshalb beim
+  Freitext-Fallback; Gebührengruppe und Stadtbonus sind für beide gepflegt,
+  es entsteht also kein stiller Rechenfehler.
 - `knuckles` (Kampfhandschuhe) taucht in keiner Gebäudeliste des Wikis auf,
   auch keine FCE-Werte bekannt.
 - `meat_chicken`, `meat_cow`, `meat_goat`, `meat_goose`, `meat_pig`, `meat_sheep`

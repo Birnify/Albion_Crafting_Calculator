@@ -1400,9 +1400,21 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     // das aendert die FCE fuer cloth_helmet UND fiber in diesem Szenario und
     // damit den erwarteten Fokuswert - keine Regression, sondern die neue,
     // wiki-belegte korrekte Zahl fuer dieselbe Eingabe.
+    //
+    // Am 19.09.2026 erneut neu berechnet, auf 1.099,71 (vorher 1.087,45):
+    // Befund 4 entfernt die T2-/T3-Veredelungsgruppen aus
+    // spezialisierungsGruppen(), weil es dafuer im Spiel keinen
+    // Schicksalsbrett-Knoten gibt (echte Knoten erst ab T4). Der Rezeptbaum
+    // der Koeniglichen Gugel veredelt T2- und T3-Stoff als Zwischenschritte
+    // mit; diese beiden Schritte bekamen vorher einen aus Knotenstufen
+    // abgeleiteten FCE-Wert (je 2.340 aus dem Mutual-Anteil) und fallen jetzt
+    // auf den allgemeinen FCE-Wert der Einstellungen zurueck (hier 0). Der
+    // Fokusbedarf steigt dadurch um rund 1 %. Wieder keine Regression,
+    // sondern die Folge davon, dass die App keine Knotenboni mehr behauptet,
+    // wo es keine Knoten gibt.
     pruefe(
-      "Regressionstest Fokus-Monotonie: NACH-Schritt (Nutzerwerte) exakt 1.087,45 Fokus (Gegenprobe der gemeldeten Reproduktion, Wert nach Befund-2/3-Fix)",
-      nahe(ergebnisse[3].fokus, 1087.4519111198806, 0.01),
+      "Regressionstest Fokus-Monotonie: NACH-Schritt (Nutzerwerte) exakt 1.099,71 Fokus (Gegenprobe der gemeldeten Reproduktion, Wert nach Befund-4-Fix)",
+      nahe(ergebnisse[3].fokus, 1099.7062609453174, 0.01),
       String(ergebnisse[3].fokus)
     );
   })();

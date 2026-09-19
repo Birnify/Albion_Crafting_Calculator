@@ -7,6 +7,78 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Aktueller Stand (v3.1.6, Repo für Claude Projects eigenständig gemacht, 19.09.2026)
+
+**Vorheriger Stand (v3.1.5, Befund 7 und 8 aus dem Audit)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** dieses Repository so weit eigenständig machen, dass eine
+Claude-Code-Projekt-Anbindung (Beta, nur ans GitHub-Repo, keine lokalen
+Dateien) alles Nötige vorfindet, um direkt weiterzuarbeiten. Auslöser:
+Recherche zu "Claude Projects" (`code.claude.com/docs/en/claude-projects`)
+ergab die zentrale Einschränkung "Threads don't pick up anything from the
+Claude Code setup on your own machine" - alles, was bisher eine Ebene höher
+im lokalen Albion-Ordner lag (Root-`CLAUDE.md`, `.claude/agents/`,
+`.claude/skills/`, die historische `KONTEXT.md`), war für einen reinen
+Projekt-Thread unerreichbar.
+
+**Umgesetzt** (nur neue Dateien plus Pfadkorrekturen in Kommentaren/Doku,
+keine Rechenkern-/Regel-Logik verändert):
+
+- `CLAUDE.md` (neu, ~450 Zeilen): konsolidierte, ans Repo angepasste Kopie
+  der Root-Datei. Spielregeln/-formeln vollständig übernommen, dabei alle
+  seit 14./19.09.2026 behobenen Audit-Befunde (2, 3, 5, 6, 7, 8, 10) direkt
+  in die betroffenen Formel-Abschnitte eingearbeitet statt nur verlinkt, und
+  die noch offenen Befunde (1, 4, 9, 11) an den jeweils betroffenen Stellen
+  vermerkt. "Kontext-Dateien"- und "Dateien"-Tabellen auf repo-lokale Pfade
+  umgestellt, Pizza-Absatz entfernt (kein Bestandteil dieses Repos). Kopfnotiz
+  hält fest: die Root-Datei bleibt die maßgebliche für lokale Sitzungen im
+  Albion-Ordner, beide Kopien müssen inhaltlich gepflegt bleiben.
+- `EINTOPF-KONTEXT-ARCHIV.md` (neu): Kopie der historischen Eintopf-Rechner-
+  Fachdokumentation (vorher nur als `../KONTEXT.md` erreichbar), unverkürzt,
+  nur die Kopfnotiz und zwei `Kostenrechner/`-Pfadpräfixe angepasst.
+- `.claude/agents/albion-cycle-orchestrator.md` (neu, ins Repo kopiert): alle
+  Pfadverweise auf repo-lokale Dateien umgestellt (kein `Kostenrechner/`-
+  Präfix mehr nötig, da bereits im Repo), der harte lokale Windows-Pfad im
+  Fließtext entfernt, Hinweis ergänzt, dass Schritte wie der
+  `Versionen/`-Schnappschuss in einem Cloud-Thread ohne lokales Dateisystem
+  eventuell nicht sinnvoll ausführbar sind.
+- `.claude/agents/rechenkern-pruefer.md`, `oberflaechen-pruefer.md` (neu, ins
+  Repo kopiert, kleine Pfadkorrekturen), `spieldaten-pruefer.md` (unverändert
+  kopiert, enthielt keine Außenpfade).
+- `.claude/skills/define-feature/SKILL.md` (neu, ins Repo kopiert, Pfade auf
+  `kostenrechner-PLAN.md`/`EINTOPF-KONTEXT-ARCHIV.md` ohne Präfix umgestellt).
+- In den bereits vorhandenen Dateien `js/regeln.js`, `js/preise.js`,
+  `js/eintopf-rechenkern.js`, `kostenrechner-KONTEXT.md`,
+  `kostenrechner-PLAN.md`, `AUDIT-2026-09-13.md`, `README.md`,
+  `build_graph.py`: alle `../CLAUDE.md`/`../../CLAUDE.md`-Kommentarverweise
+  auf die neue lokale `CLAUDE.md` umgebogen, `../KONTEXT.md` auf
+  `EINTOPF-KONTEXT-ARCHIV.md`. Reine Text-/Kommentaränderungen, keine
+  Logik betroffen. `kostenrechner-KONTEXT-HISTORIE.md` bewusst NICHT
+  angefasst (historische Aufzeichnung, Pfade galten zum jeweiligen
+  Zeitpunkt korrekt).
+
+**Bewusst außerhalb dieses Repos belassen:** die Original-Excel-Tabellen, das
+Archiv der eigenständigen Eintopf-Rechner-App
+(`Archiv/Eintopf-Rechner (eigenstaendig, vor App-Fusion)/`) und dessen
+`Versionen/`-Historie, das fremde `Pizza/`-Projekt. Alles reines Archiv bzw.
+kein Bestandteil dieser App, ein Projekt-Thread braucht es nicht.
+
+**Getestet:** `tests/test.html` vor und nach der Umstellung ausgeführt,
+**396/396 grün** in beiden Fällen (reine Kommentar-/Dokuänderungen, keine
+Regression zu erwarten und keine aufgetreten).
+
+**Offen, nicht Teil dieses Pakets:** ob ein Cloud-Projekt-Thread tatsächlich
+dieselben Werkzeuge zur Verfügung hat wie eine lokale Sitzung (insbesondere
+Browser-Zugriff aufs offizielle Wiki für künftige Audit-Arbeit), ist
+ungeklärt und an mehreren Stellen in der neuen `CLAUDE.md` als offene Frage
+vermerkt statt stillschweigend vorausgesetzt. Die eigentliche Einrichtung des
+Projekts (Claude GitHub App installieren, Repo als Kontext hinzufügen) ist
+Sache des Nutzers auf claude.ai, nicht in dieser Sitzung durchführbar.
+
+---
+
 ## Aktueller Stand (v3.1.5, Befund 7 und 8 aus dem Audit, 19.09.2026)
 
 **Vorheriger Stand (v3.1.4, vier Audit-Befunde in einer Nacht-Sitzung)**
