@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-29 · Version: v3.3.0 · Feature: globaler Fokus-Schalter und eigene Preise je Knoten im grafischen Bauplan
+Stand: 2026-09-29 · Version: v3.4.0 · Feature: Städteauswahl im Preisvergleich
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,24 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.4.0 (29.09.2026): Städteauswahl im Preisvergleich
+
+Wunsch von Sören: im Reiter Preisvergleich oben per Checkbox wählen, welche
+Städte in den Tabellen erscheinen. Umgesetzt unter dem Suchfeld
+(`#pvStaedte`, gleiche Optik wie die Städte-Checkboxen im Eintopf-Rechner).
+
+- Standard: alle sieben Städte an. Knopf "Alle auswählen/Alle abwählen".
+- Gespeichert in `albion_kostenrechner_preisvergleich_staedte_v1`, getrennt
+  von der Item-Auswahl. Unbekannte Namen fallen beim Laden weg, die
+  Reihenfolge folgt immer `STAEDTE`; keine Stadt angehakt ist erlaubt und
+  zeigt einen Hinweis statt einer leeren Tabelle.
+- **Nur Anzeigefilter:** abgerufen werden weiter alle Städte (ein Request
+  je Block), das Umschalten braucht deshalb keinen neuen Abruf.
+- Die Markierung des günstigsten Sofortkaufs gilt nur unter den
+  angezeigten Städten.
+- Neue reine Funktionen `staedteBereinigen()` und `tabellenZeilen()` in
+  `js/preisvergleich.js`, zehn neue Tests. Selbsttest 504/504 grün.
 
 ## Nachtrag v3.3.0 (29.09.2026): Fokus-Schalter und eigene Preise im Bauplan
 

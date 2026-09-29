@@ -41,6 +41,8 @@ const PREISVERGLEICH = (function () {
   const ALLE_QUALITAETEN = "1,2,3,4,5";
 
   const SPEICHER_KEY = "albion_kostenrechner_preisvergleich_v1";
+  // Sichtbare Staedte (v3.4.0), getrennt von der Item-Auswahl gespeichert.
+  const STAEDTE_KEY = "albion_kostenrechner_preisvergleich_staedte_v1";
   const BLOCKGROESSE = 50; // im Eintopf-Rechner erprobt, s. ../CLAUDE.md
   const PAUSE_MS = 1500;
   const MAX_VERSUCHE = 5;
@@ -48,6 +50,7 @@ const PREISVERGLEICH = (function () {
 
   let auswahl = []; // [{id, q}], q = gewaehlte Qualitaet 1..5
   let daten = {}; // daten[itemId][stadt][qualitaet] = {sell,sellDate,buy,buyDate}
+  let sichtbareStaedte = STAEDTE.slice(); // Anzeige-Filter; abgerufen werden immer alle
 
   // -----------------------------------------------------------------------
   // Reine Hilfsfunktionen (ohne DOM), einzeln testbar - s. tests/test.html
@@ -84,6 +87,35 @@ const PREISVERGLEICH = (function () {
       }
     }
     return treffer;
+  }
+
+  /**
+   * Bereinigt eine gespeicherte Staedteauswahl: unbekannte Namen fliegen raus,
+   * die Reihenfolge folgt immer STAEDTE. Kein gueltiges Array (erster Start,
+   * defekter Speicher) heisst: alle Staedte. Ein leeres Array bleibt leer,
+   * "keine Stadt" ist eine bewusste Wahl.
+   */
+  function staedteBereinigen(gespeichert) {
+    if (!Array.isArray(gespeichert)) return STAEDTE.slice();
+    return STAEDTE.filter((s) => gespeichert.includes(s));
+  }
+
+  /**
+   * Baut die Tabellenzeilen eines Items fuer die sichtbaren Staedte und
+   * markiert den guenstigsten Sofortkauf NUR unter diesen Staedten.
+   */
+  function tabellenZeilen(jeStadt, qualitaet, staedte) {
+    const je = jeStadt || {};
+    const zeilen = (staedte || []).map((stadt) => {
+      const e = (je[stadt] || {})[qualitaet] || null;
+      return { stadt, sell: (e && e.sell) || 0, sellDate: (e && e.sellDate) || "", buy: (e && e.buy) || 0, buyDate: (e && e.buyDate) || "" };
+    });
+    const sells = zeilen.filter((z) => z.sell).map((z) => z.sell);
+    const minSell = sells.length ? Math.min(...sells) : null;
+    zeilen.forEach((z) => {
+      z.best = !!z.sell && z.sell === minSell;
+    });
+    return zeilen;
   }
 
   function bloecke(arr, n) {
@@ -203,6 +235,22 @@ const PREISVERGLEICH = (function () {
     }
   }
 
+  function staedteLaden() {
+    try {
+      sichtbareStaedte = staedteBereinigen(JSON.parse(localStorage.getItem(STAEDTE_KEY) || "null"));
+    } catch (e) {
+      sichtbareStaedte = STAEDTE.slice();
+    }
+  }
+
+  function staedteSpeichern() {
+    try {
+      localStorage.setItem(STAEDTE_KEY, JSON.stringify(sichtbareStaedte));
+    } catch (e) {
+      /* s. auswahlSpeichern() */
+    }
+  }
+
   // -----------------------------------------------------------------------
   // DOM-Anbindung. Fruehzeitiger Ausstieg, falls das Markup fehlt (z.B. in
   // tests/test.html), analog js/ui.js boot().
@@ -214,7 +262,8 @@ const PREISVERGLEICH = (function () {
     const auswahlEl = document.getElementById("pvAuswahl");
     const statusEl = document.getElementById("pvStatus");
     const refreshBtn = document.getElementById("pvRefresh");
-    if (!sucheEl || !vorschlaegeEl || !auswahlEl || !statusEl || !refreshBtn) return;
+    const staedteEl = document.getElementById("pvStaedte");
+    if (!staedteEl || !sucheEl || !vorschlaegeEl || !auswahlEl || !statusEl || !refreshBtn) return;
 
     const nf = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
     const fmt = (v) => (v === null || v === undefined || !isFinite(v) || v === 0 ? "—" : nf.format(Math.round(v)));
@@ -295,6 +344,15 @@ const PREISVERGLEICH = (function () {
       render();
     }
 
+    // Checkboxen je Stadt plus Umschaltknopf, Muster wie etStaedte im
+    // Eintopf-Rechner (js/eintopf-ui.js). Filtert nur die Anzeige.
+    function staedteAufbauen() {
+      const alle = sichtbareStaedte.length === STAEDTE.length;
+      staedteEl.innerHTML =
+        `<div class="t">Angezeigte Städte<button type="button" id="pvAlleStaedte" class="mini">${alle ? "Alle abwählen" : "Alle auswählen"}</button></div>` +
+        STAEDTE.map((c) => `<label><input type="checkbox" value="${c}"${sichtbareStaedte.includes(c) ? " checked" : ""}>${c}</label>`).join("");
+    }
+
     function render() {
       if (!auswahl.length) {
         auswahlEl.innerHTML = '<div class="hint">Noch keine Items ausgewählt. Oben suchen und einen Treffer anklicken.</div>';
@@ -309,17 +367,12 @@ const PREISVERGLEICH = (function () {
                 .join("")}</select>`
             : "";
           const je = daten[a.id] || {};
-          const zeilen = STAEDTE.map((stadt) => {
-            const e = (je[stadt] || {})[a.q] || null;
-            return { stadt, sell: (e && e.sell) || 0, sellDate: (e && e.sellDate) || "", buy: (e && e.buy) || 0, buyDate: (e && e.buyDate) || "" };
-          });
-          const verfuegbareSells = zeilen.filter((z) => z.sell).map((z) => z.sell);
-          const minSell = verfuegbareSells.length ? Math.min(...verfuegbareSells) : null;
+          const zeilen = tabellenZeilen(je, a.q, sichtbareStaedte);
           const geladen = Object.keys(je).length > 0;
           const rows = zeilen
             .map(
               (z) =>
-                `<tr${z.sell && z.sell === minSell ? ' class="best"' : ""}>` +
+                `<tr${z.best ? ' class="best"' : ""}>` +
                 `<td class="l">${z.stadt}</td>` +
                 `<td class="num">${z.sell ? "<strong>" + fmt(z.sell) + "</strong>" : "<span class='miss'>—</span>"}` +
                 (z.sell ? `<div class="hint">${datumZelle(z.sellDate)}</div>` : "") +
@@ -333,7 +386,9 @@ const PREISVERGLEICH = (function () {
             `<div class="pv-item">` +
             `<div class="pv-item-head"><strong>${name}</strong>${cpBtn(name)}${qualWahl}` +
             `<button type="button" class="mini" data-entf="${a.id}">Entfernen</button></div>` +
-            (geladen
+            (!sichtbareStaedte.length
+              ? '<div class="hint">Keine Stadt ausgewählt. Oben mindestens eine Stadt anhaken.</div>'
+              : geladen
               ? `<div class="tblwrap"><table><thead><tr><th class="l">Stadt</th>` +
                 `<th title="Niedrigstes Verkaufsangebot - was du beim Sofortkauf zahlst.">Sofortkauf</th>` +
                 `<th title="Höchste Kauforder - was du beim Sofortverkauf bekämst.">Kaufgesuch</th>` +
@@ -388,7 +443,24 @@ const PREISVERGLEICH = (function () {
       }
     });
     refreshBtn.addEventListener("click", () => abrufen(auswahl.map((a) => a.id)));
+    staedteEl.addEventListener("change", (ev) => {
+      if (!ev.target.matches("input[type=checkbox]")) return;
+      const an = new Set([...staedteEl.querySelectorAll("input:checked")].map((x) => x.value));
+      sichtbareStaedte = staedteBereinigen([...an]);
+      staedteSpeichern();
+      staedteAufbauen();
+      render();
+    });
+    staedteEl.addEventListener("click", (ev) => {
+      if (!ev.target.closest("#pvAlleStaedte")) return;
+      sichtbareStaedte = sichtbareStaedte.length === STAEDTE.length ? [] : STAEDTE.slice();
+      staedteSpeichern();
+      staedteAufbauen();
+      render();
+    });
 
+    staedteLaden();
+    staedteAufbauen();
     auswahlLaden();
     render();
     if (auswahl.length) abrufen(auswahl.map((a) => a.id));
@@ -454,6 +526,38 @@ const PREISVERGLEICH = (function () {
       return d !== null && d < 0.01;
     })());
 
+    pruefe("staedteBereinigen(null) liefert alle 7 Staedte (erster Start)", staedteBereinigen(null).length === 7);
+    pruefe("staedteBereinigen('kaputt') liefert alle 7 Staedte", staedteBereinigen("kaputt").length === 7);
+    pruefe("staedteBereinigen([]) bleibt leer (bewusst keine Stadt)", staedteBereinigen([]).length === 0);
+    pruefe(
+      "staedteBereinigen() verwirft Unbekanntes und ordnet nach STAEDTE",
+      staedteBereinigen(["Caerleon", "Atlantis", "Lymhurst"]).join("|") === "Lymhurst|Caerleon",
+      staedteBereinigen(["Caerleon", "Atlantis", "Lymhurst"]).join("|")
+    );
+    const tz = {
+      Lymhurst: { 1: { sell: 976, buy: 957 } },
+      Caerleon: { 1: { sell: 886, buy: 806 } },
+      Martlock: { 1: { sell: 954, buy: 969 } },
+      Thetford: { 2: { sell: 500, buy: 400 } },
+    };
+    const zAlle = tabellenZeilen(tz, 1, STAEDTE);
+    pruefe("tabellenZeilen() liefert je sichtbarer Stadt eine Zeile", zAlle.length === 7);
+    pruefe(
+      "tabellenZeilen() markiert den guenstigsten Sofortkauf aller Staedte",
+      zAlle.filter((z) => z.best).map((z) => z.stadt).join() === "Caerleon"
+    );
+    const zOhneCaerleon = tabellenZeilen(tz, 1, ["Lymhurst", "Martlock", "Thetford"]);
+    pruefe(
+      "tabellenZeilen() zeigt nur die gewaehlten Staedte, in STAEDTE-Reihenfolge",
+      zOhneCaerleon.map((z) => z.stadt).join("|") === "Lymhurst|Martlock|Thetford"
+    );
+    pruefe(
+      "tabellenZeilen() bestimmt den Bestpreis nur unter den gewaehlten Staedten",
+      zOhneCaerleon.filter((z) => z.best).map((z) => z.stadt).join() === "Martlock"
+    );
+    pruefe("tabellenZeilen() nutzt nur die gewaehlte Qualitaet (Thetford Q2 zaehlt bei Q1 nicht)", zOhneCaerleon[2].sell === 0 && !zOhneCaerleon[2].best);
+    pruefe("tabellenZeilen() ohne Staedte liefert keine Zeilen", tabellenZeilen(tz, 1, []).length === 0);
+
     return ergebnisse;
   }
 
@@ -468,5 +572,7 @@ const PREISVERGLEICH = (function () {
     baueUrl,
     zeilenVerarbeiten,
     alterTage,
+    staedteBereinigen,
+    tabellenZeilen,
   };
 })();
