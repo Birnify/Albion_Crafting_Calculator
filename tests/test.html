@@ -140,6 +140,148 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     );
   })();
 
+  // ---- rechenkern: globaler Fokus-Schalter opts.fokusAus (29.09.2026) ----
+  (function () {
+    const preise = {
+      T4_CLOTH: { sell: { preis: 5000, kein: false, datum: "" }, buy: { kein: true } },
+      T4_FIBER: { sell: { preis: 10, kein: false, datum: "" }, buy: { kein: true } },
+      T3_CLOTH: { sell: { preis: 10, kein: false, datum: "" }, buy: { kein: true } },
+      T3_FIBER: { sell: { preis: 5, kein: false, datum: "" }, buy: { kein: true } },
+      T2_CLOTH: { sell: { preis: 5, kein: false, datum: "" }, buy: { kein: true } },
+      T2_FIBER: { sell: { preis: 2, kein: false, datum: "" }, buy: { kein: true } },
+    };
+    const basis = { preise, stationssaetze: { Magierturm: 400, Weber: 400 }, fce: 0, fokuswert: 0 };
+    const mit = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, basis);
+    const ohne = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, Object.assign({}, basis, { fokusAus: true }));
+    function sammleFokus(weg, out) {
+      if (!weg) return out;
+      if (weg.mitFokus) out.push(weg.item + "@" + weg.stufe);
+      (weg.zutaten || []).forEach((z) => sammleFokus(z.weg, out));
+      (weg.materialien || []).forEach((m) => sammleFokus(m.weg, out));
+      sammleFokus(weg.vorstufe, out);
+      sammleFokus(weg.basis, out);
+      return out;
+    }
+    pruefe("rechenkern: ohne fokusAus nimmt der Baum bei Fokuswert 0 Fokus (Vergleichsbasis)", mit.fokus > 0, "Fokus " + mit.fokus);
+    pruefe("rechenkern: fokusAus rechnet den ganzen Baum mit 0 Fokus", !ohne.gesperrt && ohne.fokus === 0, "Fokus " + ohne.fokus);
+    pruefe("rechenkern: fokusAus, kein Knoten im Weg ist mit Fokus gecraftet", sammleFokus(ohne.weg, []).length === 0, sammleFokus(ohne.weg, []).join(", "));
+    const fokusKandidaten = [];
+    Object.keys(ohne.knotenAlternativen).forEach((k) =>
+      ohne.knotenAlternativen[k].forEach((w) => {
+        if ((w.weg && w.weg.mitFokus) || (w.fokus || 0) > 0) fokusKandidaten.push(k);
+      })
+    );
+    pruefe("rechenkern: fokusAus erzeugt keine Fokus-Kandidaten, auch keine gesperrten", fokusKandidaten.length === 0, fokusKandidaten.join(", "));
+    pruefe("rechenkern: fokusAus ist ohne Fokus-Rueckgewinnung teurer oder gleich", ohne.silber >= mit.silber, Math.round(mit.silber) + " -> " + Math.round(ohne.silber));
+    const immer = RECHENKERN.kosten(
+      "T4_CLOTH",
+      0,
+      1,
+      Object.assign({}, basis, { fokusAus: true, fokusUebersteuerungJeKnoten: { "T4_CLOTH@0": "immer" } })
+    );
+    pruefe(
+      "rechenkern: fokusAus schlaegt die Knoten-Regel immer (Weg bleibt gueltig, ohne Fokus)",
+      !immer.gesperrt && immer.fokus === 0 && immer.weg.typ === "craften" && immer.weg.mitFokus === false,
+      immer.weg.typ + ", Fokus " + immer.fokus
+    );
+    const q = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, Object.assign({}, basis, { fokusAus: true, qualitaetsIndex: 2 }));
+    pruefe("rechenkern: fokusAus gilt auch bei Zielqualitaet", q.fokus === 0 && sammleFokus(q.weg, []).length === 0, "Fokus " + q.fokus);
+  })();
+
+  // ---- rechenkern: eigene Preise je Bauplan-Knoten opts.preisUebersteuerungen (29.09.2026) ----
+  (function () {
+    const preise = {
+      T4_CLOTH: { sell: { preis: 5000, kein: false, datum: "" }, buy: { kein: true } },
+      T4_FIBER: { sell: { preis: 10, kein: false, datum: "" }, buy: { kein: true } },
+      T3_CLOTH: { sell: { preis: 10, kein: false, datum: "" }, buy: { kein: true } },
+      T3_FIBER: { sell: { preis: 5, kein: false, datum: "" }, buy: { kein: true } },
+      T2_CLOTH: { sell: { preis: 5, kein: false, datum: "" }, buy: { kein: true } },
+      T2_FIBER: { sell: { preis: 2, kein: false, datum: "" }, buy: { kein: true } },
+    };
+    const basis = { preise, stationssaetze: { Magierturm: 400, Weber: 400 }, fce: 0, fokuswert: 0, fokusAus: true };
+    const mit = (u, extra) => RECHENKERN.kosten("T4_CLOTH", 0, 1, Object.assign({}, basis, { preisUebersteuerungen: u }, extra || {}));
+    const normal = mit({});
+    const faserWeg = (r) => (r.weg.zutaten || []).map((z) => z.weg).find((w) => w.item === "T4_FIBER");
+    const teurer = mit({ "T4_FIBER@0": 100 });
+    const fw = faserWeg(teurer);
+    pruefe(
+      "rechenkern: eigener Preis ersetzt den Marktpreis der Zutat und ist markiert",
+      fw && fw.typ === "kaufen" && fw.preisJeStueck === 100 && fw.uebersteuert === true,
+      fw ? fw.typ + " " + fw.preisJeStueck : "keine Faser-Zutat"
+    );
+    pruefe("rechenkern: eigener Preis wirkt sofort auf den Endpreis", teurer.silber > normal.silber, Math.round(normal.silber) + " -> " + Math.round(teurer.silber));
+    const null_ = faserWeg(mit({ "T4_FIBER@0": 0 }));
+    pruefe("rechenkern: eigener Preis 0 ist erlaubt (schon auf Lager)", null_ && null_.preisJeStueck === 0 && null_.uebersteuert, null_ ? null_.preisJeStueck : "-");
+    pruefe(
+      "rechenkern: ungueltige eigene Preise (negativ, kein Zahlwert) werden ignoriert",
+      mit({ "T4_FIBER@0": -5 }).silber === normal.silber && mit({ "T4_FIBER@0": "abc" }).silber === normal.silber,
+      normal.silber
+    );
+    pruefe(
+      "rechenkern: eigener Preis auf der Wurzel wird ignoriert",
+      mit({ "T4_CLOTH@0": 1 }).silber === normal.silber && mit({ "T4_CLOTH@0": 1 }).weg.typ === "craften",
+      mit({ "T4_CLOTH@0": 1 }).silber
+    );
+    // Craft-Knoten mit eigenem Preis wird festes Kaufen-Blatt, auch wenn Craften billiger waere.
+    const kopf = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, Object.assign({}, basis, { preisUebersteuerungen: { "T4_CLOTH@0": 7000 } }));
+    const stoff = (kopf.weg.zutaten || []).map((z) => z.weg).find((w) => w.item === "T4_CLOTH");
+    pruefe(
+      "rechenkern: eigener Preis auf einem Craft-Knoten macht ihn zum festen Kaufen-Blatt",
+      stoff && stoff.typ === "kaufen" && stoff.preisJeStueck === 7000 && !stoff.zutaten,
+      stoff ? stoff.typ + " " + stoff.preisJeStueck : "-"
+    );
+    pruefe(
+      "rechenkern: Knoten mit eigenem Preis hat keine Alternativen mehr",
+      kopf.knotenAlternativen["T4_CLOTH@0"].length === 1,
+      kopf.knotenAlternativen["T4_CLOTH@0"].length
+    );
+    const kopfNormal = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, basis);
+    pruefe("rechenkern: eigener Preis auf der Zutat hebt den Endpreis entsprechend", kopf.silber > kopfNormal.silber, Math.round(kopfNormal.silber) + " -> " + Math.round(kopf.silber));
+    // Zielqualitaet: die Wurzel "@q1" bleibt unberuehrt, die Normal-Vorstufe des Rerolls nimmt den eigenen Preis.
+    const qBasis = Object.assign({}, basis, { qualitaetsIndex: 1 });
+    const qNormal = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, qBasis);
+    const qWurzel = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, Object.assign({}, qBasis, { preisUebersteuerungen: { "T4_HEAD_CLOTH_SET1@0@q1": 1 } }));
+    pruefe("rechenkern: eigener Preis auf der Wurzel mit Zielqualitaet wird ignoriert", qWurzel.silber === qNormal.silber, qWurzel.silber);
+    const qBasisPreis = RECHENKERN.kosten("T4_HEAD_CLOTH_SET1", 0, 1, Object.assign({}, qBasis, { preisUebersteuerungen: { "T4_HEAD_CLOTH_SET1@0": 1 } }));
+    const reroll = qBasisPreis.alleWege.find((w) => w.typ === "reroll" && !w.gesperrt);
+    pruefe(
+      "rechenkern: eigener Preis auf der Normal-Vorstufe greift im Reroll-Weg",
+      reroll && reroll.weg.basis && reroll.weg.basis.uebersteuert === true && reroll.weg.basis.preisJeStueck === 1,
+      reroll ? JSON.stringify(reroll.weg.basis && reroll.weg.basis.preisJeStueck) : "kein Reroll-Weg"
+    );
+  })();
+
+  // ---- ui: neue Einstellungen fokusAus/preisUebersteuerungen werden gelesen ----
+  (function () {
+    const KEY = "albion_kostenrechner_einstellungen";
+    let alt = null;
+    try {
+      alt = localStorage.getItem(KEY);
+    } catch (e) {}
+    try {
+      pruefe("ui: Vorgabe fokusAus ist aus, keine eigenen Preise", (function () {
+        localStorage.removeItem(KEY);
+        const e = UI.einstellungenLesen();
+        return e.fokusAus === false && Object.keys(e.preisUebersteuerungen).length === 0;
+      })());
+      const gespeichert = UI.einstellungenLesen();
+      gespeichert.fokusAus = true;
+      gespeichert.preisUebersteuerungen = { "T5_FIBER@0": 450 };
+      localStorage.setItem(KEY, JSON.stringify(gespeichert));
+      const gelesen = UI.einstellungenLesen();
+      pruefe(
+        "ui: fokusAus und eigene Preise ueberleben Speichern und Lesen",
+        gelesen.fokusAus === true && gelesen.preisUebersteuerungen["T5_FIBER@0"] === 450,
+        JSON.stringify({ f: gelesen.fokusAus, p: gelesen.preisUebersteuerungen })
+      );
+    } finally {
+      try {
+        if (alt == null) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, alt);
+      } catch (e) {}
+    }
+  })();
+
   // ---- preise: Absatz je Qualitaet (history/ liefert eine Zeile JE Qualitaet) ----
   (function () {
     const jetzt = Date.parse("2026-09-19T12:00:00Z");

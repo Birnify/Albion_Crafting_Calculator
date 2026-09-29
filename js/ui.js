@@ -56,6 +56,16 @@ const UI = (function () {
       fokusRegelJeKategorie: {},
       fokusUebersteuerungJeKnoten: {},
       fokuswert: 0, // Silber je Fokuspunkt; 0 ist gueltig, verschiebt aber zu fokusintensiven Wegen
+      // Globaler Fokus-Schalter oben im Kostenrechner (29.09.2026): true =
+      // Rechnung komplett ohne Fokus (RECHENKERN opts.fokusAus). Gilt auch
+      // fuer "Schnelles Geld", das dieselben Einstellungen liest.
+      fokusAus: false,
+      // Eigene Preise je Bauplan-Knoten (29.09.2026), "item@stufe[@qN]" ->
+      // Silber je Stueck, s. RECHENKERN opts.preisUebersteuerungen. Dauerhaft
+      // gemerkt wie fokusUebersteuerungJeKnoten; ein Knoten mit eigenem Preis
+      // ist im Bauplan immer sichtbar markiert und einzeln oder gesammelt
+      // ruecksetzbar.
+      preisUebersteuerungen: {},
       // Bauplan-Ansicht (Zyklus "Bauplan grafisch als Baumdiagramm mit Item-
       // Icons", 05./06.09.2026): "text" (Fliesstext-Karten, bisheriges
       // Verhalten) oder "grafisch" (Baumdiagramm links->rechts mit Item-
@@ -101,6 +111,8 @@ const UI = (function () {
       basis.fokusRegelJeKategorie = daten.fokusRegelJeKategorie || {};
       basis.fokusUebersteuerungJeKnoten = daten.fokusUebersteuerungJeKnoten || {};
       basis.fokuswert = daten.fokuswert != null ? daten.fokuswert : basis.fokuswert;
+      basis.fokusAus = !!daten.fokusAus;
+      basis.preisUebersteuerungen = daten.preisUebersteuerungen || {};
       basis.bauplanAnsicht = daten.bauplanAnsicht === "grafisch" ? "grafisch" : basis.bauplanAnsicht;
       // Zusammenfuehren statt ersetzen: ein Gebaeude, das der Nutzer schon
       // ausdruecklich gesetzt hat (auch auf einen anderen Wert als 400), bleibt
@@ -647,6 +659,9 @@ const UI = (function () {
     const alleZuBtn = document.getElementById("alleZuBtn");
     const volumenBtn = document.getElementById("volumenBtn");
     const bauplanAnsichtSchalterEl = document.getElementById("bauplanAnsichtSchalter");
+    const preiseZuruecksetzenBtn = document.getElementById("preiseZuruecksetzenBtn");
+    const fokusSchalterGlobalEl = document.getElementById("fokusSchalterGlobal");
+    const kostenrechnerTabEl = document.getElementById("tab-kostenrechner");
 
     const alleWegeTabelleEl = document.getElementById("alleWegeTabelle");
 
@@ -755,6 +770,29 @@ const UI = (function () {
       (einstellungen.verkaufsweg === "order" ? vwOrderEl : vwSofortEl).checked = true;
       aktualisiereFceAnzeige();
       aktualisiereBauplanAnsichtSchalter();
+      aktualisiereFokusSchalterGlobal();
+      aktualisierePreiseZuruecksetzen();
+    }
+
+    /**
+     * Globaler Fokus-Schalter oben (29.09.2026): markiert den aktiven Knopf
+     * und setzt .fokus-aus am Reiter, woran die CSS alle Fokus-Anzeigen
+     * (.nur-fokus: Hero-Kachel, Alle-Wege-Spalte) ausblendet.
+     */
+    function aktualisiereFokusSchalterGlobal() {
+      if (kostenrechnerTabEl) kostenrechnerTabEl.classList.toggle("fokus-aus", !!einstellungen.fokusAus);
+      if (!fokusSchalterGlobalEl) return;
+      fokusSchalterGlobalEl.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("an", (btn.dataset.fokus === "aus") === !!einstellungen.fokusAus);
+      });
+    }
+
+    /** Knopf "Eigene Preise zuruecksetzen (n)" im Bauplan, nur sichtbar, wenn mindestens ein eigener Preis gesetzt ist. */
+    function aktualisierePreiseZuruecksetzen() {
+      if (!preiseZuruecksetzenBtn) return;
+      const n = Object.keys(einstellungen.preisUebersteuerungen || {}).length;
+      preiseZuruecksetzenBtn.hidden = n === 0;
+      preiseZuruecksetzenBtn.textContent = "Eigene Preise zuruecksetzen (" + n + ")";
     }
 
     /** Markiert den aktiven Text/Grafisch-Knopf im Bauplan-Panel (.an, wie die uebrigen Dreifach-Schalter). */
@@ -770,6 +808,7 @@ const UI = (function () {
     }
 
     function persistiereUndRechne() {
+      aktualisierePreiseZuruecksetzen();
       einstellungenSchreiben(einstellungen);
       if (zustand.item && zustand.preiseRoh) berechneMitVorhandenenPreisen();
     }
@@ -1111,6 +1150,8 @@ const UI = (function () {
         fokusRegelJeKategorie: einstellungen.fokusRegelJeKategorie,
         fokusUebersteuerungJeKnoten: einstellungen.fokusUebersteuerungJeKnoten,
         fokuswert: einstellungen.fokuswert,
+        fokusAus: !!einstellungen.fokusAus,
+        preisUebersteuerungen: einstellungen.preisUebersteuerungen,
         tagesbonus: einstellungen.tagesbonus,
         maxPreisAlterMin:
           einstellungen.maxPreisAlterMin === "" || einstellungen.maxPreisAlterMin == null
@@ -1224,7 +1265,7 @@ const UI = (function () {
           : "") +
         "</div>";
       html += "<div><div class='k'>Kosten</div><div class='v'>" + formatSilber(r.silber) + "</div><div class='w'>Silber</div></div>";
-      html += "<div><div class='k'>Fokus</div><div class='v'>" + formatFokus(r.fokus) + "</div></div>";
+      html += "<div class='nur-fokus'><div class='k'>Fokus</div><div class='v'>" + formatFokus(r.fokus) + "</div></div>";
       if (gewinnInfo) {
         html +=
           "<div><div class='k'>Gewinn</div><div class='v'>" +
@@ -1493,9 +1534,12 @@ const UI = (function () {
           (weg.eigenpreis
             ? "<span class='kn-flag kn-flag-eigen' title='Kein Marktpreis, sondern eine hinterlegte eigene Schaetzung.'>Eigenpreis</span>"
             : "") +
+          (weg.uebersteuert
+            ? "<span class='kn-flag kn-flag-eigen' title='Von dir im grafischen Bauplan eingetragener Preis. Ersetzt Marktpreis und alle anderen Wege fuer diesen Knoten.'>eigener Preis</span>"
+            : "") +
           "<span class='kn-spacer'></span>" +
           "<span class='kn-kosten'>" + formatSilber(weg.preisJeStueck) + " Silber</span>" +
-          (!weg.eigenpreis
+          (!weg.eigenpreis && !weg.uebersteuert
             ? "<span class='kn-alter" + (alterInfo.stale ? " stale" : "") + "' title='Alter des Marktpreises'>" + escapeHtml(alterInfo.text) + "</span>"
             : "");
         summary.appendChild(zeile);
@@ -1521,7 +1565,7 @@ const UI = (function () {
           "<span class='kn-name'>" + escapeHtml(nameVon(weg.item)) + (weg.stufe ? "." + weg.stufe : "") + "</span>" +
           qualitaetHtml;
         summary.appendChild(zeile);
-        zeile.appendChild(baueFokusSchalter(weg));
+        if (!einstellungen.fokusAus) zeile.appendChild(baueFokusSchalter(weg));
 
         const flags = document.createElement("span");
         let flagsHtml = ausschlussHtml;
@@ -1692,7 +1736,8 @@ const UI = (function () {
       const alt = naechstbesteAlternative(r.knotenAlternativen, weg.item, weg.stufe, weg.qualitaet);
       if (weg.typ === "kaufen") {
         teile.push(weg.kaufweg === "order" ? "Kauforder" : "Sofortkauf");
-        teile.push(weg.eigenpreis ? "Eigenpreis (keine Marktdaten)" : "Preisalter " + alterFuerMarktId(weg.marktId).text);
+        if (weg.uebersteuert) teile.push("Eigener Preis, von dir eingetragen; Marktpreis und andere Wege fuer diesen Knoten werden ignoriert");
+        else teile.push(weg.eigenpreis ? "Eigenpreis (keine Marktdaten)" : "Preisalter " + alterFuerMarktId(weg.marktId).text);
       } else if (weg.typ === "craften") {
         teile.push("Rezept #" + (weg.rezeptIndex + 1));
         teile.push("Stationsgebuehr " + formatSilber(weg.stationsgebuehrJeStueck) + (weg.gebaeude ? " (" + weg.gebaeude + ")" : ""));
@@ -1755,10 +1800,10 @@ const UI = (function () {
      * statt "T4.0"), damit Kaufen-Token ohne Verzauberungsstufe nicht
      * faelschlich ".0" zeigen.
      */
-    function bgCard(weg, r, kante) {
-      const badge = bgBadgeInfo(weg);
+    function bgCard(weg, r, kante, istWurzel) {
+      const badge = weg.uebersteuert ? { cls: "kn-badge-eigen", label: "Eigener Preis" } : bgBadgeInfo(weg);
       const card = document.createElement("div");
-      card.className = "bg-card" + (weg.typ === "gesperrt" ? " kn-zeile-gesperrt" : "");
+      card.className = "bg-card" + (weg.typ === "gesperrt" ? " kn-zeile-gesperrt" : "") + (weg.uebersteuert ? " bg-uebersteuert" : "");
       card.title = bgTooltipFuer(weg, r, kante);
 
       if (weg.item) {
@@ -1801,6 +1846,7 @@ const UI = (function () {
         qualitaetBadgeHtml(weg.qualitaet);
       info.appendChild(nameZeile);
 
+      const preisEditierbar = !istWurzel && !!weg.item;
       if (weg.typ !== "gesperrt") {
         let silber, fokus;
         if (weg.typ === "kaufen") {
@@ -1816,10 +1862,105 @@ const UI = (function () {
         kostenZeile.innerHTML =
           "<span class='kn-kosten'>" + formatSilber(silber) + " Silber</span>" +
           (fokus ? "<span class='kn-fokus'>" + formatFokus(fokus) + " Fokus</span>" : "");
+        if (preisEditierbar) ergaenzePreisKnoepfe(kostenZeile, weg);
+        info.appendChild(kostenZeile);
+      } else if (preisEditierbar) {
+        const kostenZeile = document.createElement("div");
+        kostenZeile.className = "bg-kosten-zeile";
+        ergaenzePreisKnoepfe(kostenZeile, weg);
         info.appendChild(kostenZeile);
       }
       card.appendChild(info);
       return card;
+    }
+
+    /**
+     * Eigene Preise im grafischen Bauplan (Nutzer-Wunsch 29.09.2026): ein
+     * Stift-Knopf je Knoten oeffnet an Ort und Stelle ein Zahlenfeld. Enter
+     * oder Verlassen des Feldes uebernimmt, Escape bricht ab, ein leeres Feld
+     * setzt den Knoten zurueck. Der Knoten wird danach zum festen Kaufen-
+     * Blatt zu genau diesem Preis (s. RECHENKERN opts.preisUebersteuerungen),
+     * alles darueber rechnet sofort neu. Ein gesetzter Preis bekommt
+     * zusaetzlich einen Zuruecksetzen-Knopf. Alle Klicks/Tasten bleiben im
+     * Kaestchen (preventDefault/stopPropagation), sonst klappt das umgebende
+     * <summary> den Knoten auf oder zu.
+     */
+    function ergaenzePreisKnoepfe(kostenZeile, weg) {
+      const schluessel = knotenSchluessel(weg.item, weg.stufe, weg.qualitaet);
+      const gesetzt = einstellungen.preisUebersteuerungen[schluessel] != null;
+      const halt = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      };
+
+      const stift = document.createElement("button");
+      stift.type = "button";
+      stift.className = "bg-preis-knopf";
+      stift.textContent = weg.typ === "gesperrt" ? "Preis eintragen" : "\u270E";
+      stift.title = "Eigenen Preis je Stueck fuer diesen Knoten eintragen. Er ersetzt Marktpreis und Craft-Weg, der Endpreis rechnet sofort neu.";
+      stift.addEventListener("click", (ev) => {
+        halt(ev);
+        const feld = document.createElement("input");
+        feld.type = "number";
+        feld.min = "0";
+        feld.step = "1";
+        feld.className = "bg-preis-feld";
+        feld.placeholder = "Silber";
+        const vorher = einstellungen.preisUebersteuerungen[schluessel];
+        if (vorher != null) feld.value = vorher;
+        else if (weg.typ === "kaufen" && weg.preisJeStueck != null) feld.value = Math.round(weg.preisJeStueck);
+        let erledigt = false;
+        function uebernehmen() {
+          if (erledigt) return;
+          erledigt = true;
+          const roh = feld.value.trim();
+          const zahl = Number(roh);
+          if (roh === "") delete einstellungen.preisUebersteuerungen[schluessel];
+          else if (isFinite(zahl) && zahl >= 0) einstellungen.preisUebersteuerungen[schluessel] = zahl;
+          persistiereUndRechne();
+          if (!zustand.preiseRoh && zustand.ergebnis) renderBauplan(zustand.ergebnis);
+        }
+        feld.addEventListener("click", (ev) => ev.stopPropagation());
+        feld.addEventListener("keydown", (ev) => {
+          ev.stopPropagation();
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            uebernehmen();
+          } else if (ev.key === "Escape") {
+            ev.preventDefault();
+            erledigt = true;
+            if (zustand.ergebnis) renderBauplan(zustand.ergebnis);
+          }
+        });
+        feld.addEventListener("keyup", (ev) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+        });
+        feld.addEventListener("blur", uebernehmen);
+        kostenZeile.innerHTML = "";
+        kostenZeile.appendChild(feld);
+        const einheit = document.createElement("span");
+        einheit.className = "kn-fokus";
+        einheit.textContent = "Silber, Enter";
+        kostenZeile.appendChild(einheit);
+        feld.focus();
+        feld.select();
+      });
+      kostenZeile.appendChild(stift);
+
+      if (gesetzt) {
+        const weg_ = document.createElement("button");
+        weg_.type = "button";
+        weg_.className = "bg-preis-knopf";
+        weg_.textContent = "\u2715";
+        weg_.title = "Eigenen Preis entfernen, wieder mit Marktpreis und guenstigstem Weg rechnen.";
+        weg_.addEventListener("click", (ev) => {
+          halt(ev);
+          delete einstellungen.preisUebersteuerungen[schluessel];
+          persistiereUndRechne();
+        });
+        kostenZeile.appendChild(weg_);
+      }
     }
 
     /**
@@ -1836,26 +1977,30 @@ const UI = (function () {
      * "Alles auf-/zuklappen"-Knopf, weil bauplanEl.querySelectorAll("details")
      * generisch alle <details> im aktuell gerenderten Baum findet.
      */
-    function baueKnotenGrafisch(weg, r, tiefe, kante) {
+    function baueKnotenGrafisch(weg, r, tiefe, kante, pfad) {
       if (!weg) return document.createDocumentFragment();
+      pfad = pfad || "0";
 
       if (weg.typ === "gesperrt" || weg.typ === "kaufen") {
         const div = document.createElement("div");
         div.className = "bg-node bg-leaf";
-        div.appendChild(bgCard(weg, r, kante));
+        div.appendChild(bgCard(weg, r, kante, tiefe === 0));
         return div;
       }
 
       const details = document.createElement("details");
       details.className = "bg-node";
+      details.dataset.pfad = pfad;
       details.open = tiefe < 2;
       const summary = document.createElement("summary");
-      summary.appendChild(bgCard(weg, r, kante));
+      summary.appendChild(bgCard(weg, r, kante, tiefe === 0));
       details.appendChild(summary);
 
       const children = document.createElement("div");
       children.className = "bg-children";
+      let kindIndex = 0;
       function anhaengen(kindWeg, kindKante) {
+        const kindPfad = pfad + "." + kindIndex++;
         const child = document.createElement("div");
         child.className = "bg-child";
         const stub = document.createElement("span");
@@ -1867,7 +2012,7 @@ const UI = (function () {
           label.textContent = kindKante.label;
           child.appendChild(label);
         }
-        child.appendChild(baueKnotenGrafisch(kindWeg, r, tiefe + 1, kindKante));
+        child.appendChild(baueKnotenGrafisch(kindWeg, r, tiefe + 1, kindKante, kindPfad));
         children.appendChild(child);
       }
 
@@ -1887,12 +2032,32 @@ const UI = (function () {
     }
 
     function renderBauplanGrafisch(r) {
+      // Auf-/Zuklapp-Zustand und Scrollposition ueber ein Neuberechnen
+      // hinweg behalten (eigene Preise, Fokus-Schalter): sonst klappt der
+      // Baum nach jeder Preiseingabe auf die Vorgabe zurueck. Nur beim selben
+      // Item, bei einem neuen Item gilt wieder die Vorgabe (Tiefe < 2 offen).
+      const itemSchluessel = zustand.item + "@" + zustand.stufe;
+      const offen = new Map();
+      let scrollAlt = null;
+      if (zustand.bgBaumFuer === itemSchluessel) {
+        bauplanEl.querySelectorAll("details[data-pfad]").forEach((d) => offen.set(d.dataset.pfad, d.open));
+        const alt = bauplanEl.querySelector(".bg-scroll");
+        if (alt) scrollAlt = { l: alt.scrollLeft, t: alt.scrollTop };
+      }
+      zustand.bgBaumFuer = itemSchluessel;
       bauplanEl.innerHTML = "";
       bauplanEl.className = "baum bg-baum";
       const scroll = document.createElement("div");
       scroll.className = "bg-scroll";
       scroll.appendChild(baueKnotenGrafisch(r.weg, r, 0));
       bauplanEl.appendChild(scroll);
+      scroll.querySelectorAll("details[data-pfad]").forEach((d) => {
+        if (offen.has(d.dataset.pfad)) d.open = offen.get(d.dataset.pfad);
+      });
+      if (scrollAlt) {
+        scroll.scrollLeft = scrollAlt.l;
+        scroll.scrollTop = scrollAlt.t;
+      }
     }
 
     function renderBauplan(r) {
@@ -1911,6 +2076,23 @@ const UI = (function () {
 
     alleAufBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = true)));
     alleZuBtn.addEventListener("click", () => bauplanEl.querySelectorAll("details").forEach((d) => (d.open = false)));
+
+    if (preiseZuruecksetzenBtn) {
+      preiseZuruecksetzenBtn.addEventListener("click", () => {
+        einstellungen.preisUebersteuerungen = {};
+        persistiereUndRechne();
+      });
+    }
+
+    if (fokusSchalterGlobalEl) {
+      fokusSchalterGlobalEl.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("button[data-fokus]");
+        if (!btn) return;
+        einstellungen.fokusAus = btn.dataset.fokus === "aus";
+        aktualisiereFokusSchalterGlobal();
+        persistiereUndRechne();
+      });
+    }
 
     // Text/Grafisch-Umschalter (Zyklus "Bauplan grafisch als Baumdiagramm mit
     // Item-Icons"): dauerhaft in localStorage gemerkt wie die uebrigen
@@ -2008,7 +2190,7 @@ const UI = (function () {
           wegLabel +
           "</td><td class='num'>" +
           gruppe.silberAnzeige +
-          "</td><td class='num'>" +
+          "</td><td class='num nur-fokus'>" +
           gruppe.fokusAnzeige +
           "</td><td class='num'>" +
           (bestesMitglied.gesperrt ? "-" : formatSilber(bestesMitglied.wert)) +
@@ -2028,7 +2210,7 @@ const UI = (function () {
             escapeHtml(wegLabelKurz(w)) +
             "</td><td class='num'>" +
             formatSilber(w.silber) +
-            "</td><td class='num'>" +
+            "</td><td class='num nur-fokus'>" +
             formatFokus(w.fokus) +
             "</td><td class='num'>" +
             (w.gesperrt ? "-" : formatSilber(w.wert)) +

@@ -62,6 +62,20 @@ const RECHENKERN = (function () {
       fokusRegelJeKategorie: o.fokusRegelJeKategorie || {}, // craftingcategory -> "immer"|"nie"
       fokusUebersteuerungJeKnoten: o.fokusUebersteuerungJeKnoten || {}, // "item@stufe" -> "immer"|"nie", schlaegt die Kategorie-Regel
       fokuswert: o.fokuswert != null ? o.fokuswert : 0, // Silber je Fokuspunkt (Zielfunktion)
+      // Globaler Fokus-Schalter (Nutzer-Wunsch 29.09.2026, Backlog-Punkt 5):
+      // true = es werden gar keine Craft-Varianten MIT Fokus erzeugt, auch
+      // keine gesperrten Platzhalter dafuer. Schlaegt Knoten- und
+      // Kategorie-Regeln ("immer" wirkt dann wie "automatisch" ohne die
+      // Fokus-Variante). Anders als fokuswert/Regeln fehlt Fokus damit
+      // vollstaendig in Kosten, Weg und alleWege.
+      fokusAus: !!o.fokusAus,
+      // Eigene Preise je Bauplan-Knoten (Nutzer-Wunsch 29.09.2026):
+      // "item@stufe" bzw. "item@stufe@qN" (derselbe Schluessel wie
+      // knotenAlternativen) -> Silber je Stueck, >= 0. Ein Knoten mit
+      // eigenem Preis wird zu einem festen Kaufen-Blatt zu genau diesem
+      // Preis: der Rechner sucht dort keinen anderen Weg mehr und steigt
+      // nicht tiefer ab. Gilt nicht fuer die Wurzel selbst (s. kosten()).
+      preisUebersteuerungen: o.preisUebersteuerungen || {},
       // Global Discount (Audit-Befund 9, 19.09.2026): Multiplikator auf
       // Silberkosten, aus dem aktuellen Goldpreis abgeleitet
       // (REGELN.silberRabattFaktor). 1 = kein Rabatt und damit das
@@ -107,6 +121,7 @@ const RECHENKERN = (function () {
       _memoCraft: o._memoCraft || new Map(),
       _memoQualitaet: o._memoQualitaet || new Map(),
       _memoCraftQualitaet: o._memoCraftQualitaet || new Map(),
+      _wurzelSchluessel: null,
     };
   }
 
@@ -171,6 +186,32 @@ const RECHENKERN = (function () {
 
   function tagesbonusFuer(cc, opts) {
     return (cc && opts.tagesbonus[cc]) || null;
+  }
+
+  /**
+   * Eigener Preis fuer einen Bauplan-Knoten (s. opts.preisUebersteuerungen).
+   * Liefert null, wenn keiner gesetzt ist, der Wert ungueltig ist oder der
+   * Schluessel die Wurzel der Rechnung ist (dort waere das Ergebnis nur die
+   * eigene Eingabe). 0 ist erlaubt: "habe ich schon, kostet mich nichts".
+   */
+  function uebersteuerterKandidat(schluessel, item, stufe, qualitaet, opts) {
+    if (schluessel === opts._wurzelSchluessel) return null;
+    const roh = opts.preisUebersteuerungen[schluessel];
+    if (roh == null || roh === "") return null;
+    const preis = Number(roh);
+    if (!isFinite(preis) || preis < 0) return null;
+    const weg = {
+      typ: "kaufen",
+      item,
+      stufe,
+      marktId: marktIdVon(opts.graph, item, stufe),
+      kaufweg: opts.kaufweg,
+      preisJeStueck: preis,
+      eigenpreis: false,
+      uebersteuert: true,
+    };
+    if (qualitaet) weg.qualitaet = qualitaet;
+    return { typ: "kaufen", gesperrt: false, grund: null, silber: preis, fokus: 0, wert: preis, unvollstaendig: false, fehlendeGebaeude: [], weg };
   }
 
   // Gleiche Regel wie PREISE.marktId() in js/preise.js (dort ausfuehrlich
@@ -988,6 +1029,13 @@ const RECHENKERN = (function () {
     }
     if (opts._memoQualitaet.has(schluessel)) return opts._memoQualitaet.get(schluessel);
 
+    const eigenQ = uebersteuerterKandidat(schluessel, item, stufe, qualitaet, opts);
+    if (eigenQ) {
+      const erg = { beste: eigenQ, alle: [eigenQ] };
+      opts._memoQualitaet.set(schluessel, erg);
+      return erg;
+    }
+
     const neuerPfad = new Set(pfad);
     neuerPfad.add(schluessel);
 
@@ -1001,12 +1049,14 @@ const RECHENKERN = (function () {
       const cc = node.cc || null;
       const fokusRegel = fokusRegelFuer(item, stufe, cc, opts);
       rezepte.forEach((rezept, idx) => {
-        if (fokusRegel.wert === "nie") {
+        if (opts.fokusAus) {
+          // Fokus global aus: keine Fokus-Variante, auch kein Platzhalter.
+        } else if (fokusRegel.wert === "nie") {
           alle.push(gesperrterKandidat("craften", item, stufe, "mit Fokus craften ausgeschlossen: " + fokusRegel.grund, { rezeptIndex: idx, mitFokus: true, qualitaet }));
         } else {
           alle.push(craftBeiQualitaetKandidat(item, stufe, rezept, idx, true, node, qualitaet, opts, tiefe, neuerPfad));
         }
-        if (fokusRegel.wert === "immer") {
+        if (fokusRegel.wert === "immer" && !opts.fokusAus) {
           alle.push(gesperrterKandidat("craften", item, stufe, "ohne Fokus craften ausgeschlossen: " + fokusRegel.grund, { rezeptIndex: idx, mitFokus: false, qualitaet }));
         } else {
           alle.push(craftBeiQualitaetKandidat(item, stufe, rezept, idx, false, node, qualitaet, opts, tiefe, neuerPfad));
@@ -1051,6 +1101,13 @@ const RECHENKERN = (function () {
     }
     if (opts._memoGesamt.has(schluessel)) return opts._memoGesamt.get(schluessel);
 
+    const eigen = uebersteuerterKandidat(schluessel, item, stufe, 0, opts);
+    if (eigen) {
+      const erg = { beste: eigen, alle: [eigen] };
+      opts._memoGesamt.set(schluessel, erg);
+      return erg;
+    }
+
     const neuerPfad = new Set(pfad);
     neuerPfad.add(schluessel);
 
@@ -1087,12 +1144,14 @@ const RECHENKERN = (function () {
         // kommentarlos zu verschwinden. "immer" auf einem Rezept ohne
         // eigenen Fokuswert (z.B. koenigliche Items, craftingfocus 0) wirkt
         // dabei einfach folgenlos, kein Sonderfall noetig (s. craftKandidat).
-        if (fokusRegel.wert === "nie") {
+        if (opts.fokusAus) {
+          // Fokus global aus: keine Fokus-Variante, auch kein Platzhalter.
+        } else if (fokusRegel.wert === "nie") {
           alle.push(gesperrterKandidat("craften", item, stufe, "mit Fokus craften ausgeschlossen: " + fokusRegel.grund, { rezeptIndex: idx, mitFokus: true }));
         } else {
           alle.push(craftKandidat(item, stufe, rezept, idx, true, node, opts, tiefe, neuerPfad));
         }
-        if (fokusRegel.wert === "immer") {
+        if (fokusRegel.wert === "immer" && !opts.fokusAus) {
           alle.push(gesperrterKandidat("craften", item, stufe, "ohne Fokus craften ausgeschlossen: " + fokusRegel.grund, { rezeptIndex: idx, mitFokus: false }));
         } else {
           alle.push(craftKandidat(item, stufe, rezept, idx, false, node, opts, tiefe, neuerPfad));
@@ -1130,6 +1189,14 @@ const RECHENKERN = (function () {
     const opts = normOpts(options);
     if (!opts.graph) throw new Error("REZEPTGRAPH fehlt - rezepte.js muss vor rechenkern.js geladen werden, oder opts.graph uebergeben");
     const m = menge == null ? 1 : menge;
+    // Wurzel vom eigenen Preis ausnehmen (s. uebersteuerterKandidat). Bei
+    // Zielqualitaet traegt die Wurzel den "@qN"-Schluessel, nicht
+    // qualifizierbare Items fallen in kostenBeiQualitaet auf "item@stufe"
+    // zurueck, deshalb dort denselben Rueckfall nachbilden.
+    const wurzelNode = opts.graph.items[item];
+    const wurzelMitQualitaet =
+      opts.qualitaetsIndex && !(wurzelNode && !REGELN.istQualifizierbar(item, wurzelNode.cc || null));
+    opts._wurzelSchluessel = item + "@" + (stufe || 0) + (wurzelMitQualitaet ? "@q" + opts.qualitaetsIndex : "");
 
     const ergebnis = opts.qualitaetsIndex
       ? kostenBeiQualitaet(item, stufe || 0, opts.qualitaetsIndex, opts, 0, new Set())

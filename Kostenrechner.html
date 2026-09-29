@@ -246,6 +246,17 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 .baum .fokus-schalter:hover{background:var(--accent-soft);border-color:var(--gold-dim)}
 .baum .fokus-schalter.uebersteuert{background:var(--gold);color:oklch(0.2 0.03 60);
       border-color:var(--gold);font-weight:700}
+/* Globaler Fokus-Schalter (29.09.2026): .fokus-aus am Reiter blendet alle
+   Fokus-Anzeigen aus. Der Schalter hat die Hoehe der Nachbarfelder. */
+#tab-kostenrechner.fokus-aus .nur-fokus{display:none}
+.dreifach.fokus-global button{flex:1;padding:9px 8px;font-size:13px}
+/* Eigene Preise im grafischen Bauplan (29.09.2026) */
+.bg-baum .bg-card.bg-uebersteuert{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+.baum .kn-badge-eigen{background:var(--gold);color:oklch(0.2 0.03 60)}
+.bg-baum .bg-preis-knopf{border:1px solid var(--line);border-radius:4px;background:var(--bg-2);
+  color:var(--dim);font:inherit;font-size:11.5px;line-height:1;padding:3px 5px;cursor:pointer;flex:none}
+.bg-baum .bg-preis-knopf:hover{color:var(--gold);border-color:var(--gold-dim);background:var(--accent-soft)}
+.bg-baum .bg-preis-feld{width:90px;padding:3px 6px;font-size:13px}
 /* Grafische Bauplan-Ansicht: Baumdiagramm links->rechts mit Item-Icons
    (Zyklus "Bauplan grafisch als Baumdiagramm mit Item-Icons", 05./06.09.2026,
    Nutzer-Entscheidungen s. kostenrechner-KONTEXT.md: Baumrichtung links->rechts,
@@ -446,6 +457,13 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
       <option value="4">Meisterwerk</option>
     </select>
   </div>
+  <div class="feld">
+    <label title="Ohne Fokus rechnet der Rechner jeden Craft-Schritt ohne Fokuseinsatz und zeigt nirgends Fokus an. Gilt auch fuer den Reiter Schnelles Geld. Wird dauerhaft gemerkt.">Fokus</label>
+    <div class="dreifach fokus-global" id="fokusSchalterGlobal" role="group" aria-label="Fokus einsetzen">
+      <button type="button" data-fokus="an" class="an">Mit Fokus</button>
+      <button type="button" data-fokus="aus">Ohne Fokus</button>
+    </div>
+  </div>
 </div>
 <div id="ausgewaehlt" class="ausgewaehlt">
   <span id="ausgewaehltText"></span>
@@ -470,6 +488,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
   <div class="bar" style="margin-bottom:10px">
     <button id="alleAufBtn" class="mini">Alles aufklappen</button>
     <button id="alleZuBtn" class="mini">Alles zuklappen</button>
+    <button id="preiseZuruecksetzenBtn" class="mini" hidden title="Alle im Bauplan eingetragenen eigenen Preise entfernen und wieder mit Marktpreisen rechnen.">Eigene Preise zuruecksetzen (0)</button>
     <button id="volumenBtn" class="mini" title="Laedt fuer alle aktuell im Bauplan sichtbaren gesperrten Kaufen-Knoten das 7-Tage-Handelsvolumen (history/-Endpunkt) nach. Zusatzsignal, ob am Markt ueberhaupt gehandelt wird - ersetzt keinen Preis und hebt die Sperre nicht auf.">Handelsvolumen laden</button>
     <div class="dreifach" id="bauplanAnsichtSchalter" role="group" aria-label="Bauplan-Ansicht" title="Zwischen Fliesstext- und grafischer Baumansicht umschalten. Wird dauerhaft gemerkt.">
       <button type="button" data-ansicht="text" class="an">Text</button>
@@ -485,7 +504,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 <div class="body">
   <div class="tblwrap"><table id="alleWegeTabelle">
     <thead><tr>
-      <th class="l">Weg</th><th>Silber</th><th>Fokus</th>
+      <th class="l">Weg</th><th>Silber</th><th class="nur-fokus">Fokus</th>
       <th title="Zielwert = Silber + Fokus x Fokuswert. Danach ist der guenstigste Weg sortiert.">Zielwert</th>
       <th class="l">Status</th>
     </tr></thead>

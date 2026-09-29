@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-29 · Version: v3.2.1 · Fix: veredelte Rohstoffe und Fleisch sind nicht qualifizierbar (vorher Qualitätswurf/Reroll auf Stoff bei globaler Zielqualität)
+Stand: 2026-09-29 · Version: v3.3.0 · Feature: globaler Fokus-Schalter und eigene Preise je Knoten im grafischen Bauplan
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,39 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.3.0 (29.09.2026): Fokus-Schalter und eigene Preise im Bauplan
+
+Zwei Wünsche von Sören, zusammen umgesetzt (Backlog-Punkt 5 damit erledigt):
+
+- **Fokus komplett aus.** Neues Feld "Fokus" oben im Kostenrechner (Mit
+  Fokus / Ohne Fokus), gespeichert als `einstellungen.fokusAus`. Der
+  Rechenkern (`opts.fokusAus`) erzeugt dann gar keine Craft-Varianten mit
+  Fokus, auch keine gesperrten Platzhalter, und schlägt damit Knoten- und
+  Kategorie-Regeln ("immer" wird zu ohne Fokus). Fokus-Kachel im Ergebnis,
+  Fokus-Spalte in "Alle Wege" (`.nur-fokus`) und die Fokus-Schalter je
+  Knoten im Text-Bauplan verschwinden. "Schnelles Geld" liest dieselbe
+  Einstellung mit.
+- **Eigene Preise je Knoten.** Im grafischen Bauplan hat jeder Knoten außer
+  der Wurzel einen Stift-Knopf; Enter übernimmt, Escape bricht ab, leer
+  setzt zurück, ✕ entfernt den Preis, "Eigene Preise zurücksetzen (n)" in
+  der Bauplan-Leiste entfernt alle. Gespeichert als
+  `einstellungen.preisUebersteuerungen` ("item@stufe[@qN]" -> Silber, 0
+  erlaubt), Rechenkern `opts.preisUebersteuerungen`.
+  **Entscheidung:** ein Knoten mit eigenem Preis wird zum festen
+  Kaufen-Blatt zu genau diesem Preis. Der Rechner sucht dort keinen
+  anderen Weg mehr (auch nicht, wenn Craften billiger wäre) und steigt
+  nicht tiefer ab; alles darüber wählt wie gewohnt den günstigsten Weg.
+  Grund: die eingetragene Zahl soll genau die sein, mit der gerechnet wird.
+  Die Wurzel ist ausgenommen. Gilt überall im Baum, wo derselbe Knoten
+  vorkommt, und bleibt gespeichert, deshalb goldener Rahmen und Badge
+  "Eigener Preis". "Schnelles Geld" nutzt die eigenen Preise bewusst nicht,
+  dort zählt der Markt.
+- Der grafische Baum behält beim Neuberechnen desselben Items Auf-/Zuklapp-
+  Zustand und Scrollposition.
+
+Selbsttest 494/494 grün (19 neue Tests). Im Browser gegen synthetische
+Preise durchgeklickt.
 
 ## Nachtrag v3.2.1 (29.09.2026): keine Qualität auf Veredelung
 
@@ -793,7 +826,7 @@ hier ebenfalls entfernt.
    Sorgfalt (Stichproben pruefen, Gegenprobe "wird als Zutat referenziert?"),
    bevor `is_excluded_root()` erweitert wird. Vom Nutzer als naechstes Paket
    angefordert (06.09.2026: "die 549 namenlosen Items einreihen").
-5. **Knopf zum voruebergehenden Ausschalten des Fokuseinsatzes.** Nutzer-
+5. **ERLEDIGT 29.09.2026 (v3.3.0), s. Nachtrag oben.** Knopf zum voruebergehenden Ausschalten des Fokuseinsatzes. Nutzer-
    Wunsch (06.09.2026): eine Moeglichkeit, die Fokusnutzung fuer die
    Berechnung komplett und temporaer abzuschalten (nicht dauerhaft in den
    Einstellungen aendern). Noch nicht spezifiziert, ob das global (ein

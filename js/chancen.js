@@ -509,6 +509,7 @@ const CHANCEN = (function () {
         fokusRegelJeKategorie: einstellungen.fokusRegelJeKategorie,
         fokusUebersteuerungJeKnoten: einstellungen.fokusUebersteuerungJeKnoten,
         fokuswert: einstellungen.fokuswert,
+        fokusAus: !!einstellungen.fokusAus,
         tagesbonus: einstellungen.tagesbonus,
         maxPreisAlterMin:
           einstellungen.maxPreisAlterMin === "" || einstellungen.maxPreisAlterMin == null ? null : Number(einstellungen.maxPreisAlterMin),
@@ -556,7 +557,9 @@ const CHANCEN = (function () {
         ", Einkauf " + (einstellungen.kaufweg === "order" ? "eigene Kauforder" : "Sofortkauf") +
         ", Verkauf " + (einstellungen.verkaufsweg === "order" ? "eigene Verkaufsorder" : "Sofortverkauf") +
         ". Material wird auf der direkten Ebene gekauft, nicht selbst gecraftet. " +
-        "Fokus zählt mit dem Fokuswert aus den Einstellungen (Vorgabe 0, Fokus geht dann als gratis in den Gewinn ein und steht nur als Menge in der Spalte). " +
+        (einstellungen.fokusAus
+          ? "Fokus ist im Kostenrechner ausgeschaltet, gerechnet wird komplett ohne Fokus. "
+          : "Fokus zählt mit dem Fokuswert aus den Einstellungen (Vorgabe 0, Fokus geht dann als gratis in den Gewinn ein und steht nur als Menge in der Spalte). ") +
         "„verkauft/Tag\" ist der von der Albion-Online-Data-API erfasste Handel der letzten " + TAGE_FENSTER +
         " Tage, geteilt durch " + TAGE_FENSTER + "; gemeldet wird nur, was Spieler mit laufendem Data-Client sehen, die echte Zahl liegt also eher höher." +
         "</div>";
