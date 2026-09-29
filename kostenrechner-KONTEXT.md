@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-29 · Version: v3.4.0 · Feature: Städteauswahl im Preisvergleich
+Stand: 2026-09-29 · Version: v3.4.1 · Fix: Marktbegriffe wie im Spiel
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -73,6 +73,22 @@ Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
 
+## Nachtrag v3.4.1 (29.09.2026): Marktbegriffe wie im Spiel
+
+Wunsch von Sören: die Preisspalten heißen jetzt wie im Marktfenster des
+Spiels. **"Verkaufsorders"** ist das günstigste Angebot (`sell_price_min`),
+**"Kauforders"** das höchste Gebot (`buy_price_max`); vorher "Sofortkauf"
+und "Kaufgesuch" bzw. "Kauforder". Betrifft den Preisvergleich, die Tabelle
+"Rohpreise & Handelsvolumen" im Eintopf-Rechner, Tooltips (Spanne,
+Bezugsart, Städteauswahl) und die Meldung "keine Verkaufsorder/Kauforder am
+Markt" in Schnelles Geld.
+
+**Bewusst unverändert:** die Handelswege "Sofortkauf", "Kauforder",
+"Sofortverkauf", "Verkaufsorder" (Radio-Knöpfe, Checkboxen, Wegbeschreibung).
+Das sind Handlungen, keine Marktspalten; "Verkaufsorder" ist dort schon als
+eigener Verkaufsweg belegt. Keine Rechenlogik geändert. Selbsttest 504/504
+grün.
+
 ## Nachtrag v3.4.0 (29.09.2026): Städteauswahl im Preisvergleich
 
 Wunsch von Sören: im Reiter Preisvergleich oben per Checkbox wählen, welche
@@ -86,7 +102,7 @@ Städte in den Tabellen erscheinen. Umgesetzt unter dem Suchfeld
   zeigt einen Hinweis statt einer leeren Tabelle.
 - **Nur Anzeigefilter:** abgerufen werden weiter alle Städte (ein Request
   je Block), das Umschalten braucht deshalb keinen neuen Abruf.
-- Die Markierung des günstigsten Sofortkaufs gilt nur unter den
+- Die Markierung der günstigsten Verkaufsorder gilt nur unter den
   angezeigten Städten.
 - Neue reine Funktionen `staedteBereinigen()` und `tabellenZeilen()` in
   `js/preisvergleich.js`, zehn neue Tests. Selbsttest 504/504 grün.

@@ -2789,7 +2789,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         `Kein 429-Abbruch, sonst waere hier ein Fehler geworfen worden.`;
 
       const belegIds = ids.filter((id) => id.includes("@") && !id.startsWith("T4_HEAD_CLOTH_ROYAL"));
-      const kopf = "<tr><th>Markt-ID</th><th>Sofortkauf</th><th>Kauforder</th><th>Alter (min)</th></tr>";
+      const kopf = "<tr><th>Markt-ID</th><th>Verkaufsorders</th><th>Kauforders</th><th>Alter (min)</th></tr>";
       const zeilen = belegIds
         .map((id) => {
           const e = ergebnis[id];

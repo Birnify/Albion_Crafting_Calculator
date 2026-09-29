@@ -250,7 +250,7 @@ const CHANCEN = (function () {
       return {
         netto: null,
         brutto: null,
-        grund: verkaufsweg === "order" ? "kein Verkaufsangebot am Markt" : "kein Kaufgesuch am Markt",
+        grund: verkaufsweg === "order" ? "keine Verkaufsorder am Markt" : "keine Kauforder am Markt",
         alterMin: null,
       };
     }

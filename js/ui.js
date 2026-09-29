@@ -1274,7 +1274,7 @@ const UI = (function () {
           escapeHtml(gewinnInfo.hinweis) +
           "</div></div>";
       } else {
-        html += "<div><div class='k'>Gewinn</div><div class='v'>-</div><div class='w'>Kein Verkaufsangebot fuer den gewaehlten Verkaufsweg</div></div>";
+        html += "<div><div class='k'>Gewinn</div><div class='v'>-</div><div class='w'>Keine Marktorder fuer den gewaehlten Verkaufsweg</div></div>";
       }
       html += "</div>";
       heroEl.innerHTML = html;

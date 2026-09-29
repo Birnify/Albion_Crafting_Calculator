@@ -712,7 +712,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
   <div class="feld">
     <label>Zutaten einkaufen</label>
     <div class="opts">
-      <label for="etBezSofort" title="Zahlt das niedrigste Verkaufsangebot. Sofort verfügbar, aber teurer."><input type="checkbox" id="etBezSofort" checked>Sofortkauf</label>
+      <label for="etBezSofort" title="Zahlt die günstigste Verkaufsorder am Markt. Sofort verfügbar, aber teurer."><input type="checkbox" id="etBezSofort" checked>Sofortkauf</label>
       <label for="etBezOrder" title="Eigene Kauforder auf Höhe des besten bestehenden Gebots. Günstiger, kostet aber Einstellungsgebühr und füllt sich erst mit der Zeit - oder gar nicht."><input type="checkbox" id="etBezOrder">Kauforder</label>
     </div>
   </div>
@@ -776,7 +776,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
   <th title="Verkauf von 10 Eintöpfen in bestehende Kauforders, abzüglich Steuer.">Erlös / Batch</th>
   <th title="Erlös minus Kosten für einen Batch von 10 Eintöpfen.">Gewinn / Batch</th>
   <th title="Gewinn eines Batches geteilt durch die dafür eingesetzten Fokuspunkte. Ist dein Fokus der Engpass, gehört er in die Stufe mit dem höchsten Wert.">Gewinn / Fokus</th>
-  <th title="Abstand zwischen Verkaufsangebot und Kauforder. Ab 30 Prozent ist der Markt dünn.">Spanne</th>
+  <th title="Abstand zwischen günstigster Verkaufsorder und höchster Kauforder. Ab 30 Prozent ist der Markt dünn.">Spanne</th>
   <th title="Klick auf die Zeile zeigt alle Strategien und die Einkaufsliste.">Signal</th>
 </tr></thead>
 <tbody></tbody>
@@ -878,8 +878,8 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 <table id="etRohpreise">
 <thead><tr>
   <th class="l">Item</th><th class="l">Stadt</th><th class="l">ID</th>
-  <th title="Niedrigstes Verkaufsangebot - was du beim Sofortkauf zahlst.">Sofortkauf</th>
-  <th title="Höchste Kauforder - was du beim Sofortverkauf bekommst.">Kauforder</th>
+  <th title="Günstigste Verkaufsorder am Markt, das zahlst du beim Sofortkauf.">Verkaufsorders</th>
+  <th title="Höchste Kauforder am Markt, das bekommst du beim Sofortverkauf.">Kauforders</th>
   <th title="Tatsächlich gehandelte Stückzahl pro Tag, Schnitt der letzten 7 Tage.">Umsatz / Tag</th>
   <th>Stand</th>
 </tr></thead>
@@ -906,7 +906,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
   <input type="text" id="pvSuche" autocomplete="off" placeholder="Item suchen, z. B. Kürbis, Hammer, Wolfsumhang ...">
   <div id="pvVorschlaege" class="pv-vorschlaege"></div>
 </div>
-<div id="pvStaedte" class="staedte" title="Nur die angehakten Städte erscheinen in den Tabellen; der günstigste Sofortkauf wird nur unter ihnen markiert."></div>
+<div id="pvStaedte" class="staedte" title="Nur die angehakten Städte erscheinen in den Tabellen; die günstigste Verkaufsorder wird nur unter ihnen markiert."></div>
 <div id="pvAuswahl" style="margin-top:14px"></div>
 </div>
 

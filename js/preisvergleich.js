@@ -102,7 +102,7 @@ const PREISVERGLEICH = (function () {
 
   /**
    * Baut die Tabellenzeilen eines Items fuer die sichtbaren Staedte und
-   * markiert den guenstigsten Sofortkauf NUR unter diesen Staedten.
+   * markiert die guenstigste Verkaufsorder NUR unter diesen Staedten.
    */
   function tabellenZeilen(jeStadt, qualitaet, staedte) {
     const je = jeStadt || {};
@@ -390,8 +390,8 @@ const PREISVERGLEICH = (function () {
               ? '<div class="hint">Keine Stadt ausgewählt. Oben mindestens eine Stadt anhaken.</div>'
               : geladen
               ? `<div class="tblwrap"><table><thead><tr><th class="l">Stadt</th>` +
-                `<th title="Niedrigstes Verkaufsangebot - was du beim Sofortkauf zahlst.">Sofortkauf</th>` +
-                `<th title="Höchste Kauforder - was du beim Sofortverkauf bekämst.">Kaufgesuch</th>` +
+                `<th title="Günstigste Verkaufsorder am Markt, das zahlst du beim Sofortkauf.">Verkaufsorders</th>` +
+                `<th title="Höchste Kauforder am Markt, das bekämst du beim Sofortverkauf.">Kauforders</th>` +
                 `</tr></thead><tbody>${rows}</tbody></table></div>`
               : '<div class="hint">Preise werden abgerufen …</div>') +
             `</div>`
@@ -543,7 +543,7 @@ const PREISVERGLEICH = (function () {
     const zAlle = tabellenZeilen(tz, 1, STAEDTE);
     pruefe("tabellenZeilen() liefert je sichtbarer Stadt eine Zeile", zAlle.length === 7);
     pruefe(
-      "tabellenZeilen() markiert den guenstigsten Sofortkauf aller Staedte",
+      "tabellenZeilen() markiert die guenstigste Verkaufsorder aller Staedte",
       zAlle.filter((z) => z.best).map((z) => z.stadt).join() === "Caerleon"
     );
     const zOhneCaerleon = tabellenZeilen(tz, 1, ["Lymhurst", "Martlock", "Thetford"]);
