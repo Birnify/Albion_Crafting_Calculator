@@ -533,6 +533,14 @@ rod can not be qualified", belegt 19.09.2026, umgesetzt in
 Speisen/Tränken/Werkzeugen, bestätigt aber auch, dass beim Eintopf-Rechner
 Qualität zu Recht nie modelliert wurde.
 
+**Veredelte Rohstoffe und Fleisch haben ebenfalls keine Qualität** (Stoff,
+Barren, Leder, Bretter, Blöcke, `meat_*`). Beleg ist der Client-Dump: alle
+Items dieser Kategorien stehen außerhalb der Gruppen `equipmentitem`/`weapon`/`transformationweapon`,
+die `build_graph.py` als qualifizierbar führt (kein `q` in `item-namen.js`).
+Bis 29.09.2026 fehlten sie in `REGELN.istQualifizierbar()`; eine globale
+Zielqualität ließ den Rechner dann für Stoff Qualitätswurf und Reroll
+einrechnen (Kunstvoller Stoff "Exzellent", mit Fokus: 1.292 statt 645 Silber plus Gebühr).
+
 **Qualität rerollen an der Reparaturstation** (05.09.2026, offizielles Wiki,
 `Item_Quality`, Abschnitt "Rerolling quality at a repair station", per
 Chrome-Erweiterung gelesen und die Tabelle per Screenshot gegen die

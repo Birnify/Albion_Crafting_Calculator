@@ -1609,6 +1609,35 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Regressionstest Nachtrag Befund 7 (29.09.2026): veredelte Rohstoffe haben
+  // keine Qualitaet. Soerens Fall: Kunstvoller Stoff, Zielqualitaet
+  // Exzellent, Lymhurst, ohne Fokus kam auf 1.519 statt 886 Silber.
+  // -----------------------------------------------------------------------
+  (function () {
+    if (typeof REZEPTGRAPH === "undefined" || !REZEPTGRAPH.items["T5_CLOTH"]) {
+      pruefe("Regressionstest Stoff-Qualitaet uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+    const preise = {
+      T5_FIBER: { sell: { preis: 412, kein: false }, buy: { preis: 0, kein: true } },
+      T4_CLOTH: { sell: { preis: 164, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const optsBasis = { preise, preiseQualitaet: {}, stationssaetze: { Weber: 0 }, stadt: "Lymhurst", fce: 0, fokuswert: 0, fokusRegelJeKategorie: { fiber: "nie" } };
+    const normal = RECHENKERN.kosten("T5_CLOTH", 0, 1, Object.assign({}, optsBasis, { qualitaetsIndex: 0 }));
+    const exzellent = RECHENKERN.kosten("T5_CLOTH", 0, 1, Object.assign({}, optsBasis, { qualitaetsIndex: 3 }));
+    pruefe(
+      "Stoff-Qualitaet: T5_CLOTH ohne Fokus in Lymhurst = 1.400 x (1 - 36,7 %) = 886 Silber",
+      Math.abs(normal.silber - 1400 * (1 - 0.58 / 1.58)) < 0.01,
+      String(normal.silber)
+    );
+    pruefe(
+      "Stoff-Qualitaet: Zielqualitaet Exzellent aendert das Ergebnis NICHT",
+      normal.silber === exzellent.silber && exzellent.weg.qualitaetsart === undefined,
+      normal.silber + " vs " + exzellent.silber
+    );
+  })();
+
+  // -----------------------------------------------------------------------
   // Regressionstest Befund 8: T1/T2 gebuehrenfrei (Bugfix Audit-Befund 8,
   // 19.09.2026, s. AUDIT-2026-09-13.md)
   // -----------------------------------------------------------------------

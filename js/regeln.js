@@ -52,7 +52,30 @@ const REGELN = (function () {
   // "All the tools except fishing rod can not be qualified"). Die Angelrute
   // ist im Rezeptgraphen an "FISHINGROD" im uniquename erkennbar (T3-T8,
   // inkl. Avalon-Varianten, durchgaengiges Namensmuster im Dump).
-  const NICHT_QUALIFIZIERBAR_KATEGORIEN = new Set(["food", "potion", "tools"]);
+  //
+  // Nachtrag 29.09.2026: auch veredelte Rohstoffe (Stoff, Barren, Leder,
+  // Bretter, Bloecke) und geschlachtetes Fleisch haben keine Qualitaet. Beleg
+  // ist der Client-Dump: keines der 121 Items dieser Kategorien gehoert
+  // dort zu `equipmentitem`/`weapon`, deshalb tragen sie in item-namen.js
+  // kein q-Flag (build_graph.py, QUALITAETS_KATEGORIEN). Vorher
+  // rechnete der Kostenrechner fuer "Kunstvoller Stoff, Exzellent" Wurf und
+  // Reroll und kam so auf 1.519 statt 886 Silber.
+  const NICHT_QUALIFIZIERBAR_KATEGORIEN = new Set([
+    "food",
+    "potion",
+    "tools",
+    "fiber",
+    "ore",
+    "hide",
+    "wood",
+    "rock",
+    "meat_chicken",
+    "meat_cow",
+    "meat_goat",
+    "meat_goose",
+    "meat_pig",
+    "meat_sheep",
+  ]);
 
   /**
    * Ob ein Item ueberhaupt qualifizierbar ist (Craft-Qualitaetswurf, Reroll,
@@ -1547,6 +1570,9 @@ const REGELN = (function () {
       "istQualifizierbar(T4_2H_TOOL_FISHINGROD_AVALON, tools) = true (Avalon-Angelrute ebenfalls)",
       istQualifizierbar("T4_2H_TOOL_FISHINGROD_AVALON", "tools") === true
     );
+    ["fiber", "ore", "hide", "wood", "rock", "meat_cow"].forEach((cc) => {
+      pruefe("istQualifizierbar(x, " + cc + ") = false (Veredelung/Fleisch hat keine Qualitaet)", istQualifizierbar("T5_X", cc) === false);
+    });
     pruefe("istQualifizierbar(T4_MAIN_SWORD, sword) = true (gewoehnliche Ausruestung unveraendert qualifizierbar)", istQualifizierbar("T4_MAIN_SWORD", "sword") === true);
     pruefe("istQualifizierbar(irgendein Item, ohne cc) = true (unbekannte Kategorie nicht einschraenken)", istQualifizierbar("IRGENDWAS", null) === true);
     pruefe(

@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-19 · Version: v3.2.0 · Neuer Reiter „Schnelles Geld": lohnende Crafts je Schicksalsbrett-Knoten, mit erfasstem Tagesabsatz
+Stand: 2026-09-29 · Version: v3.2.1 · Fix: veredelte Rohstoffe und Fleisch sind nicht qualifizierbar (vorher Qualitätswurf/Reroll auf Stoff bei globaler Zielqualität)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,16 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.2.1 (29.09.2026): keine Qualität auf Veredelung
+
+Sören meldete für Kunstvoller Stoff 1.292 Silber (Lymhurst, Zielqualität
+Exzellent) und vermutete eine fehlende Rückgewinnung. Die Rückgewinnung war
+richtig (36,7 % ohne, 53,9 % mit Fokus). Ursache war die Zielqualität:
+`REGELN.istQualifizierbar()` kannte nur Speisen, Tränke und Werkzeuge als
+nicht qualifizierbar, Stoff lief deshalb über Qualitätswurf und Reroll.
+Jetzt sind auch `fiber`, `ore`, `hide`, `wood`, `rock` und `meat_*`
+ausgenommen (Beleg: Client-Dump, keines dieser Items gehört zu `equipmentitem`/`weapon`, kein `q` in `item-namen.js`). Selbsttest 475/475.
 
 ## Aktueller Stand (v3.2.0, Reiter „Schnelles Geld", 19.09.2026)
 
