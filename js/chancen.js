@@ -218,53 +218,11 @@ const CHANCEN = (function () {
     return out;
   }
 
-  /** Preis-Rohdaten von js/preise.js ins Format von RECHENKERN.kosten(opts.preise). */
-  function preiseZuOptsFormat(preiseRoh) {
-    const out = {};
-    Object.keys(preiseRoh || {}).forEach((id) => {
-      const e = preiseRoh[id];
-      out[id] = e ? { sell: e.sell, buy: e.buy } : { sell: { kein: true }, buy: { kein: true } };
-    });
-    return out;
-  }
-
-  /**
-   * Verkaufserloes je Stueck nach Steuer und Einstellgebuehr. Dieselben
-   * Konventionen wie im Kostenrechner (s. CLAUDE.md "Handelskonventionen"):
-   * Verkaufsorder rechnet gegen sell_price_min und zahlt zusaetzlich 2,5 %
-   * Einstellgebuehr, Sofortverkauf gegen buy_price_max ohne sie.
-   *
-   * Ein zu alter Preis wird wie kein Preis behandelt, mit derselben Grenze
-   * wie im Rechenkern (maxPreisAlterMin). Reine Funktion, offline testbar.
-   *
-   * @returns {{netto:?number, brutto:?number, grund:?string, alterMin:?number}}
-   */
-  function erloesJeStueck(eintrag, opts) {
-    opts = opts || {};
-    const verkaufsweg = opts.verkaufsweg === "sofort" ? "sofort" : "order";
-    const steuersatz = opts.premium === false ? REGELN.STEUER_OHNE_PREMIUM : REGELN.STEUER_PREMIUM;
-    const jetzt = opts.jetzt == null ? Date.now() : opts.jetzt;
-    if (!eintrag) return { netto: null, brutto: null, grund: "kein Preis abgerufen", alterMin: null };
-    const seite = verkaufsweg === "order" ? eintrag.sell : eintrag.buy;
-    if (!seite || seite.kein || seite.preis == null || seite.preis <= 0) {
-      return {
-        netto: null,
-        brutto: null,
-        grund: verkaufsweg === "order" ? "keine Verkaufsorder am Markt" : "keine Kauforder am Markt",
-        alterMin: null,
-      };
-    }
-    let alterMin = null;
-    if (seite.datum) {
-      const t = REGELN.parseApiDatumUtc(seite.datum);
-      if (isFinite(t)) alterMin = (jetzt - t) / 60000;
-    }
-    if (opts.maxPreisAlterMin != null && alterMin != null && alterMin > opts.maxPreisAlterMin) {
-      return { netto: null, brutto: seite.preis, grund: "Preis ist " + Math.round(alterMin) + " Minuten alt", alterMin };
-    }
-    const sug = REGELN.steuerUndGebuehr(seite.preis, { steuersatz, mitEinstellgebuehr: verkaufsweg === "order" });
-    return { netto: sug.netto, brutto: seite.preis, grund: null, alterMin };
-  }
+  // preiseZuOptsFormat und erloesJeStueck liegen seit v3.8.1 in js/regeln.js
+  // (REGELN.*), damit der Reiter "Veredeln leveln" nicht davon abhaengt, ob
+  // dieses Modul geladen wurde (Fehler "CHANCEN is not defined", 08.10.2026).
+  const preiseZuOptsFormat = REGELN.preiseZuOptsFormat;
+  const erloesJeStueck = REGELN.erloesJeStueck;
 
   /**
    * Baut eine Ergebniszeile aus Kostenrechnung, Erloes und Absatz.

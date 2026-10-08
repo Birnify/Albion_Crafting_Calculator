@@ -101,6 +101,20 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   // ---- js/chancen.js (Reiter "Schnelles Geld", 19.09.2026) ----
   CHANCEN.selbsttest().forEach((e) => pruefe("chancen: " + e.name, e.ok, e.details));
   VEREDELN.selbsttest().forEach((e) => pruefe("veredeln: " + e.name, e.ok, e.details));
+  // Regression 08.10.2026 ("CHANCEN is not defined" im Reiter Veredeln leveln):
+  // die gemeinsam genutzten Funktionen liegen in REGELN, und der Quelltext von
+  // veredeln.js darf CHANCEN nicht mehr brauchen.
+  pruefe(
+    "veredeln: Erloes und Preisformat kommen aus REGELN, CHANCEN nutzt dieselben Funktionen",
+    typeof REGELN.erloesJeStueck === "function" && typeof REGELN.preiseZuOptsFormat === "function" &&
+      CHANCEN.erloesJeStueck === REGELN.erloesJeStueck && CHANCEN.preiseZuOptsFormat === REGELN.preiseZuOptsFormat,
+    typeof REGELN.erloesJeStueck
+  );
+  pruefe(
+    "veredeln: VEREDELN haengt nicht von CHANCEN ab (kein Verweis im Modulcode)",
+    !/CHANCEN/.test(Object.values(VEREDELN).filter((f) => typeof f === "function").map(String).join("\n")),
+    "Verweis gefunden"
+  );
 
   // ---- rechenkern: opts.nurDirekteEbene (Grundlage des Reiters "Schnelles Geld") ----
   (function () {

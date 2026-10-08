@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-08 · Version: v3.8.0 · Feature: Preise aktualisieren in Veredeln leveln und Schnelles Geld
+Stand: 2026-10-08 · Version: v3.8.1 · Fix: Veredeln leveln ohne Abhängigkeit von chancen.js
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,30 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.8.1 (08.10.2026): „CHANCEN is not defined“
+
+Sören bekam im Reiter „Veredeln leveln“ auf der Pages-Seite „Fehler: CHANCEN
+is not defined“. Headless mit derselben Auswahl nicht nachstellbar; die
+Pages-Builds waren erfolgreich. Der Fehler heißt, dass `js/chancen.js` in
+seinem Browser gar nicht ausgeführt wurde (sonst käme „before
+initialization“); naheliegend sind ein Werbeblocker oder ein gemischter
+Zwischenspeicher, **die Ursache ist nicht belegt**.
+
+- `preiseZuOptsFormat` und `erloesJeStueck` liegen jetzt in `js/regeln.js`
+  (`REGELN.*`); `CHANCEN` verweist auf dieselben Funktionen, `VEREDELN`
+  braucht `CHANCEN` nicht mehr. Headless geprüft: mit blockiertem
+  `chancen.js` rechnet „Veredeln leveln“ weiter.
+- Ladeprüfung am Seitenende: fehlt ein Modul, steht oben ein roter Hinweis
+  mit dem Dateinamen.
+- Alle Skripte tragen `?v=3.8.1`, damit nach einem Update keine alten
+  Dateien aus dem Browser-Zwischenspeicher kommen. Bei jedem Release mitziehen.
+- Zwei Regressionstests. Selbsttest 524/524 grün.
+
+**Tagesbonus belegt:** Sörens Reddit-Auszug (Kommentar von Mordant808)
+rechnet `RRR = LPB / (1 + LPB)` mit Stadtbonus 0,40, Tagesbonus 0,20 und
+Grund 0,18: „0,78 / 1,78 = 0,438“. Genau so rechnet die App (additiv in B),
+ein Selbsttest prüft denselben Wert.
 
 ## Nachtrag v3.8.0 (08.10.2026): Knopf „Preise aktualisieren“
 

@@ -11,7 +11,7 @@
 // gerechnet), also exakt dieselben Formeln wie im Kostenrechner
 // (REGELN.rrr mit Stadtbonus +0,40 in der Veredelungs-Bonusstadt,
 // REGELN.stationsgebuehr, REGELN.fokusKosten). Der Erloes kommt aus
-// CHANCEN.erloesJeStueck (Steuer, Einstellgebuehr, Hoechstalter).
+// REGELN.erloesJeStueck (Steuer, Einstellgebuehr, Hoechstalter).
 //
 // Aus den Einstellungen des Kostenrechners kommen nur Werte, die dort schon
 // gepflegt sind: Premium, Stationssaetze je Gebaeude, FCE und Hoechstalter
@@ -359,7 +359,7 @@ const VEREDELN = (function () {
       craft && Math.abs(craft.silber - 400 / 1.58) < 0.01 && Math.abs(craft.weg.rrr - 0.58 / 1.58) < 1e-9,
       craft && craft.silber
     );
-    const erloes = CHANCEN.erloesJeStueck(preise.T4_CLOTH, { verkaufsweg: "sofort", premium: true });
+    const erloes = REGELN.erloesJeStueck(preise.T4_CLOTH, { verkaufsweg: "sofort", premium: true });
     const zeile = zeileBauen(kand[0], "Lymhurst", craft, erloes, { stueckJeTag: 50 }, { menge: 1000, toleranzProzent: 5 });
     pruefe(
       "zeileBauen: Sofortverkauf 300 mit 4 % Steuer = 288, Gewinn = 288 - 253,16, insgesamt mal Menge",
@@ -720,7 +720,7 @@ const VEREDELN = (function () {
           });
           statusEl.textContent = vorsatz + "Handelsvolumen ...";
           const absatz = await PREISE.absatzAbrufen(produktIds, { stadt, tageFenster: TAGE_FENSTER });
-          const preise = CHANCEN.preiseZuOptsFormat(preiseRoh);
+          const preise = REGELN.preiseZuOptsFormat(preiseRoh);
           const opts = {
             preise,
             eigenpreise: {},
@@ -740,7 +740,7 @@ const VEREDELN = (function () {
           };
           kand.forEach((k) => {
             const craft = craftKandidatAus(RECHENKERN.kosten(k.item, k.stufe, 1, opts), k.rezeptIndex, auswahl.mitFokus);
-            const erloes = CHANCEN.erloesJeStueck(preiseRoh[k.marktId], {
+            const erloes = REGELN.erloesJeStueck(preiseRoh[k.marktId], {
               verkaufsweg: auswahl.verkaufsweg,
               premium: einstellungen.premium,
               maxPreisAlterMin,
