@@ -688,7 +688,7 @@ const VEREDELN = (function () {
       render(gefiltert, letzteZeilen.zeilen.length, letzteZeilen.kontext);
     }
 
-    async function suchen() {
+    async function suchen(erzwingen) {
       if (laeuft) return;
       felderLesen();
       if (!auswahl.staedte.length || !auswahl.rohstoffe.length || !auswahl.tiers.length || !auswahl.stufen.length) {
@@ -697,6 +697,7 @@ const VEREDELN = (function () {
       }
       laeuft = true;
       startEl.disabled = true;
+      el("vdRefresh").disabled = true;
       ausgabeEl.innerHTML = "";
       try {
         const einstellungen = UI.einstellungenLesen();
@@ -711,6 +712,7 @@ const VEREDELN = (function () {
           const vorsatz = stadt + " (" + (i + 1) + "/" + auswahl.staedte.length + "): ";
           const preiseRoh = await PREISE.preiseAbrufen(ids, {
             stadt,
+            erzwingen: !!erzwingen,
             qualitaet: 1,
             aufFortschritt: (f, g) => {
               statusEl.textContent = vorsatz + "Preise " + f + "/" + g + " ...";
@@ -755,22 +757,28 @@ const VEREDELN = (function () {
         neuBewerten();
         const mitErgebnis = zeilen.filter((z) => z.gewinn != null).length;
         const gewinne = zeilen.filter((z) => z.einstufung === "gewinn").length;
+        const stand = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
         statusEl.textContent =
           "Fertig: " + gewinne + " mit Gewinn, " + zeilen.filter((z) => z.einstufung === "null").length + " etwa Null. " +
-          (zeilen.length - mitErgebnis) + " von " + zeilen.length + " Vorgängen ohne vollständige Preise.";
+          (zeilen.length - mitErgebnis) + " von " + zeilen.length + " Vorgängen ohne vollständige Preise. " +
+          (erzwingen ? "Preise neu abgerufen um " + stand + "." : "Gerechnet um " + stand + ", Preise aus dem Zwischenspeicher, sofern jünger als 30 Min.");
       } catch (e) {
         statusEl.textContent = "Fehler: " + (e && e.message ? e.message : e);
         if (typeof console !== "undefined") console.error(e);
       } finally {
         laeuft = false;
         startEl.disabled = false;
+        el("vdRefresh").disabled = false;
       }
     }
 
     gruppenAufbauen();
     tagesbonusAufbauen();
     felderSetzen();
-    startEl.addEventListener("click", suchen);
+    startEl.addEventListener("click", () => suchen(false));
+    // "Preise aktualisieren" (Wunsch 08.10.2026): wie in den anderen
+    // Reitern den Preis-Cache umgehen und alles neu abrufen.
+    el("vdRefresh").addEventListener("click", () => suchen(true));
   }
 
   if (typeof document !== "undefined") {

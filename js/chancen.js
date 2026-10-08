@@ -566,7 +566,7 @@ const CHANCEN = (function () {
         "</div>";
     }
 
-    async function suchen() {
+    async function suchen(erzwingen) {
       if (zustand.laeuft) return;
       const wert = knotenEl.value;
       const knoten = knotenFinden(wert);
@@ -587,6 +587,7 @@ const CHANCEN = (function () {
         const preiseNormalRoh = await PREISE.preiseAbrufen(normalIds, {
           stadt: einstellungen.stadt,
           qualitaet: 1,
+          erzwingen: !!erzwingen,
           aufFortschritt: (fertig, gesamt) => {
             statusEl.textContent = "Preise werden geholt ... " + fertig + "/" + gesamt;
           },
@@ -595,7 +596,7 @@ const CHANCEN = (function () {
         const preiseQRoh = {};
         for (const q of Object.keys(qIds)) {
           statusEl.textContent = "Preise in Qualität " + REGELN.QUALITAETEN[Number(q) - 1] + " werden geholt ...";
-          preiseQRoh[q] = await PREISE.preiseAbrufen(qIds[q], { stadt: einstellungen.stadt, qualitaet: Number(q) });
+          preiseQRoh[q] = await PREISE.preiseAbrufen(qIds[q], { stadt: einstellungen.stadt, qualitaet: Number(q), erzwingen: !!erzwingen });
         }
 
         statusEl.textContent = "Handelsvolumen wird geholt ...";
@@ -634,7 +635,9 @@ const CHANCEN = (function () {
         renderTabelle(gefiltert, zeilen.length, einstellungen);
 
         const goldText = gold ? "Goldpreis " + formatSilber(gold.preis) : "Goldpreis nicht abrufbar";
-        statusEl.textContent = "Fertig: " + gefiltert.length + " Treffer für " + knoten.label + " (" + goldText + ").";
+        statusEl.textContent =
+          "Fertig: " + gefiltert.length + " Treffer für " + knoten.label + " (" + goldText + ")." +
+          (erzwingen ? " Preise neu abgerufen um " + new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + "." : "");
       } catch (e) {
         statusEl.textContent = "Fehler: " + (e && e.message ? e.message : e);
         if (typeof console !== "undefined") console.error(e);
@@ -645,7 +648,9 @@ const CHANCEN = (function () {
     }
 
     knotenAuswahlFuellen();
-    startEl.addEventListener("click", suchen);
+    startEl.addEventListener("click", () => suchen(false));
+    const refreshEl = document.getElementById("chRefresh");
+    if (refreshEl) refreshEl.addEventListener("click", () => suchen(true));
   }
 
   if (typeof document !== "undefined") {

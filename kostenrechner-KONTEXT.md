@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-08 · Version: v3.7.0 · Feature: Einzelpreise im Reiter „Veredeln leveln“
+Stand: 2026-10-08 · Version: v3.8.0 · Feature: Preise aktualisieren in Veredeln leveln und Schnelles Geld
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,15 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.8.0 (08.10.2026): Knopf „Preise aktualisieren“
+
+Wunsch von Sören. Kostenrechner, Eintopf-Rechner und Preisvergleich hatten
+ihn schon; neu in „Veredeln leveln“ (`#vdRefresh`) und „Schnelles Geld“
+(`#chRefresh`). Beide rufen die Suche mit `erzwingen: true` auf, also
+`PREISE.preiseAbrufen` ohne den 30-Minuten-Zwischenspeicher, und rechnen
+danach neu. Die Statuszeile nennt die Uhrzeit des Abrufs. Handelsvolumen
+(`absatzAbrufen`) hat ohnehin keinen Zwischenspeicher. Selbsttest 522/522.
 
 ## Nachtrag v3.7.0 (08.10.2026): Einzelpreise zur Absicherung
 
