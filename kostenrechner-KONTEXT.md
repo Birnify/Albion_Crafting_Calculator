@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-08 · Version: v3.6.0 · Feature: Tagesbonus und Zusatzbonus
+Stand: 2026-10-08 · Version: v3.7.0 · Feature: Einzelpreise im Reiter „Veredeln leveln“
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,17 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.7.0 (08.10.2026): Einzelpreise zur Absicherung
+
+Wunsch von Sören: im Reiter „Veredeln leveln“ die Rohstoffpreise sehen, um
+die Rechnung gegenzuprüfen. Die Spalte „Einsatz je Vorgang, Einkaufspreis“
+zeigt je Zutat Menge und den vom Rechenkern angesetzten Stückpreis
+(`weg.zutaten[].silberJeStueck`, bei eigener Kauforder inkl. 2,5 %), der
+Tooltip Quelle und Alter. Unter dem Erlös steht der Bruttopreis des Produkts
+(höchste Kauforder bzw. günstigste Verkaufsorder) mit Alter im Tooltip.
+Felder `zutatenPreise`, `produktPreis`, `produktAlterMin` in `zeileBauen()`.
+Selbsttest 522/522 grün (1 neuer).
 
 ## Nachtrag v3.6.0 (08.10.2026): Tagesbonus und Zusatzbonus
 

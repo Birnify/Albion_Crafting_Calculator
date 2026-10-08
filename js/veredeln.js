@@ -223,6 +223,9 @@ const VEREDELN = (function () {
       gebuehr: null,
       fokusJeVorgang: null,
       erloes: erloes ? erloes.netto : null,
+      produktPreis: erloes && erloes.brutto != null ? erloes.brutto : null,
+      produktAlterMin: erloes && erloes.alterMin != null ? erloes.alterMin : null,
+      zutatenPreise: [],
       gewinn: null,
       marge: null,
       gewinnJeVorgang: null,
@@ -238,6 +241,16 @@ const VEREDELN = (function () {
     z.silber = craft.silber;
     z.gebuehr = craft.weg.stationsgebuehrJeStueck;
     z.fokusJeVorgang = (craft.fokus || 0) * kandidat.menge;
+    // Zur Absicherung (Wunsch 08.10.2026): die tatsaechlich verwendeten
+    // Einkaufspreise je Zutat, so wie der Rechenkern sie angesetzt hat
+    // (bei eigener Kauforder inkl. 2,5 % Einstellgebuehr).
+    z.zutatenPreise = (craft.weg.zutaten || []).map((zt) => ({
+      n: zt.item,
+      stufe: zt.stufe,
+      menge: zt.menge * kandidat.menge,
+      preis: zt.silberJeStueck,
+      marktId: zt.weg && zt.weg.marktId ? zt.weg.marktId : null,
+    }));
     if (!erloes || erloes.netto == null) {
       z.grund = (erloes && erloes.grund) || "kein Verkaufspreis";
       return z;
@@ -354,6 +367,12 @@ const VEREDELN = (function () {
       JSON.stringify({ gewinn: zeile.gewinn, gesamt: zeile.gewinnGesamt, einstufung: zeile.einstufung })
     );
     const ohneBonus = craftKandidatAus(RECHENKERN.kosten("T4_CLOTH", 0, 1, Object.assign({}, optsBasis, { stadt: "Martlock" })), 0, false);
+    pruefe(
+      "zeileBauen: Einzelpreise zur Absicherung (Faser 100, Vorstufe 200, Produkt 300 brutto)",
+      zeile.zutatenPreise.length === 2 && zeile.zutatenPreise[0].preis === 100 && zeile.zutatenPreise[0].menge === 2 &&
+        zeile.zutatenPreise[1].preis === 200 && zeile.produktPreis === 300,
+      JSON.stringify({ z: zeile.zutatenPreise, p: zeile.produktPreis })
+    );
     pruefe(
       "craftKandidatAus: ausserhalb der Bonusstadt nur Grundproduktion (15,3 %)",
       ohneBonus && Math.abs(ohneBonus.weg.rrr - 0.18 / 1.18) < 1e-9,
@@ -577,8 +596,30 @@ const VEREDELN = (function () {
       if (k === "staedte") tagesbonusAufbauen();
     });
 
-    function rezeptText(z) {
-      return z.zutaten.map((x) => x.c + "× " + nameVon(x.n, x.stufe)).join(" + ");
+    function alterText(min) {
+      if (min == null || !isFinite(min)) return "";
+      return min < 90 ? Math.round(min) + " Min." : min < 2880 ? Math.round(min / 60) + " Std." : Math.round(min / 1440) + " Tage";
+    }
+
+    function zutatAlter(marktId, kontext) {
+      const e = kontext.preiseRoh && kontext.preiseRoh[marktId];
+      const seite = e ? (kontext.kaufweg === "order" ? e.buy : e.sell) : null;
+      if (!seite || !seite.datum) return null;
+      const t = REGELN.parseApiDatumUtc(seite.datum);
+      return isFinite(t) ? (Date.now() - t) / 60000 : null;
+    }
+
+    function rezeptText(z, kontext) {
+      const quelle = kontext.kaufweg === "order" ? "Kauforder +2,5 %" : "Verkaufsorder";
+      return z.zutatenPreise
+        .map((x) => {
+          const alter = alterText(zutatAlter(x.marktId, { preiseRoh: z.preiseRoh, kaufweg: kontext.kaufweg }));
+          return (
+            "<span title='" + quelle + (alter ? ", Preis " + alter + " alt" : "") + "'>" +
+            (Math.round(x.menge * 100) / 100) + "× " + nameVon(x.n, x.stufe) + " <b>à " + fmt(x.preis) + "</b></span>"
+          );
+        })
+        .join("<br>");
     }
 
     function render(zeilen, gesamt, kontext) {
@@ -588,7 +629,7 @@ const VEREDELN = (function () {
         return;
       }
       const kopf =
-        "<tr><th>Stadt</th><th>Produkt</th><th>Einsatz je Vorgang</th><th class='num' title='Rückgewinnungsquote laut Stadtbonus, Fokus und Tagesbonus'>Rückgew.</th>" +
+        "<tr><th>Stadt</th><th>Produkt</th><th title='Einsatz vor Rückgewinnung, mit dem angesetzten Einkaufspreis je Stück in dieser Stadt. Maus auf eine Zutat zeigt Quelle und Alter des Preises.'>Einsatz je Vorgang, Einkaufspreis</th><th class='num' title='Rückgewinnungsquote laut Stadtbonus, Fokus und Tagesbonus'>Rückgew.</th>" +
         "<th class='num' title='Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt'>Kosten/Stück</th>" +
         "<th class='num' title='Verkaufspreis nach Steuer (und Einstellgebühr bei eigener Verkaufsorder)'>Erlös/Stück</th>" +
         "<th class='num'>Gewinn/Stück</th><th class='num' title='Gewinn bezogen auf die eigenen Kosten'>Marge</th>" +
@@ -606,10 +647,12 @@ const VEREDELN = (function () {
             "<tr>" +
             "<td>" + z.stadt + bonus + "</td>" +
             "<td>" + nameVon(z.item, z.stufe) + " <span class='ch-klein'>T" + z.tier + "." + z.vorgangsStufe + "</span>" + ausbeute + "</td>" +
-            "<td class='ch-klein'>" + rezeptText(z) + "</td>" +
+            "<td class='ch-klein'>" + rezeptText(z, kontext) + "</td>" +
             "<td class='num'>" + prozent(z.rrr) + fokus + "</td>" +
             "<td class='num'>" + fmt(z.silber) + "</td>" +
-            "<td class='num'>" + fmt(z.erloes) + "</td>" +
+            "<td class='num'>" + fmt(z.erloes) +
+            "<br><span class='ch-klein' title='" + (kontext.verkaufsweg === "order" ? "günstigste Verkaufsorder" : "höchste Kauforder") +
+            (z.produktAlterMin != null ? ", " + alterText(z.produktAlterMin) + " alt" : "") + "'>Preis " + fmt(z.produktPreis) + "</span></td>" +
             "<td class='num'>" + fmt(z.gewinn) + "</td>" +
             "<td class='num'>" + prozent(z.marge) + "</td>" +
             "<td class='num'>" + fmt(z.gewinnJeVorgang) + "</td>" +
@@ -700,7 +743,9 @@ const VEREDELN = (function () {
               premium: einstellungen.premium,
               maxPreisAlterMin,
             });
-            zeilen.push(zeileBauen(k, stadt, craft, erloes, (absatz[k.marktId] || {})[1], auswahl));
+            const zeile = zeileBauen(k, stadt, craft, erloes, (absatz[k.marktId] || {})[1], auswahl);
+            zeile.preiseRoh = preiseRoh;
+            zeilen.push(zeile);
           });
         }
         letzteZeilen = {
