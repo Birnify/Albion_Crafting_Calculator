@@ -254,7 +254,7 @@ const REGELN = (function () {
   // -----------------------------------------------------------------------
 
   /**
-   * @param {{cc: ?string, stadt: string, mitFokus: boolean, tagesbonus: ?("silber"|"gold")}} p
+   * @param {{cc: ?string, stadt: string, mitFokus: boolean, tagesbonus: ?("silber"|"gold"), zusatzbonus?: number}} p
    * @returns {number} RRR zwischen 0 und <1. 0, wenn cc fehlt (keine
    *   craftingcategory -> keine Rueckgewinnung moeglich, s. koenigliche Items).
    */
@@ -267,6 +267,10 @@ const REGELN = (function () {
     if (p.mitFokus) b += RRR_FOKUSBONUS;
     if (p.tagesbonus === "silber") b += RRR_TAGESBONUS_SILBER;
     else if (p.tagesbonus === "gold") b += RRR_TAGESBONUS_GOLD;
+    // Frei einstellbarer Zusatzbonus (Nutzer-Wunsch 08.10.2026), als Anteil
+    // (0,05 = +5 Prozentpunkte Produktionsbonus). Kein Spielwert, sondern ein
+    // Feld fuer Boni, die die App nicht kennt; negative Werte zaehlen als 0.
+    if (p.zusatzbonus > 0) b += p.zusatzbonus;
     return b / (1 + b);
   }
 

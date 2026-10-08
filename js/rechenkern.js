@@ -85,6 +85,9 @@ const RECHENKERN = (function () {
       // REGELN.globalDiscount().
       silberRabattFaktor: o.silberRabattFaktor != null && isFinite(o.silberRabattFaktor) ? o.silberRabattFaktor : 1,
       tagesbonus: o.tagesbonus || {}, // craftingcategory -> "silber"|"gold"
+      // Frei einstellbarer Zusatz-Produktionsbonus als Anteil (0,05 = +5
+      // Prozentpunkte), s. REGELN.rrr. 0 = unveraendertes Verhalten.
+      zusatzProduktionsbonus: o.zusatzProduktionsbonus > 0 ? o.zusatzProduktionsbonus : 0,
       maxTiefe: o.maxTiefe || STANDARD_MAX_TIEFE,
       // "Schnelles Geld"-Reiter (js/chancen.js, 19.09.2026): true = Zutaten
       // werden IMMER gekauft, nur der Wurzelknoten selbst darf gecraftet,
@@ -401,7 +404,7 @@ const RECHENKERN = (function () {
     // mit doppelter Ausbeute kostet doppelt so viel Fokus, s. CLAUDE.md
     // "craftingfocus aus dem Dump" und AUDIT-2026-09-13.md Befund 1.
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) : 0;
-    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
+    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts), zusatzbonus: opts.zusatzProduktionsbonus });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
     // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
     // gebuehrenfrei, s. REGELN.stationsgebuehrGiltFuerTier().
@@ -752,7 +755,7 @@ const RECHENKERN = (function () {
     // mit doppelter Ausbeute kostet doppelt so viel Fokus, s. CLAUDE.md
     // "craftingfocus aus dem Dump" und AUDIT-2026-09-13.md Befund 1.
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) : 0;
-    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts) });
+    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts), zusatzbonus: opts.zusatzProduktionsbonus });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
     // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
     // gebuehrenfrei, s. REGELN.stationsgebuehrGiltFuerTier(). Praktisch ohne

@@ -88,6 +88,7 @@ const UI = (function () {
         return acc;
       }, {}),
       tagesbonus: {}, // craftingcategory -> "silber"|"gold", fehlt = aus
+      zusatzbonusProzent: 0, // frei einstellbarer Zusatz-Produktionsbonus in Prozentpunkten, kein Spielwert
       kaufweg: "sofort",
       verkaufsweg: "order",
       premium: true,
@@ -122,6 +123,7 @@ const UI = (function () {
       // bleiben. S. Kommentar bei stationssaetze in defaultEinstellungen().
       basis.stationssaetze = Object.assign({}, basis.stationssaetze, daten.stationssaetze || {});
       basis.tagesbonus = daten.tagesbonus || {};
+      basis.zusatzbonusProzent = isFinite(Number(daten.zusatzbonusProzent)) && Number(daten.zusatzbonusProzent) > 0 ? Number(daten.zusatzbonusProzent) : 0;
       basis.kaufweg = daten.kaufweg || basis.kaufweg;
       basis.verkaufsweg = daten.verkaufsweg || basis.verkaufsweg;
       basis.premium = daten.premium != null ? !!daten.premium : basis.premium;
@@ -690,6 +692,7 @@ const UI = (function () {
     const vwOrderEl = document.getElementById("vwOrder");
     const premiumEl = document.getElementById("premium");
     const maxPreisAlterEl = document.getElementById("maxPreisAlter");
+    const zusatzbonusEl = document.getElementById("zusatzbonus");
     const maxPreisAlterPresetsEl = document.getElementById("maxPreisAlterPresets");
 
     const eigenpreiseHinweisEl = document.getElementById("eigenpreiseHinweis");
@@ -765,6 +768,7 @@ const UI = (function () {
       fceEingabeEl.value = einstellungen.fce;
       fokuswertEl.value = einstellungen.fokuswert;
       maxPreisAlterEl.value = einstellungen.maxPreisAlterMin == null ? "" : einstellungen.maxPreisAlterMin;
+      if (zusatzbonusEl) zusatzbonusEl.value = einstellungen.zusatzbonusProzent || 0;
       premiumEl.value = einstellungen.premium ? "1" : "0";
       (einstellungen.kaufweg === "order" ? kwOrderEl : kwSofortEl).checked = true;
       (einstellungen.verkaufsweg === "order" ? vwOrderEl : vwSofortEl).checked = true;
@@ -1153,6 +1157,7 @@ const UI = (function () {
         fokusAus: !!einstellungen.fokusAus,
         preisUebersteuerungen: einstellungen.preisUebersteuerungen,
         tagesbonus: einstellungen.tagesbonus,
+        zusatzProduktionsbonus: (einstellungen.zusatzbonusProzent || 0) / 100,
         maxPreisAlterMin:
           einstellungen.maxPreisAlterMin === "" || einstellungen.maxPreisAlterMin == null
             ? null
@@ -2667,6 +2672,12 @@ const UI = (function () {
       einstellungen.premium = premiumEl.value === "1";
       persistiereUndRechne();
     });
+    if (zusatzbonusEl)
+      zusatzbonusEl.addEventListener("change", () => {
+        const wert = Number(zusatzbonusEl.value);
+        einstellungen.zusatzbonusProzent = isFinite(wert) && wert > 0 ? wert : 0;
+        persistiereUndRechne();
+      });
     maxPreisAlterEl.addEventListener("change", () => {
       einstellungen.maxPreisAlterMin = maxPreisAlterEl.value.trim() === "" ? null : Number(maxPreisAlterEl.value);
       persistiereUndRechne();

@@ -314,6 +314,7 @@ B = Grundproduktion 0,18
       0,40 beim Veredeln     <- deutlich größer, oft übersehen
   + Fokus 0,59               (falls eingesetzt)
   + Tagesbonus 0,10 oder 0,20 (Silber- bzw. Goldtag, rotiert je Stadt)
+  + Zusatzbonus              (in der App frei einstellbar, kein Spielwert)
 ```
 
 Daraus die geläufigen Werte: 15,3 % (B 0,18) · 24,8 % (B 0,33, Craft-Bonusstadt)

@@ -511,6 +511,7 @@ const CHANCEN = (function () {
         fokuswert: einstellungen.fokuswert,
         fokusAus: !!einstellungen.fokusAus,
         tagesbonus: einstellungen.tagesbonus,
+        zusatzProduktionsbonus: (einstellungen.zusatzbonusProzent || 0) / 100,
         maxPreisAlterMin:
           einstellungen.maxPreisAlterMin === "" || einstellungen.maxPreisAlterMin == null ? null : Number(einstellungen.maxPreisAlterMin),
         nurDirekteEbene: true,

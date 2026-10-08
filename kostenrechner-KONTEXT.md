@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-08 · Version: v3.5.0 · Feature: Reiter „Veredeln leveln“
+Stand: 2026-10-08 · Version: v3.6.0 · Feature: Tagesbonus und Zusatzbonus
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,30 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.6.0 (08.10.2026): Tagesbonus und Zusatzbonus
+
+Wunsch von Sören: den täglichen Bonus einrechnen und einen eigenen
+Zusatzbonus einstellen können.
+
+- **Tagesbonus** (+0,10 Silbertag, +0,20 Goldtag) war schon belegt
+  (`AUDIT-2026-09-13.md`, Wiki `Resource_return_rate`: "each day two items
+  have an extra 10% or 20%") und im Kostenrechner als Schalter je Kategorie
+  vorhanden. Er rotiert je Stadt und Warengruppe und ist über keine
+  Schnittstelle abrufbar. Der Reiter „Veredeln leveln“ hat dafür jetzt eine
+  eigene Tabelle Stadt × Rohstoff (aus/+10 %/+20 %), gespeichert unter
+  `tagesbonus` im Reiter-Speicher; den Kostenrechner-Wert nutzt er nicht mehr.
+  Am 08.10.2026 neu nachzulesen ging nicht: Wiki-Seite `Local_Production_Bonus`,
+  das Forum und albiononline.com antworten aus der Cloud mit 403,
+  `Resource_return_rate` erwähnt den Tagesbonus laut Abruf nicht mehr. Wer
+  genaue Regeln will (welche Gruppen, wann), muss im Spiel nachsehen.
+- **Zusatzbonus** (kein Spielwert, frei): Prozentpunkte Produktionsbonus,
+  die in `REGELN.rrr()` als `zusatzbonus` (Anteil) zu B addiert werden.
+  Rechenkern `opts.zusatzProduktionsbonus`, Feld im Kostenrechner
+  (`einstellungen.zusatzbonusProzent`, wirkt auch in „Schnelles Geld“) und
+  eigenes Feld im Reiter „Veredeln leveln“. Negative Werte zählen als 0.
+
+Selbsttest 521/521 grün (4 neue).
 
 ## Nachtrag v3.5.0 (08.10.2026): Reiter „Veredeln leveln“
 

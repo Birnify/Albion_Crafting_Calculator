@@ -14,9 +14,13 @@
 // CHANCEN.erloesJeStueck (Steuer, Einstellgebuehr, Hoechstalter).
 //
 // Aus den Einstellungen des Kostenrechners kommen nur Werte, die dort schon
-// gepflegt sind: Premium, Stationssaetze je Gebaeude, Tagesbonus, FCE und
-// Hoechstalter der Preise. Stadt, Kauf- und Verkaufsweg und Fokus waehlt der
-// Reiter selbst, weil sie hier die eigentliche Frage sind.
+// gepflegt sind: Premium, Stationssaetze je Gebaeude, FCE und Hoechstalter
+// der Preise. Stadt, Kauf- und Verkaufsweg, Fokus, Tagesbonus und
+// Zusatzbonus waehlt der Reiter selbst, weil sie hier die eigentliche Frage
+// sind. Der Tagesbonus (+0,10 Silbertag, +0,20 Goldtag, s. CLAUDE.md und
+// AUDIT-2026-09-13.md: Wiki "each day two items have an extra 10% or 20%")
+// rotiert je Stadt und Warengruppe und ist ueber keine Schnittstelle
+// abrufbar, deshalb ein Schalter je Stadt und Rohstoff statt eines Kalenders.
 //
 // Bewusst NICHT modelliert: Craft-Fame je Vorgang. Dafuer gibt es im Repo
 // keinen belegten Wert (s. CLAUDE.md, "Belegte Werte nie ohne neuen Beleg").
@@ -52,6 +56,8 @@ const VEREDELN = (function () {
       toleranzProzent: 5,
       menge: 1000,
       verlusteZeigen: false,
+      tagesbonus: {}, // Stadt -> craftingcategory -> "silber"|"gold"
+      zusatzbonusProzent: 0,
     };
   }
 
@@ -75,7 +81,27 @@ const VEREDELN = (function () {
       toleranzProzent: isFinite(Number(roh.toleranzProzent)) && roh.toleranzProzent !== "" && roh.toleranzProzent != null ? Math.max(0, Number(roh.toleranzProzent)) : basis.toleranzProzent,
       menge: isFinite(Number(roh.menge)) && Number(roh.menge) > 0 ? Number(roh.menge) : basis.menge,
       verlusteZeigen: !!roh.verlusteZeigen,
+      tagesbonus: tagesbonusBereinigen(roh.tagesbonus),
+      zusatzbonusProzent: isFinite(Number(roh.zusatzbonusProzent)) && Number(roh.zusatzbonusProzent) > 0 ? Number(roh.zusatzbonusProzent) : 0,
     };
+  }
+
+  /** Nur bekannte Staedte, Rohstoffe und die Werte "silber"/"gold" bleiben stehen. */
+  function tagesbonusBereinigen(roh) {
+    const out = {};
+    if (!roh || typeof roh !== "object") return out;
+    const ccs = ROHSTOFFE.map((r) => r.cc);
+    STAEDTE.forEach((stadt) => {
+      const je = roh[stadt];
+      if (!je || typeof je !== "object") return;
+      ccs.forEach((cc) => {
+        if (je[cc] === "silber" || je[cc] === "gold") {
+          if (!out[stadt]) out[stadt] = {};
+          out[stadt][cc] = je[cc];
+        }
+      });
+    });
+    return out;
   }
 
   function aktuellerGraph(graph) {
@@ -339,6 +365,31 @@ const VEREDELN = (function () {
       mitFokus && Math.abs(mitFokus.weg.rrr - 1.17 / 2.17) < 1e-9 && Math.abs(mitFokus.fokus - 54) < 1e-9,
       mitFokus && mitFokus.weg.rrr + " / " + mitFokus.fokus
     );
+    const mitTag = craftKandidatAus(RECHENKERN.kosten("T4_CLOTH", 0, 1, Object.assign({}, optsBasis, { tagesbonus: { fiber: "gold" } })), 0, false);
+    pruefe(
+      "Tagesbonus: Goldtag in Lymhurst ergibt B = 0,78, also 43,8 % Rueckgewinnung",
+      mitTag && Math.abs(mitTag.weg.rrr - 0.78 / 1.78) < 1e-9,
+      mitTag && mitTag.weg.rrr
+    );
+    const mitZusatz = craftKandidatAus(RECHENKERN.kosten("T4_CLOTH", 0, 1, Object.assign({}, optsBasis, { tagesbonus: { fiber: "silber" }, zusatzProduktionsbonus: 0.05 })), 0, false);
+    pruefe(
+      "Zusatzbonus: +5 Prozentpunkte addieren sich zu Grundwert, Stadtbonus und Silbertag (B = 0,73)",
+      mitZusatz && Math.abs(mitZusatz.weg.rrr - 0.73 / 1.73) < 1e-9,
+      mitZusatz && mitZusatz.weg.rrr
+    );
+    pruefe(
+      "Zusatzbonus: negative oder fehlende Werte aendern nichts",
+      Math.abs(REGELN.rrr({ cc: "fiber", stadt: "Martlock", zusatzbonus: -0.5 }) - 0.18 / 1.18) < 1e-12 &&
+        Math.abs(REGELN.rrr({ cc: "fiber", stadt: "Martlock" }) - 0.18 / 1.18) < 1e-12,
+      REGELN.rrr({ cc: "fiber", stadt: "Martlock", zusatzbonus: -0.5 })
+    );
+    pruefe(
+      "tagesbonusBereinigen: unbekannte Stadt, Rohstoff und Wert fallen weg",
+      JSON.stringify(tagesbonusBereinigen({ Lymhurst: { fiber: "gold", wood: "bronze", sword: "silber" }, Atlantis: { ore: "gold" } })) ===
+        JSON.stringify({ Lymhurst: { fiber: "gold" } }),
+      JSON.stringify(tagesbonusBereinigen({ Lymhurst: { fiber: "gold", wood: "bronze", sword: "silber" }, Atlantis: { ore: "gold" } }))
+    );
+
     const ohnePreis = zeileBauen(kand[0], "Lymhurst", craft, { netto: null, grund: "keine Kauforder am Markt" }, null, {});
     pruefe(
       "zeileBauen: ohne Verkaufspreis kein erfundener Gewinn",
@@ -382,6 +433,8 @@ const VEREDELN = (function () {
     const toleranzEl = el("vdToleranz");
     const mengeEl = el("vdMenge");
     const verlusteEl = el("vdVerluste");
+    const tagesbonusEl = el("vdTagesbonus");
+    const zusatzbonusEl = el("vdZusatzbonus");
     const startEl = el("vdStart");
     const statusEl = el("vdStatus");
     const ausgabeEl = el("vdAusgabe");
@@ -434,6 +487,29 @@ const VEREDELN = (function () {
       stufen: { el: stufenEl, titel: "Verzauberung", werte: STUFEN, label: (s) => "." + s, parse: Number, tooltip: "Beim Stein zählt die Verzauberung des eingesetzten Steins; verzauberter Stein ergibt 2, 4 oder 8 normale Blöcke." },
     };
 
+    function tagesbonusAufbauen() {
+      if (!auswahl.staedte.length) {
+        tagesbonusEl.innerHTML = "<div class='hint'>Erst eine Stadt anhaken.</div>";
+        return;
+      }
+      const kopf = "<tr><th>Stadt</th>" + ROHSTOFFE.map((r) => "<th>" + r.label.split(" ")[0] + "</th>").join("") + "</tr>";
+      const zeilen = auswahl.staedte
+        .map((stadt) => {
+          const je = auswahl.tagesbonus[stadt] || {};
+          return (
+            "<tr><td>" + stadt + "</td>" +
+            ROHSTOFFE.map((r) => {
+              const w = je[r.cc] || "aus";
+              const opt = (wert, text) => `<option value="${wert}"${w === wert ? " selected" : ""}>${text}</option>`;
+              return `<td><select data-tag-stadt="${stadt}" data-tag-cc="${r.cc}">${opt("aus", "aus")}${opt("silber", "+10 %")}${opt("gold", "+20 %")}</select></td>`;
+            }).join("") +
+            "</tr>"
+          );
+        })
+        .join("");
+      tagesbonusEl.innerHTML = "<table class='klein-tbl vd-tag'>" + kopf + zeilen + "</table>";
+    }
+
     function gruppenAufbauen() {
       Object.keys(GRUPPEN).forEach((k) => {
         const g = GRUPPEN[k];
@@ -448,6 +524,7 @@ const VEREDELN = (function () {
       toleranzEl.value = auswahl.toleranzProzent;
       mengeEl.value = auswahl.menge;
       verlusteEl.checked = auswahl.verlusteZeigen;
+      zusatzbonusEl.value = auswahl.zusatzbonusProzent;
     }
 
     function felderLesen() {
@@ -459,6 +536,7 @@ const VEREDELN = (function () {
           toleranzProzent: toleranzEl.value,
           menge: mengeEl.value,
           verlusteZeigen: verlusteEl.checked,
+          zusatzbonusProzent: zusatzbonusEl.value,
         })
       );
       speichern();
@@ -472,6 +550,16 @@ const VEREDELN = (function () {
         auswahl[box.dataset.gruppe] = g.werte.filter((w) => an.indexOf(w) !== -1);
         speichern();
         checkboxGruppe(g.el, g.titel, g.werte, g.label, auswahl[box.dataset.gruppe], box.dataset.gruppe, g.tooltip);
+        if (box.dataset.gruppe === "staedte") tagesbonusAufbauen();
+        return;
+      }
+      const tagSel = ev.target.closest("select[data-tag-stadt]");
+      if (tagSel) {
+        const stadt = tagSel.dataset.tagStadt;
+        if (!auswahl.tagesbonus[stadt]) auswahl.tagesbonus[stadt] = {};
+        if (tagSel.value === "aus") delete auswahl.tagesbonus[stadt][tagSel.dataset.tagCc];
+        else auswahl.tagesbonus[stadt][tagSel.dataset.tagCc] = tagSel.value;
+        speichern();
         return;
       }
       felderLesen();
@@ -486,6 +574,7 @@ const VEREDELN = (function () {
       auswahl[k] = auswahl[k].length === g.werte.length ? [] : g.werte.slice();
       speichern();
       checkboxGruppe(g.el, g.titel, g.werte, g.label, auswahl[k], k, g.tooltip);
+      if (k === "staedte") tagesbonusAufbauen();
     });
 
     function rezeptText(z) {
@@ -539,7 +628,8 @@ const VEREDELN = (function () {
         ", Verkauf " + (kontext.verkaufsweg === "order" ? "über eigene Verkaufsorder" : "per Sofortverkauf in die Kauforders") +
         ", Steuer " + (kontext.premium ? "4 % (Premium)" : "8 % (ohne Premium)") +
         ", " + (kontext.mitFokus ? "mit Fokus (FCE aus dem Kostenrechner)" : "ohne Fokus") +
-        ". Rohstoff und Vorstufe werden gekauft. Stationssätze, Tagesbonus und Höchstalter der Preise kommen aus den Einstellungen des Kostenrechners. Craft-Fame ist nicht eingerechnet." +
+        (kontext.zusatzbonusProzent ? ", Zusatzbonus +" + kontext.zusatzbonusProzent + " Prozentpunkte" : "") +
+        ". Rohstoff und Vorstufe werden gekauft. Stationssätze und Höchstalter der Preise kommen aus den Einstellungen des Kostenrechners. Craft-Fame ist nicht eingerechnet." +
         "</div>";
     }
 
@@ -598,7 +688,8 @@ const VEREDELN = (function () {
             fokusRegelJeKategorie: {},
             fokusUebersteuerungJeKnoten: {},
             fokuswert: 0,
-            tagesbonus: einstellungen.tagesbonus,
+            tagesbonus: auswahl.tagesbonus[stadt] || {},
+            zusatzProduktionsbonus: auswahl.zusatzbonusProzent / 100,
             maxPreisAlterMin,
             nurDirekteEbene: true,
           };
@@ -614,7 +705,7 @@ const VEREDELN = (function () {
         }
         letzteZeilen = {
           zeilen,
-          kontext: { kaufweg: auswahl.kaufweg, verkaufsweg: auswahl.verkaufsweg, premium: einstellungen.premium !== false, mitFokus: auswahl.mitFokus },
+          kontext: { kaufweg: auswahl.kaufweg, verkaufsweg: auswahl.verkaufsweg, premium: einstellungen.premium !== false, mitFokus: auswahl.mitFokus, zusatzbonusProzent: auswahl.zusatzbonusProzent },
         };
         neuBewerten();
         const mitErgebnis = zeilen.filter((z) => z.gewinn != null).length;
@@ -632,6 +723,7 @@ const VEREDELN = (function () {
     }
 
     gruppenAufbauen();
+    tagesbonusAufbauen();
     felderSetzen();
     startEl.addEventListener("click", suchen);
   }
@@ -646,6 +738,7 @@ const VEREDELN = (function () {
     ROHSTOFFE,
     standardEinstellungen,
     einstellungenBereinigen,
+    tagesbonusBereinigen,
     rezeptIstMarktfaehig,
     kandidaten,
     benoetigteMarktIds,
