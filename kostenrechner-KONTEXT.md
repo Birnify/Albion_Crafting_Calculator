@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-09-29 · Version: v3.4.1 · Fix: Marktbegriffe wie im Spiel
+Stand: 2026-10-08 · Version: v3.5.0 · Feature: Reiter „Veredeln leveln“
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -12,10 +12,10 @@ Stand: 2026-09-29 · Version: v3.4.1 · Fix: Marktbegriffe wie im Spiel
 
 ## Was ist das?
 
-**Seit v3.2.0 eine App mit vier Bereichen** (bis v3.1.11 drei) ("Albion Werkzeuge", sichtbarer
+**Seit v3.5.0 eine App mit fünf Bereichen** (v3.2.0 bis v3.4.1 vier, bis v3.1.11 drei) ("Albion Werkzeuge", sichtbarer
 Titel in der Oberfläche, Ordner-/Repo-Name bleibt bewusst `Kostenrechner`, s.
 Nutzer-Entscheidung unten): oben eine Reiterumschaltung
-(Kostenrechner/Eintopf-Rechner/Preisvergleich/Schnelles Geld, `js/tabs.js`). Jeder Bereich
+(Kostenrechner/Eintopf-Rechner/Preisvergleich/Schnelles Geld/Veredeln leveln, `js/tabs.js`). Jeder Bereich
 bleibt fachlich eigenständig (eigener Rechenkern/eigener Zustand), das ist
 Architektur-Zusammenführung, keine inhaltliche Vermischung.
 
@@ -72,6 +72,41 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.5.0 (08.10.2026): Reiter „Veredeln leveln“
+
+Wunsch von Sören: Stellen finden, an denen sich Veredeln zum Leveln lohnt.
+Rohstoff und Vorstufe in einer Stadt kaufen, dort veredeln, das Produkt in
+derselben Stadt verkaufen; gesucht sind Gewinn oder etwa Null.
+
+**Bereich 5, Veredeln leveln** (`js/veredeln.js`, Objekt `VEREDELN`):
+
+- Checkboxen für Städte (Vorgabe Lymhurst), Rohstoffe (alle fünf), Tier
+  (Vorgabe T4 bis T8) und Verzauberung (alle), dazu Einkauf (Sofortkauf
+  oder eigene Kauforder), Verkauf (Sofortverkauf oder eigene
+  Verkaufsorder), Fokus (Vorgabe ohne), Toleranz „etwa Null“ (Vorgabe 5 %
+  Verlust auf die Kosten) und Menge (Vorgabe 1.000 Stück, für „Gewinn
+  gesamt“). Gespeichert in `albion_kostenrechner_veredeln_v1`.
+- **Keine eigene Rechenlogik:** jede Zeile ist der Craft-Kandidat genau
+  dieses Rezepts aus `RECHENKERN.kosten()` mit `nurDirekteEbene` (Zutaten
+  gekauft), also dieselbe Rückgewinnung (+0,40 in der Veredelungs-
+  Bonusstadt, +0,59 mit Fokus), Stationsgebühr und Fokusformel wie im
+  Kostenrechner. Erlös über `CHANCEN.erloesJeStueck`. Die Rückgewinnung
+  wirkt auf Rohstoff UND Vorstufe, wie im Rechenkern.
+- Aus den Kostenrechner-Einstellungen: Premium, Stationssätze je Gebäude,
+  Tagesbonus, FCE, Höchstalter der Preise. Fokusregeln je Kategorie/Knoten
+  und eigene Preise werden bewusst ignoriert, der Reiter-Schalter gilt.
+- Rezepte mit Fraktionsmarke fallen weg (kein Marktpreis). Beim Stein zählt
+  die Verzauberung des eingesetzten Steins (2/4/8 Blöcke je Vorgang).
+- Rangliste nach Marge; ohne „Verluste zeigen“ nur Gewinn und etwa Null.
+  Spalten: Rückgewinnung (mit Fokus je Vorgang), Kosten, Erlös, Gewinn je
+  Stück, Marge, Gewinn je Vorgang und gesamt, verkauft/Tag (history/,
+  Untergrenze).
+- **Nicht modelliert: Craft-Fame.** Kein belegter Wert im Repo; Silber je
+  Fame bräuchte eine Ablesung im Spiel.
+
+Selbsttest 517/517 grün (13 neue). Im Browser headless gegen synthetische
+Preise durchgeklickt; der echte Abruf ist aus der Cloud nicht prüfbar.
 
 ## Nachtrag v3.4.1 (29.09.2026): Marktbegriffe wie im Spiel
 

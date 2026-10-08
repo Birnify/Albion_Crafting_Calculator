@@ -821,6 +821,7 @@ dort) - der Git-Commit bleibt dort trotzdem Pflicht.
 | `EINTOPF-KONTEXT-ARCHIV.md` | Historische Fachdokumentation des archivierten, eigenständigen Eintopf-Rechners; weiterhin die Quelle für `js/eintopf-*.js` |
 | `Kostenrechner.html`, `js/*.js` | Die App |
 | `js/chancen.js` | Reiter „Schnelles Geld": lohnende Crafts je Schicksalsbrett-Knoten |
+| `js/veredeln.js` | Reiter „Veredeln leveln": Veredeln mit Gewinn oder etwa Null je Stadt |
 | `rezepte.js`, `item-namen.js` | Von `build_graph.py` erzeugt, nicht von Hand bearbeiten |
 | `build_graph.py` | Erzeugt `rezepte.js`/`item-namen.js` neu, braucht den Client-Dump |
 | `design.md` | Verbindliche Design-Spezifikation (Farben/Typografie/Bausteine) |

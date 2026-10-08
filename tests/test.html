@@ -71,6 +71,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 <script src="../js/tabs.js"></script>
 <script src="../js/preisvergleich.js"></script>
 <script src="../js/chancen.js"></script>
+<script src="../js/veredeln.js"></script>
 <script src="../js/eintopf-daten.js"></script>
 <script src="../js/eintopf-preise.js"></script>
 <script src="../js/eintopf-rechenkern.js"></script>
@@ -99,6 +100,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 
   // ---- js/chancen.js (Reiter "Schnelles Geld", 19.09.2026) ----
   CHANCEN.selbsttest().forEach((e) => pruefe("chancen: " + e.name, e.ok, e.details));
+  VEREDELN.selbsttest().forEach((e) => pruefe("veredeln: " + e.name, e.ok, e.details));
 
   // ---- rechenkern: opts.nurDirekteEbene (Grundlage des Reiters "Schnelles Geld") ----
   (function () {

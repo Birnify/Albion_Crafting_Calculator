@@ -118,6 +118,14 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 .ch-hinweis{color:var(--dim);font-size:12.5px;line-height:1.55}
 .ch-klein{color:var(--dim);font-size:11.5px}
 .ch-tabellenrahmen{max-height:70vh;overflow:auto}
+/* Reiter "Veredeln leveln" (js/veredeln.js) */
+.vd-tabelle th:nth-child(3),.vd-tabelle td:nth-child(3){text-align:left}
+.vd-gewinn{color:var(--good);font-weight:700}
+.vd-null{color:var(--warn);font-weight:700}
+.vd-verlust{color:var(--bad)}
+.vd-bonus{color:var(--good);font-size:11.5px;font-weight:700}
+#tab-veredeln .staedte{margin-top:14px;padding-top:12px}
+#tab-veredeln .staedte .mini{margin-left:10px}
 .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;
       white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
 .pill.good{background:var(--good-bg);color:var(--good)}
@@ -406,6 +414,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
   <button type="button" id="tabbtn-eintopf" class="tabbtn" data-tab="eintopf" role="tab" aria-selected="false" aria-controls="tab-eintopf">Eintopf-Rechner</button>
   <button type="button" id="tabbtn-preisvergleich" class="tabbtn" data-tab="preisvergleich" role="tab" aria-selected="false" aria-controls="tab-preisvergleich">Preisvergleich</button>
   <button type="button" id="tabbtn-chancen" class="tabbtn" data-tab="chancen" role="tab" aria-selected="false" aria-controls="tab-chancen">Schnelles Geld</button>
+  <button type="button" id="tabbtn-veredeln" class="tabbtn" data-tab="veredeln" role="tab" aria-selected="false" aria-controls="tab-veredeln">Veredeln leveln</button>
 </div>
 
 <div id="tab-kostenrechner" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-kostenrechner">
@@ -944,6 +953,50 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 
 </div><!-- /tab-chancen -->
 
+<div id="tab-veredeln" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-veredeln" style="display:none">
+
+<div class="sub">Wo lohnt sich Veredeln zum Leveln? Rohstoff und Vorstufe in der Stadt kaufen, dort veredeln und das Produkt in derselben Stadt verkaufen. Die Liste zeigt, wo das Gewinn bringt oder etwa bei Null landet.</div>
+
+<div class="panel gp-panel">
+<div class="grid">
+  <div class="feld">
+    <label for="vdKaufweg" title="Sofortkauf nimmt die günstigste Verkaufsorder. Eine eigene Kauforder ist billiger, füllt sich aber langsam und kostet 2,5 % Einstellgebühr.">Einkauf</label>
+    <select id="vdKaufweg"><option value="sofort">Sofortkauf</option><option value="order">Eigene Kauforder</option></select>
+  </div>
+  <div class="feld">
+    <label for="vdVerkaufsweg" title="Sofortverkauf bedient die höchste Kauforder, nur Steuer. Eine eigene Verkaufsorder bringt mehr, kostet zusätzlich 2,5 % Einstellgebühr und füllt sich erst mit der Zeit.">Verkauf</label>
+    <select id="vdVerkaufsweg"><option value="sofort">Sofortverkauf</option><option value="order">Eigene Verkaufsorder</option></select>
+  </div>
+  <div class="feld">
+    <label for="vdFokus" title="Mit Fokus steigt die Rückgewinnung (+0,59 Produktionsbonus), der Fokus je Vorgang steht dann in der Tabelle. FCE kommt aus dem Kostenrechner.">Fokus</label>
+    <select id="vdFokus"><option value="ohne">Ohne Fokus</option><option value="mit">Mit Fokus</option></select>
+  </div>
+  <div class="feld">
+    <label for="vdToleranz" title="Bis zu so viel Prozent Verlust, bezogen auf die eigenen Kosten, gilt noch als etwa Null.">Etwa Null bis % Verlust</label>
+    <input type="number" id="vdToleranz" min="0" step="0.5">
+  </div>
+  <div class="feld">
+    <label for="vdMenge" title="Geplante Menge in Stück Produkt, für die Spalte Gewinn gesamt.">Menge (Stück)</label>
+    <input type="number" id="vdMenge" min="1" step="1">
+  </div>
+</div>
+<div id="vdStaedte" class="staedte"></div>
+<div id="vdRohstoffe" class="staedte"></div>
+<div id="vdTiers" class="staedte"></div>
+<div id="vdStufen" class="staedte"></div>
+<div class="bar" style="margin:16px 0 0">
+  <button type="button" id="vdStart">Gelegenheiten suchen</button>
+  <label style="display:flex;align-items:center;gap:7px;margin:0;text-transform:none" title="Auch Vorgänge zeigen, die mehr als die Toleranz verlieren."><input type="checkbox" id="vdVerluste" style="width:auto">Verluste zeigen</label>
+  <span id="vdStatus"></span>
+</div>
+</div>
+
+<div class="panel gp-panel ch-tabellenrahmen">
+<div id="vdAusgabe"><div class="ch-hinweis">Premium, Stationssätze je Gebäude (Weber, Sägewerk, Schmelze, Steinmetz, Gerberei), Tagesbonus, FCE und Höchstalter der Preise kommen aus den Einstellungen des Kostenrechners.</div></div>
+</div>
+
+</div><!-- /tab-veredeln -->
+
 </div>
 
 <script src="rezepte.js"></script>
@@ -959,5 +1012,6 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 <script src="js/tabs.js"></script>
 <script src="js/preisvergleich.js"></script>
 <script src="js/chancen.js"></script>
+<script src="js/veredeln.js"></script>
 </body>
 </html>
