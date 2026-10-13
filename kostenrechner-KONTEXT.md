@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-13 · Version: v3.9.0 · Feature: Veredeln leveln mit eigenen Einkaufspreisen, Höchstpreis und Stationssätzen
+Stand: 2026-10-13 · Version: v3.9.1 · Fix: Tagesbonus gilt in allen Städten gleich
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,44 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.9.1 (13.10.2026): Tagesbonus gilt in allen Städten
+
+Nutzerbeleg (Sören, im Spiel beobachtet): der Tagesbonus auf die
+Rückgewinnung ist **nicht stadtspezifisch**, er gilt in allen Städten gleich.
+Ersetzt die Aussage „rotiert je Stadt“ in `CLAUDE.md` (beide Kopien) und im
+Plan (Abschnitt 9, Punkt 6, mit Korrekturvermerk).
+
+- **Veredeln leveln:** die Tabelle Stadt × Rohstoff ist ersetzt durch eine
+  Zeile „Tagesbonus (gilt in allen Städten)“, je Rohstoff aus / 10 % / 20 %,
+  mehrere gleichzeitig möglich. Der Wert gilt in jeder Stadt
+  (`zeilenRechnen` nimmt `einstellungen.tagesbonus`, nicht mehr je Stadt).
+- **Eine gemeinsame Einstellung:** der Kostenrechner führte den Tagesbonus
+  schon immer ohne Stadt (`einstellungen.tagesbonus`, cc → silber/gold), und
+  „Schnelles Geld“ liest denselben Wert. Der Reiter nutzt jetzt genau diese
+  Einstellung, Abgleich wie bei den Stationssätzen: `UI.tagesbonusSetzen()`
+  speichert und meldet per Ereignis `albion:tagesbonus`, der Kostenrechner
+  übernimmt den einen Wert in seinen Arbeitsspeicher, der Reiter zieht bei
+  Änderungen im Kostenrechner nach. `rechenkern.js`/`regeln.js` unverändert
+  (dort war der Bonus nie stadtabhängig).
+- **Migration:** ein alter Stand `tagesbonus` (Stadt → Rohstoff) im
+  Reiter-Speicher wird beim Laden einmalig übernommen, je Rohstoff der
+  **höchste** Wert über alle Städte (`VEREDELN.tagesbonusAusAltstand`).
+  Begründung: jeder Eintrag war eine Ablesung desselben Bonus; die alte
+  Tabelle zeigte jede angehakte Stadt, gepflegt wurde meist nur eine, ein
+  „aus“ heißt also eher „nicht eingetragen“. Der Altstand ersetzt einen
+  Kostenrechner-Wert derselben Kategorie (seit v3.6.0 wurde der Bonus für
+  diese fünf Rohstoffe im Reiter gepflegt, der Kostenrechner-Wert dort
+  ignoriert); Rohstoffe ohne Altstand behalten den Kostenrechner-Wert.
+  `einstellungenBereinigen` führt kein Feld `tagesbonus` mehr, der
+  Reiter-Speicher wird danach ohne das Feld zurückgeschrieben.
+- Selbsttest **601/601** grün (vorher 594; der Test für
+  `tagesbonusBereinigen` ersetzt, 8 neu: Faser 20 % ergibt Lymhurst
+  B = 0,78 und Martlock/Caerleon B = 0,38, mehrere Rohstoffe, Altstand wirkt
+  nicht mehr, Migration samt Vorrangregel, Ereignis, aus). Headless
+  durchgeklickt mit Live-Preisen: Migration (Lymhurst Silber, Martlock Gold
+  → Gold), Rückgewinnung 43,8 % / 27,5 %, Umschalten in beiden Reitern
+  wirkt im jeweils anderen, Reload behält den Stand, 390 px bricht um.
 
 ## Nachtrag v3.9.0 (13.10.2026): Veredeln leveln, eigener Preis und Höchstpreis
 
@@ -273,6 +311,8 @@ Zusatzbonus einstellen können.
   Schnittstelle abrufbar. Der Reiter „Veredeln leveln“ hat dafür jetzt eine
   eigene Tabelle Stadt × Rohstoff (aus/+10 %/+20 %), gespeichert unter
   `tagesbonus` im Reiter-Speicher; den Kostenrechner-Wert nutzt er nicht mehr.
+  **Überholt seit v3.9.1:** der Bonus gilt in allen Städten gleich, der
+  Reiter nutzt wieder die gemeinsame Einstellung, s. Nachtrag v3.9.1.
   Am 08.10.2026 neu nachzulesen ging nicht: Wiki-Seite `Local_Production_Bonus`,
   das Forum und albiononline.com antworten aus der Cloud mit 403,
   `Resource_return_rate` erwähnt den Tagesbonus laut Abruf nicht mehr. Wer

@@ -14,13 +14,16 @@
 // REGELN.erloesJeStueck (Steuer, Einstellgebuehr, Hoechstalter).
 //
 // Aus den Einstellungen des Kostenrechners kommen nur Werte, die dort schon
-// gepflegt sind: Premium, Stationssaetze je Gebaeude, FCE und Hoechstalter
-// der Preise. Stadt, Kauf- und Verkaufsweg, Fokus, Tagesbonus und
+// gepflegt sind: Premium, Stationssaetze je Gebaeude, Tagesbonus, FCE und
+// Hoechstalter der Preise. Stadt, Kauf- und Verkaufsweg, Fokus und
 // Zusatzbonus waehlt der Reiter selbst, weil sie hier die eigentliche Frage
 // sind. Der Tagesbonus (+0,10 Silbertag, +0,20 Goldtag, s. CLAUDE.md und
 // AUDIT-2026-09-13.md: Wiki "each day two items have an extra 10% or 20%")
-// rotiert je Stadt und Warengruppe und ist ueber keine Schnittstelle
-// abrufbar, deshalb ein Schalter je Stadt und Rohstoff statt eines Kalenders.
+// ist ueber keine Schnittstelle abrufbar, deshalb ein Schalter je Rohstoff
+// statt eines Kalenders. Seit v3.9.1 (13.10.2026, Nutzerbeleg: im Spiel
+// beobachtet) gilt er in allen Staedten gleich: eine Zeile statt einer je
+// Stadt, und es ist dieselbe Einstellung wie im Kostenrechner
+// (einstellungen.tagesbonus, UI.tagesbonusSetzen).
 //
 // Bewusst NICHT modelliert: Craft-Fame je Vorgang. Dafuer gibt es im Repo
 // keinen belegten Wert (s. CLAUDE.md, "Belegte Werte nie ohne neuen Beleg").
@@ -75,7 +78,6 @@ const VEREDELN = (function () {
       toleranzProzent: 5,
       menge: 1000,
       verlusteZeigen: false,
-      tagesbonus: {}, // Stadt -> craftingcategory -> "silber"|"gold"
       zusatzbonusProzent: 0,
       preisUeberschreibungen: {}, // Stadt -> Markt-ID -> Silber je Stueck (> 0), s. Modulkommentar
     };
@@ -165,25 +167,31 @@ const VEREDELN = (function () {
       toleranzProzent: isFinite(Number(roh.toleranzProzent)) && roh.toleranzProzent !== "" && roh.toleranzProzent != null ? Math.max(0, Number(roh.toleranzProzent)) : basis.toleranzProzent,
       menge: isFinite(Number(roh.menge)) && Number(roh.menge) > 0 ? Number(roh.menge) : basis.menge,
       verlusteZeigen: !!roh.verlusteZeigen,
-      tagesbonus: tagesbonusBereinigen(roh.tagesbonus),
       zusatzbonusProzent: isFinite(Number(roh.zusatzbonusProzent)) && Number(roh.zusatzbonusProzent) > 0 ? Number(roh.zusatzbonusProzent) : 0,
       preisUeberschreibungen: ueberschreibungenBereinigen(roh.preisUeberschreibungen),
     };
   }
 
-  /** Nur bekannte Staedte, Rohstoffe und die Werte "silber"/"gold" bleiben stehen. */
-  function tagesbonusBereinigen(roh) {
+  /**
+   * Migration des alten Speicherstands (bis v3.9.0: tagesbonus je Stadt,
+   * Stadt -> craftingcategory -> "silber"|"gold") auf einen Wert je Rohstoff.
+   * Je Rohstoff gilt der HOECHSTE Wert ueber alle Staedte (Gold vor Silber).
+   * Begruendung: jeder Eintrag war eine Ablesung desselben, wie wir jetzt
+   * wissen stadtunabhaengigen Bonus. Die alte Tabelle zeigte jede angehakte
+   * Stadt, gepflegt wurde meist nur eine; ein "aus" in einer anderen Stadt
+   * heisst also eher "nicht eingetragen" als "abgelesen: kein Bonus". Bei
+   * Silber hier und Gold dort ist nicht feststellbar, welcher Eintrag neuer
+   * ist; der hoehere ist die tatsaechlich beobachtete Bonusstufe. Unbekannte
+   * Staedte, Rohstoffe und Werte fallen weg. Liefert {} ohne Altstand.
+   */
+  function tagesbonusAusAltstand(roh) {
     const out = {};
     if (!roh || typeof roh !== "object") return out;
-    const ccs = ROHSTOFFE.map((r) => r.cc);
-    STAEDTE.forEach((stadt) => {
-      const je = roh[stadt];
-      if (!je || typeof je !== "object") return;
-      ccs.forEach((cc) => {
-        if (je[cc] === "silber" || je[cc] === "gold") {
-          if (!out[stadt]) out[stadt] = {};
-          out[stadt][cc] = je[cc];
-        }
+    const rang = { silber: 1, gold: 2 };
+    ROHSTOFFE.forEach(({ cc }) => {
+      STAEDTE.forEach((stadt) => {
+        const w = roh[stadt] && typeof roh[stadt] === "object" ? roh[stadt][cc] : null;
+        if (rang[w] && (!out[cc] || rang[w] > rang[out[cc]])) out[cc] = w;
       });
     });
     return out;
@@ -411,7 +419,7 @@ const VEREDELN = (function () {
         fokusRegelJeKategorie: {},
         fokusUebersteuerungJeKnoten: {},
         fokuswert: 0,
-        tagesbonus: (auswahl.tagesbonus || {})[stadt] || {},
+        tagesbonus: einstellungen.tagesbonus || {}, // v3.9.1: gilt in allen Staedten gleich
         zusatzProduktionsbonus: (auswahl.zusatzbonusProzent || 0) / 100,
         maxPreisAlterMin,
         nurDirekteEbene: true,
@@ -553,11 +561,17 @@ const VEREDELN = (function () {
         Math.abs(REGELN.rrr({ cc: "fiber", stadt: "Martlock" }) - 0.18 / 1.18) < 1e-12,
       REGELN.rrr({ cc: "fiber", stadt: "Martlock", zusatzbonus: -0.5 })
     );
+    const alt = { Lymhurst: { fiber: "silber", wood: "bronze", sword: "silber" }, Martlock: { fiber: "gold", hide: "silber" }, Atlantis: { ore: "gold" } };
     pruefe(
-      "tagesbonusBereinigen: unbekannte Stadt, Rohstoff und Wert fallen weg",
-      JSON.stringify(tagesbonusBereinigen({ Lymhurst: { fiber: "gold", wood: "bronze", sword: "silber" }, Atlantis: { ore: "gold" } })) ===
-        JSON.stringify({ Lymhurst: { fiber: "gold" } }),
-      JSON.stringify(tagesbonusBereinigen({ Lymhurst: { fiber: "gold", wood: "bronze", sword: "silber" }, Atlantis: { ore: "gold" } }))
+      "tagesbonusAusAltstand: je Rohstoff der hoechste Wert ueber alle Staedte, Unbekanntes faellt weg",
+      JSON.stringify(tagesbonusAusAltstand(alt)) === JSON.stringify({ fiber: "gold", hide: "silber" }) &&
+        JSON.stringify(tagesbonusAusAltstand(null)) === "{}" && JSON.stringify(tagesbonusAusAltstand({ Lymhurst: "gold" })) === "{}",
+      JSON.stringify(tagesbonusAusAltstand(alt))
+    );
+    pruefe(
+      "einstellungenBereinigen: der alte Tagesbonus je Stadt bleibt nicht im Reiter-Speicher (liegt jetzt in den gemeinsamen Einstellungen)",
+      !("tagesbonus" in einstellungenBereinigen({ tagesbonus: alt })) && !("tagesbonus" in standardEinstellungen()),
+      Object.keys(einstellungenBereinigen({ tagesbonus: alt })).join(",")
     );
 
     const ohnePreis = zeileBauen(kand[0], "Lymhurst", craft, { netto: null, grund: "keine Kauforder am Markt" }, null, {});
@@ -597,6 +611,29 @@ const VEREDELN = (function () {
       "zeilenRechnen: Weber 400 geht als Stationsgebuehr ein, Kosten = 400 / 1,58 + Gebuehr",
       gebuehr > 0 && Math.abs(basisZ.silber - (400 / 1.58 + gebuehr)) < 1e-9,
       basisZ.silber + " / " + gebuehr
+    );
+    // v3.9.1: Tagesbonus gilt in allen Staedten gleich, aus den gemeinsamen Einstellungen.
+    const tagDaten = ["Lymhurst", "Martlock", "Caerleon"].map((stadt) => ({ stadt, preiseRoh, absatz: {} }));
+    const tagAus = { staedte: ["Lymhurst", "Martlock", "Caerleon"], kaufweg: "sofort", verkaufsweg: "sofort" };
+    const tagZ = rechne(tagAus, tagDaten, Object.assign({}, einst, { tagesbonus: { fiber: "gold" } }));
+    const rrrVon = (zs, stadt) => (zs.find((z) => z.stadt === stadt) || {}).rrr;
+    pruefe(
+      "Tagesbonus Faser 20 % wirkt in jeder Stadt: Lymhurst B = 0,18 + 0,40 + 0,20, Martlock und Caerleon B = 0,18 + 0,20",
+      Math.abs(rrrVon(tagZ, "Lymhurst") - 0.78 / 1.78) < 1e-9 && Math.abs(rrrVon(tagZ, "Martlock") - 0.38 / 1.38) < 1e-9 &&
+        Math.abs(rrrVon(tagZ, "Caerleon") - 0.38 / 1.38) < 1e-9,
+      ["Lymhurst", "Martlock", "Caerleon"].map((s) => s + ":" + rrrVon(tagZ, s)).join(", ")
+    );
+    const tagSilberAndere = rechne(tagAus, tagDaten, Object.assign({}, einst, { tagesbonus: { fiber: "silber", wood: "gold", ore: "gold" } }));
+    pruefe(
+      "Tagesbonus: mehrere Rohstoffe gleichzeitig, Faser 10 % gibt Martlock B = 0,28; Holz/Erz-Bonus beruehrt Faser nicht",
+      Math.abs(rrrVon(tagSilberAndere, "Martlock") - 0.28 / 1.28) < 1e-9 && Math.abs(rrrVon(tagSilberAndere, "Lymhurst") - 0.68 / 1.68) < 1e-9,
+      rrrVon(tagSilberAndere, "Martlock") + " / " + rrrVon(tagSilberAndere, "Lymhurst")
+    );
+    const tagAlt = rechne(Object.assign({}, tagAus, { tagesbonus: { Martlock: { fiber: "gold" } } }), tagDaten, einst);
+    pruefe(
+      "Tagesbonus: ein alter Eintrag je Stadt im Reiter-Speicher wirkt nicht mehr (nur die gemeinsame Einstellung zaehlt)",
+      Math.abs(rrrVon(tagAlt, "Martlock") - 0.18 / 1.18) < 1e-9,
+      rrrVon(tagAlt, "Martlock")
     );
     const mit150 = rechne({ kaufweg: "sofort", verkaufsweg: "sofort", preisUeberschreibungen: { Lymhurst: { T4_FIBER: 150 } } })[0];
     pruefe(
@@ -725,8 +762,11 @@ const VEREDELN = (function () {
     let daten = null; // { kand, stadtDaten: [{stadt, preiseRoh, absatz}] } der letzten Suche, fuer Nachrechnen ohne Abruf
     let laeuft = false;
 
+    let altTagesbonus = null;
     try {
-      auswahl = einstellungenBereinigen(JSON.parse(localStorage.getItem(SPEICHER_KEY) || "null"));
+      const gespeichert = JSON.parse(localStorage.getItem(SPEICHER_KEY) || "null");
+      altTagesbonus = gespeichert && gespeichert.tagesbonus;
+      auswahl = einstellungenBereinigen(gespeichert);
     } catch (e) {
       auswahl = standardEinstellungen();
     }
@@ -770,27 +810,29 @@ const VEREDELN = (function () {
       stufen: { el: stufenEl, titel: "Verzauberung", werte: STUFEN, label: (s) => "." + s, parse: Number, tooltip: "Beim Stein zählt die Verzauberung des eingesetzten Steins; verzauberter Stein ergibt 2, 4 oder 8 normale Blöcke." },
     };
 
+    /** Eine Zeile, ein Schalter je Rohstoff; dieselbe Einstellung wie im Kostenrechner (v3.9.1). */
     function tagesbonusAufbauen() {
-      if (!auswahl.staedte.length) {
-        tagesbonusEl.innerHTML = "<div class='hint'>Erst eine Stadt anhaken.</div>";
-        return;
-      }
-      const kopf = "<tr><th>Stadt</th>" + ROHSTOFFE.map((r) => "<th>" + r.label.split(" ")[0] + "</th>").join("") + "</tr>";
-      const zeilen = auswahl.staedte
-        .map((stadt) => {
-          const je = auswahl.tagesbonus[stadt] || {};
-          return (
-            "<tr><td>" + stadt + "</td>" +
-            ROHSTOFFE.map((r) => {
-              const w = je[r.cc] || "aus";
-              const opt = (wert, text) => `<option value="${wert}"${w === wert ? " selected" : ""}>${text}</option>`;
-              return `<td><select data-tag-stadt="${stadt}" data-tag-cc="${r.cc}">${opt("aus", "aus")}${opt("silber", "+10 %")}${opt("gold", "+20 %")}</select></td>`;
-            }).join("") +
-            "</tr>"
-          );
-        })
-        .join("");
-      tagesbonusEl.innerHTML = "<table class='klein-tbl vd-tag'>" + kopf + zeilen + "</table>";
+      const tb = UI.einstellungenLesen().tagesbonus || {};
+      tagesbonusEl.innerHTML = ROHSTOFFE.map((r) => {
+        const w = tb[r.cc] || "aus";
+        const opt = (wert, text) => `<option value="${wert}"${w === wert ? " selected" : ""}>${text}</option>`;
+        const name = r.label.split(" ")[0];
+        return `<label>${name}<select class="vd-tag" data-tag-cc="${r.cc}" aria-label="Tagesbonus ${name}">${opt("aus", "aus")}${opt("silber", "10 %")}${opt("gold", "20 %")}</select></label>`;
+      }).join("");
+    }
+
+    // v3.9.1: alter Tagesbonus je Stadt aus dem Reiter-Speicher einmalig in
+    // die gemeinsame Einstellung uebernehmen (je Rohstoff der hoechste Wert,
+    // s. tagesbonusAusAltstand). Der Altstand hat Vorrang vor einem Wert, der
+    // im Kostenrechner fuer dieselbe Kategorie steht: seit v3.6.0 wurde der
+    // Tagesbonus fuer genau diese fuenf Rohstoffe hier gepflegt, der
+    // Kostenrechner-Wert wurde vom Reiter ignoriert. Rohstoffe ohne Altstand
+    // behalten den Kostenrechner-Wert. Danach den Reiter-Speicher ohne das
+    // alte Feld zurueckschreiben, damit die Migration nur einmal laeuft.
+    if (altTagesbonus && typeof altTagesbonus === "object") {
+      const migriert = tagesbonusAusAltstand(altTagesbonus);
+      Object.keys(migriert).forEach((cc) => UI.tagesbonusSetzen(cc, migriert[cc], "veredeln"));
+      speichern();
     }
 
     const STATION_LABEL = { Saegewerk: "Sägewerk" };
@@ -894,17 +936,13 @@ const VEREDELN = (function () {
         auswahl[box.dataset.gruppe] = g.werte.filter((w) => an.indexOf(w) !== -1);
         speichern();
         checkboxGruppe(g.el, g.titel, g.werte, g.label, auswahl[box.dataset.gruppe], box.dataset.gruppe, g.tooltip);
-        if (box.dataset.gruppe === "staedte") tagesbonusAufbauen();
         if (box.dataset.gruppe === "rohstoffe") stationenAufbauen();
         return;
       }
-      const tagSel = ev.target.closest("select[data-tag-stadt]");
+      // v3.9.1: Tagesbonus je Rohstoff, gilt in allen Staedten, geteilt mit dem Kostenrechner.
+      const tagSel = ev.target.closest("select[data-tag-cc]");
       if (tagSel) {
-        const stadt = tagSel.dataset.tagStadt;
-        if (!auswahl.tagesbonus[stadt]) auswahl.tagesbonus[stadt] = {};
-        if (tagSel.value === "aus") delete auswahl.tagesbonus[stadt][tagSel.dataset.tagCc];
-        else auswahl.tagesbonus[stadt][tagSel.dataset.tagCc] = tagSel.value;
-        speichern();
+        UI.tagesbonusSetzen(tagSel.dataset.tagCc, tagSel.value, "veredeln");
         rechnen();
         return;
       }
@@ -935,8 +973,13 @@ const VEREDELN = (function () {
       auswahl[k] = auswahl[k].length === g.werte.length ? [] : g.werte.slice();
       speichern();
       checkboxGruppe(g.el, g.titel, g.werte, g.label, auswahl[k], k, g.tooltip);
-      if (k === "staedte") tagesbonusAufbauen();
       if (k === "rohstoffe") stationenAufbauen();
+    });
+    // Tagesbonus im Kostenrechner geaendert: Zeile nachziehen, neu rechnen.
+    document.addEventListener(UI.TAGESBONUS_EVENT, (ev) => {
+      if (ev.detail && ev.detail.quelle === "veredeln") return;
+      tagesbonusAufbauen();
+      rechnen();
     });
     // Stationssatz im Kostenrechner geaendert: Felder nachziehen, neu rechnen.
     document.addEventListener(UI.STATIONSSAETZE_EVENT, (ev) => {
@@ -1170,7 +1213,7 @@ const VEREDELN = (function () {
     ROHSTOFFE,
     standardEinstellungen,
     einstellungenBereinigen,
-    tagesbonusBereinigen,
+    tagesbonusAusAltstand,
     rezeptIstMarktfaehig,
     kandidaten,
     benoetigteMarktIds,

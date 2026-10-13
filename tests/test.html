@@ -149,6 +149,51 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       } catch (e) { /* ignorieren */ }
     }
   })();
+  // v3.9.1: Tagesbonus gilt in allen Staedten, eine gemeinsame Einstellung
+  // (einstellungen.tagesbonus) fuer Kostenrechner und "Veredeln leveln".
+  (function () {
+    const KEY = "albion_kostenrechner_einstellungen";
+    let vorher = null;
+    try { vorher = localStorage.getItem(KEY); } catch (e) { /* ignorieren */ }
+    const gemeldet = [];
+    const horcher = (ev) => gemeldet.push(ev.detail);
+    document.addEventListener(UI.TAGESBONUS_EVENT, horcher);
+    try {
+      try { localStorage.removeItem(KEY); } catch (e) { /* ignorieren */ }
+      UI.tagesbonusSetzen("sword", "silber", "kostenrechner");
+      UI.tagesbonusSetzen("fiber", "silber", "kostenrechner");
+      UI.tagesbonusSetzen("wood", "gold", "kostenrechner");
+      gemeldet.length = 0;
+      // Altstand des Reiters bis v3.9.0: je Stadt.
+      const migriert = VEREDELN.tagesbonusAusAltstand({ Lymhurst: { fiber: "gold" }, Martlock: { fiber: "silber", ore: "silber" } });
+      Object.keys(migriert).forEach((cc) => UI.tagesbonusSetzen(cc, migriert[cc], "veredeln"));
+      const tb = UI.einstellungenLesen().tagesbonus;
+      pruefe(
+        "veredeln: Migration Tagesbonus je Stadt, hoechster Wert je Rohstoff ersetzt den Kostenrechner-Wert, andere Kategorien bleiben",
+        tb.fiber === "gold" && tb.ore === "silber" && tb.wood === "gold" && tb.sword === "silber" && Object.keys(tb).length === 4,
+        JSON.stringify(tb)
+      );
+      pruefe(
+        "veredeln: Tagesbonus-Aenderung wird per Ereignis gemeldet (Kategorie, Wert, Quelle)",
+        gemeldet.length === 2 && gemeldet[0].cc === "fiber" && gemeldet[0].wert === "gold" && gemeldet[0].quelle === "veredeln",
+        JSON.stringify(gemeldet)
+      );
+      const aus = UI.tagesbonusSetzen("fiber", "aus", "veredeln");
+      const quatsch = UI.tagesbonusSetzen("ore", "bronze", "veredeln");
+      const tb2 = UI.einstellungenLesen().tagesbonus;
+      pruefe(
+        "veredeln: Tagesbonus aus (oder unbekannter Wert) entfernt den Eintrag",
+        aus === null && quatsch === null && !("fiber" in tb2) && !("ore" in tb2) && tb2.wood === "gold",
+        JSON.stringify(tb2)
+      );
+    } finally {
+      document.removeEventListener(UI.TAGESBONUS_EVENT, horcher);
+      try {
+        if (vorher == null) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, vorher);
+      } catch (e) { /* ignorieren */ }
+    }
+  })();
   pruefe(
     "veredeln: VEREDELN haengt nicht von CHANCEN ab (kein Verweis im Modulcode)",
     !/CHANCEN/.test(Object.values(VEREDELN).filter((f) => typeof f === "function").map(String).join("\n")),

@@ -328,7 +328,7 @@ B = Grundproduktion 0,18
       0,15 beim Craften
       0,40 beim Veredeln     <- deutlich größer, oft übersehen
   + Fokus 0,59               (falls eingesetzt)
-  + Tagesbonus 0,10 oder 0,20 (Silber- bzw. Goldtag, rotiert je Stadt)
+  + Tagesbonus 0,10 oder 0,20 (Silber- bzw. Goldtag, gilt in allen Städten gleich (Nutzerbeleg 13.10.2026))
   + Zusatzbonus              (in der App frei einstellbar, kein Spielwert)
 ```
 

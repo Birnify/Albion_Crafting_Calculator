@@ -529,6 +529,9 @@ Beides in der Hauptsitzung am 04.09.2026 nachgewiesen, nicht vermutet:
    Goldtag) je Craft-Schritt-Art**, kein Versuch, die Rotation nachzubauen. Ein
    Kalender wäre geraten statt gewusst, und ein falscher Tagesbonus verschiebt die
    Rückgewinnung um bis zu neun Prozentpunkte.
+   **Korrigiert 13.10.2026 (v3.9.1, Nutzerbeleg, im Spiel beobachtet):** der
+   Tagesbonus rotiert nicht je Stadt, er gilt in allen Städten gleich. Die App
+   führt ihn deshalb als eine Einstellung je Warengruppe, ohne Stadt.
 7. **Zählt `@preservequality: true` für uns?** Nur relevant, falls Qualität später
    doch modelliert wird. Für v1 ohne Belang, aber im Graph mitgeführt.
    **Beantwortet 05.09.2026 (Feature "Qualitaetsstufen"):** ja. Bei einer

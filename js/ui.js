@@ -195,6 +195,27 @@ const UI = (function () {
     return zahl;
   }
 
+  // v3.9.1 (13.10.2026): der Tagesbonus gilt in allen Staedten gleich
+  // (Nutzerbeleg, im Spiel beobachtet). Er ist deshalb EINE gemeinsame
+  // Einstellung je craftingcategory (einstellungen.tagesbonus) fuer
+  // Kostenrechner, "Schnelles Geld" und "Veredeln leveln"; Abgleich zwischen
+  // den Reitern wie bei den Stationssaetzen per Ereignis.
+  const TAGESBONUS_EVENT = "albion:tagesbonus";
+
+  /** Tagesbonus einer Kategorie setzen ("silber"|"gold", alles andere = aus), speichern und melden. Liefert den gespeicherten Wert oder null (aus). */
+  function tagesbonusSetzen(cc, wert, quelle) {
+    if (!cc) return null;
+    const w = wert === "silber" || wert === "gold" ? wert : null;
+    const e = einstellungenLesen();
+    if (w) e.tagesbonus[cc] = w;
+    else delete e.tagesbonus[cc];
+    einstellungenSchreiben(e);
+    if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
+      document.dispatchEvent(new CustomEvent(TAGESBONUS_EVENT, { detail: { cc, wert: w, quelle: quelle || null } }));
+    }
+    return w;
+  }
+
   // -----------------------------------------------------------------------
   // Reine Hilfsfunktionen, ohne DOM, s. tests/test.html
   // -----------------------------------------------------------------------
@@ -2556,6 +2577,10 @@ const UI = (function () {
             if (wert === "aus") delete einstellungen.tagesbonus[cc];
             else einstellungen.tagesbonus[cc] = wert;
             persistiereUndRechne();
+            // v3.9.1: "Veredeln leveln" nutzt dieselbe Einstellung.
+            if (typeof CustomEvent !== "undefined") {
+              document.dispatchEvent(new CustomEvent(TAGESBONUS_EVENT, { detail: { cc, wert: wert === "aus" ? null : wert, quelle: "kostenrechner" } }));
+            }
           });
           gruppe.appendChild(btn);
         });
@@ -2799,6 +2824,18 @@ const UI = (function () {
       if (!(zustand.item && zustand.preiseRoh)) renderStationTabelle(zustand.ergebnis || null);
     });
 
+    // v3.9.1: Tagesbonus in "Veredeln leveln" geaendert (oder dort aus dem
+    // alten Stand je Stadt migriert): wie bei den Stationssaetzen nur den
+    // einen Wert in den Arbeitsspeicher uebernehmen.
+    document.addEventListener(TAGESBONUS_EVENT, (ev) => {
+      const d = ev.detail || {};
+      if (d.quelle === "kostenrechner" || !d.cc) return;
+      if (d.wert === "silber" || d.wert === "gold") einstellungen.tagesbonus[d.cc] = d.wert;
+      else delete einstellungen.tagesbonus[d.cc];
+      persistiereUndRechne();
+      if (!(zustand.item && zustand.preiseRoh)) renderTagesbonus(zustand.ergebnis || null);
+    });
+
     // ---- Start ----
     ladeEinstellungenInFormular();
     renderSpezialisierungsknoten(null);
@@ -2820,6 +2857,8 @@ const UI = (function () {
     einstellungenLesen,
     STATIONSSAETZE_EVENT,
     stationssatzSetzen,
+    TAGESBONUS_EVENT,
+    tagesbonusSetzen,
     fceUeberschreibungenAus,
     sammleVerwendeteKategorien,
     sammleVerwendeteGebaeude,
