@@ -1796,6 +1796,56 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Regressionstest v3.8.2 (13.10.2026): Items ohne craftingcategory, aber
+  // ohne Qualitaetsstufen (maxqualitylevel fehlt/1 im Dump). Soerens Fall:
+  // Bett des Aeltesten T8.0, Lymhurst, ohne Fokus, "Gut" 896.543 und
+  // "Meisterwerk" 43.108.497 Silber ueber "Craften + Reroll".
+  // -----------------------------------------------------------------------
+  (function () {
+    if (typeof REZEPTGRAPH === "undefined" || !REZEPTGRAPH.items["T8_FURNITUREITEM_BED"] || !REZEPTGRAPH.items["T4_MAIN_SWORD"]) {
+      pruefe("Regressionstest Bett-Qualitaet uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+    const preise = {
+      T8_PLANKS: { sell: { preis: 3000, kein: false }, buy: { preis: 0, kein: true } },
+      T8_CLOTH: { sell: { preis: 5000, kein: false }, buy: { preis: 0, kein: true } },
+      T8_FURNITUREITEM_BED: { sell: { preis: 900000, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const preiseQualitaet = {
+      T8_FURNITUREITEM_BED: { sell: { preis: 50000, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const optsBasis = { preise, preiseQualitaet, stationssaetze: {}, stadt: "Lymhurst", fce: 0, fokuswert: 0, fokusAus: true, qualitaetsChancenpunkte: 0 };
+    const normal = RECHENKERN.kosten("T8_FURNITUREITEM_BED", 0, 1, Object.assign({}, optsBasis, { qualitaetsIndex: 0 }));
+    pruefe("Bett-Qualitaet: T8_FURNITUREITEM_BED in Normal loesbar", !normal.gesperrt, normal.grund);
+    [1, 2, 3, 4].forEach((q) => {
+      const r = RECHENKERN.kosten("T8_FURNITUREITEM_BED", 0, 1, Object.assign({}, optsBasis, { qualitaetsIndex: q }));
+      pruefe(
+        "Bett-Qualitaet: Qualitaet " + REGELN.QUALITAETEN[q] + " liefert dasselbe wie Normal, ohne Reroll und ohne Qualitaetswurf",
+        r.silber === normal.silber &&
+          r.fokus === normal.fokus &&
+          r.weg.typ === normal.weg.typ &&
+          r.weg.qualitaetsart === undefined &&
+          !r.weg.qualitaet &&
+          r.alleWege.every((w) => w.weg.typ !== "reroll"),
+        r.silber + " (" + r.weg.typ + ") vs " + normal.silber + " (" + normal.weg.typ + ")"
+      );
+    });
+    // Gegenprobe: ein Schwert (maxqualitylevel 5) rechnet weiter mit Qualitaet.
+    const swPreise = {
+      T4_METALBAR: { sell: { preis: 100, kein: false }, buy: { preis: 0, kein: true } },
+      T4_LEATHER: { sell: { preis: 100, kein: false }, buy: { preis: 0, kein: true } },
+    };
+    const swOpts = { preise: swPreise, preiseQualitaet: {}, stationssaetze: {}, stadt: "Lymhurst", fce: 0, fokuswert: 0, fokusAus: true, qualitaetsChancenpunkte: 0 };
+    const swNormal = RECHENKERN.kosten("T4_MAIN_SWORD", 0, 1, Object.assign({}, swOpts, { qualitaetsIndex: 0 }));
+    const swGut = RECHENKERN.kosten("T4_MAIN_SWORD", 0, 1, Object.assign({}, swOpts, { qualitaetsIndex: 1 }));
+    pruefe(
+      "Bett-Qualitaet, Gegenprobe: T4_MAIN_SWORD in Qualitaet Gut ist teurer als Normal und laeuft ueber den Qualitaetsweg",
+      !swNormal.gesperrt && !swGut.gesperrt && swGut.silber > swNormal.silber && swGut.weg.qualitaet === 1,
+      swNormal.silber + " vs " + swGut.silber + " (" + swGut.weg.typ + "/" + swGut.weg.qualitaetsart + ")"
+    );
+  })();
+
+  // -----------------------------------------------------------------------
   // Regressionstest Befund 8: T1/T2 gebuehrenfrei (Bugfix Audit-Befund 8,
   // 19.09.2026, s. AUDIT-2026-09-13.md)
   // -----------------------------------------------------------------------

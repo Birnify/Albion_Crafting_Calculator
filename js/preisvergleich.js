@@ -65,7 +65,17 @@ const PREISVERGLEICH = (function () {
     return treffer ? treffer.n : id;
   }
 
+  // Seit v3.8.2 ueber die zentrale Regel (REGELN.istQualifizierbarId:
+  // Knotenfeld mq aus rezepte.js, sonst q-Merker aus item-namen.js, beide
+  // aus @maxqualitylevel des Dumps). Ohne geladenes regeln.js bleibt der
+  // q-Merker allein massgeblich.
   function istQualifizierbar(id) {
+    if (typeof REGELN !== "undefined" && REGELN.istQualifizierbarId) {
+      const bekannt =
+        (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.items && REZEPTGRAPH.items[id]) ||
+        alleItems().some((it) => it.id === id);
+      return bekannt ? REGELN.istQualifizierbarId(id) : false;
+    }
     const treffer = alleItems().find((it) => it.id === id);
     return !!(treffer && treffer.q);
   }
@@ -361,13 +371,16 @@ const PREISVERGLEICH = (function () {
       auswahlEl.innerHTML = auswahl
         .map((a) => {
           const name = nameVon(a.id);
-          const qualWahl = istQualifizierbar(a.id)
+          const qualifizierbar = istQualifizierbar(a.id);
+          const qualWahl = qualifizierbar
             ? `<select data-qsel="${a.id}" title="Qualitätsstufe - nur Ausrüstung kennt das, Rohstoffe und Verbrauchsgüter nicht.">${[1, 2, 3, 4, 5]
                 .map((n) => `<option value="${n}"${a.q === n ? " selected" : ""}>${QUAL_NAMEN[n]}</option>`)
                 .join("")}</select>`
             : "";
           const je = daten[a.id] || {};
-          const zeilen = tabellenZeilen(je, a.q, sichtbareStaedte);
+          // Ohne Qualitaetsstufen gilt immer Normal (1), auch wenn aus einer
+          // frueheren Version noch eine andere Stufe gespeichert ist.
+          const zeilen = tabellenZeilen(je, qualifizierbar ? a.q : 1, sichtbareStaedte);
           const geladen = Object.keys(je).length > 0;
           const rows = zeilen
             .map(
@@ -480,6 +493,10 @@ const PREISVERGLEICH = (function () {
     pruefe("istQualifizierbar(T4_BAG) === true (Ausruestung)", istQualifizierbar("T4_BAG") === true);
     pruefe("istQualifizierbar(T4_WOOD) === false (Rohstoff)", istQualifizierbar("T4_WOOD") === false);
     pruefe("istQualifizierbar(T8_MEAL_STEW) === false (Speise)", istQualifizierbar("T8_MEAL_STEW") === false);
+    pruefe("istQualifizierbar(T8_FURNITUREITEM_BED) === false (Moebel, maxqualitylevel fehlt)", istQualifizierbar("T8_FURNITUREITEM_BED") === false);
+    pruefe("istQualifizierbar(T4_2H_TOOL_PICK) === false (Werkzeug, maxqualitylevel 1)", istQualifizierbar("T4_2H_TOOL_PICK") === false);
+    pruefe("istQualifizierbar(T3_MOUNT_HORSE) === true (Reittier, maxqualitylevel 5)", istQualifizierbar("T3_MOUNT_HORSE") === true);
+    pruefe("istQualifizierbar(UNBEKANNT) === false (unbekannte ID)", istQualifizierbar("GIBT_ES_NICHT_XYZ") === false);
 
     const treffer = sucheTreffer("Kürbis", []);
     pruefe("sucheTreffer() findet Treffer fuer 'Kürbis'", treffer.length > 0, treffer.length);

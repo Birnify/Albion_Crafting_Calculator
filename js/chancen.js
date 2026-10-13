@@ -157,7 +157,8 @@ const CHANCEN = (function () {
   /**
    * Alle Zeilen-Kandidaten eines Knotens: jedes Item des Knotens, jede Stufe
    * mit Rezept, jede Qualitaet. Nicht qualifizierbare Items (Speisen,
-   * Traenke, Werkzeuge ausser Angelrute, s. REGELN.istQualifizierbar) kommen
+   * Traenke, Werkzeuge ausser Angelrute, Moebel usw., s. REGELN.istQualifizierbar
+   * mit dem Knotenfeld mq) kommen
    * nur in Normal vor, statt vier unsinnige Zeilen zu erzeugen.
    */
   function kandidaten(knoten, graph) {
@@ -166,7 +167,7 @@ const CHANCEN = (function () {
     (knoten.items || []).forEach((item) => {
       const node = g && g.items[item];
       if (!node) return;
-      const qualitaeten = REGELN.istQualifizierbar(item, node.cc || null) ? ALLE_QUALITAETEN : [1];
+      const qualitaeten = REGELN.istQualifizierbar(item, node.cc || null, node.mq) ? ALLE_QUALITAETEN : [1];
       stufenMitRezept(item, g).forEach((stufe) => {
         qualitaeten.forEach((q) => out.push({ item, stufe, qualitaet: q, marktId: marktIdVon(item, stufe, g) }));
       });

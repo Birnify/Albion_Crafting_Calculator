@@ -534,6 +534,13 @@ rod can not be qualified", belegt 19.09.2026, umgesetzt in
 Speisen/Tränken/Werkzeugen, bestätigt aber auch, dass beim Eintopf-Rechner
 Qualität zu Recht nie modelliert wurde.
 
+**Maßgebliche Quelle für Qualität ist `@maxqualitylevel` im Client-Dump**
+(`items.json`, Stand 13.10.2026): 5 = Qualitätsstufen Normal bis Meisterwerk,
+1 oder fehlend = keine Qualität. Deckt sich mit allen Regeln oben, erfasst aber
+auch Items ohne `craftingcategory` (Möbel, Trophäen, Tagebücher, Reittiere mit
+Wert 1). `build_graph.py` liefert es als Knotenfeld `mq`, umgesetzt in
+`REGELN.istQualifizierbar()` (v3.8.2).
+
 **Veredelte Rohstoffe und Fleisch haben ebenfalls keine Qualität** (Stoff,
 Barren, Leder, Bretter, Blöcke, `meat_*`). Beleg ist der Client-Dump: alle
 Items dieser Kategorien stehen außerhalb der Gruppen `equipmentitem`/`weapon`/`transformationweapon`,

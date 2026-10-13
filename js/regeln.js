@@ -79,16 +79,52 @@ const REGELN = (function () {
 
   /**
    * Ob ein Item ueberhaupt qualifizierbar ist (Craft-Qualitaetswurf, Reroll,
-   * Kauf-bei-Qualitaet). `cc` fehlt/unbekannt: bewusst NICHT einschraenken
-   * (koennte alles sein, s. gleiches Vorgehen wie stationssatzFuer()/
-   * stationsgebuehrGiltFuerTier() bei fehlender Angabe - konservativ in die
-   * Richtung "kein neuer Fehler", hier aber andersherum: nicht qualifizierbar
-   * ist die EINSCHRAENKUNG, also gilt bei Unsicherheit "qualifizierbar").
+   * Kauf-bei-Qualitaet).
+   *
+   * Seit v3.8.2 (13.10.2026) massgeblich: `mq`, das Attribut
+   * @maxqualitylevel aus dem Client-Dump (build_graph.py schreibt es als
+   * Knotenfeld `mq` nach rezepte.js). 5 = Qualitaetsstufen Normal bis
+   * Meisterwerk, 1 (oder im Dump fehlend) = keine Qualitaet. Das korrigiert
+   * Items OHNE craftingcategory, die vorher als qualifizierbar galten:
+   * Moebel (Bett des Aeltesten), Trophaeen, Tagebuecher, Reittiere mit
+   * maxqualitylevel 1 (z. B. T8_MOUNT_DRAKE_FIRE).
+   *
+   * Nur wenn `mq` fehlt (alter Datenstand, Item ausserhalb des Graphen),
+   * greift die alte Sperrliste nach Kategorie: `cc` fehlt/unbekannt gilt dann
+   * bewusst als qualifizierbar (nicht qualifizierbar ist die Einschraenkung).
+   *
+   * @param {string} item uniquename
+   * @param {?string} cc craftingcategory
+   * @param {?number} [mq] maxqualitylevel aus dem Dump (Knotenfeld `mq`)
    */
-  function istQualifizierbar(item, cc) {
+  function istQualifizierbar(item, cc, mq) {
+    if (typeof mq === "number" && isFinite(mq)) return mq > 1;
     if (!cc || !NICHT_QUALIFIZIERBAR_KATEGORIEN.has(cc)) return true;
     if (cc === "tools" && /FISHINGROD/.test(String(item || ""))) return true;
     return false;
+  }
+
+  let _itemNamenQ = null;
+
+  /**
+   * istQualifizierbar() fuer eine reine Item-ID, ohne dass der Aufrufer den
+   * Knoten kennen muss (Preisvergleich, Oberflaeche). Quelle der Reihe nach:
+   * Knoten im Rezeptgraphen (mq, cc), sonst der q-Merker aus item-namen.js
+   * (von build_graph.py ebenfalls aus @maxqualitylevel gebildet), sonst die
+   * alte Kategorie-Logik ohne Kategorie.
+   */
+  function istQualifizierbarId(id, graph) {
+    const g = graph || (typeof REZEPTGRAPH !== "undefined" ? REZEPTGRAPH : null);
+    const node = g && g.items && g.items[id];
+    if (node) return istQualifizierbar(id, node.cc || null, node.mq);
+    if (typeof ITEM_NAMEN !== "undefined" && ITEM_NAMEN && ITEM_NAMEN.alle) {
+      if (!_itemNamenQ) {
+        _itemNamenQ = new Map();
+        ITEM_NAMEN.alle.forEach((it) => _itemNamenQ.set(it.id, !!it.q));
+      }
+      if (_itemNamenQ.has(id)) return istQualifizierbar(id, null, _itemNamenQ.get(id) ? 5 : 1);
+    }
+    return istQualifizierbar(id, null);
   }
 
   // Craft-Qualitaetswurf, Basistabelle OHNE Bonus (Korn, Entwickler-Forumspost,
@@ -1630,6 +1666,29 @@ const REGELN = (function () {
     });
     pruefe("istQualifizierbar(T4_MAIN_SWORD, sword) = true (gewoehnliche Ausruestung unveraendert qualifizierbar)", istQualifizierbar("T4_MAIN_SWORD", "sword") === true);
     pruefe("istQualifizierbar(irgendein Item, ohne cc) = true (unbekannte Kategorie nicht einschraenken)", istQualifizierbar("IRGENDWAS", null) === true);
+    // v3.8.2 (13.10.2026): maxqualitylevel aus dem Dump ist massgeblich.
+    pruefe("istQualifizierbar(x, null, 1) = false (maxqualitylevel 1, auch ohne cc)", istQualifizierbar("T8_FURNITUREITEM_BED", null, 1) === false);
+    pruefe("istQualifizierbar(x, sword, 1) = false (mq schlaegt die Kategorie)", istQualifizierbar("X", "sword", 1) === false);
+    pruefe("istQualifizierbar(x, null, 5) = true (maxqualitylevel 5)", istQualifizierbar("T3_MOUNT_HORSE", null, 5) === true);
+    pruefe("istQualifizierbar(x, food) ohne mq = false (alte Kategorie-Logik als Rueckfall)", istQualifizierbar("X", "food", undefined) === false);
+    if (typeof REZEPTGRAPH !== "undefined") {
+      [
+        ["T8_FURNITUREITEM_BED", false, "Moebel"],
+        ["T8_MOUNT_DRAKE_FIRE", false, "Reittier mit maxqualitylevel 1"],
+        ["T3_MOUNT_HORSE", true, "Reittier mit maxqualitylevel 5"],
+        ["T4_2H_TOOL_FISHINGROD", true, "Angelrute"],
+        ["T4_2H_TOOL_PICK", false, "Werkzeug"],
+        ["T4_MAIN_SWORD", true, "Waffe"],
+        ["T8_MEAL_STEW", false, "Speise"],
+      ].forEach(([id, soll, art]) => {
+        const node = REZEPTGRAPH.items[id];
+        pruefe(
+          "istQualifizierbar(" + id + ") = " + soll + " gegen rezepte.js (" + art + ")",
+          !!node && typeof node.mq === "number" && istQualifizierbar(id, node.cc || null, node.mq) === soll && istQualifizierbarId(id) === soll,
+          node ? "mq=" + node.mq : "Knoten fehlt"
+        );
+      });
+    }
     pruefe(
       "fokusMultiplikator: negative FCE wird bei 0 gekappt, Multiplikator bleibt <= 1 (nie mehr als voller Rohfokus)",
       fokusMultiplikator(-500) === fokusMultiplikator(0) && fokusMultiplikator(-500) === 1,
@@ -1879,6 +1938,7 @@ const REGELN = (function () {
     QUALITAETEN,
     NICHT_QUALIFIZIERBAR_KATEGORIEN,
     istQualifizierbar,
+    istQualifizierbarId,
     QUALITAETSWURF_BASIS,
     REROLL_UEBERGANG,
     REROLL_FAKTOR,

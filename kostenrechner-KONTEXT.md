@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-08 · Version: v3.8.1 · Fix: Veredeln leveln ohne Abhängigkeit von chancen.js
+Stand: 2026-10-13 · Version: v3.8.2 · Fix: Qualität nur für Items mit maxqualitylevel > 1
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,52 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.8.2 (13.10.2026): Qualität nur, wo das Item eine hat
+
+Sören meldete: Bett des Ältesten (T8.0, Lymhurst, ohne Fokus) kostete je
+nach Feld „Qualität“ 896.543 (Gut) bis 43.108.497 Silber (Meisterwerk), über
+„Craften + Reroll“. Ein Bett hat im Spiel keine Qualität. Ursache:
+`REGELN.istQualifizierbar(item, cc)` war eine Sperrliste nach
+`craftingcategory`; Items **ohne** cc (Möbel, Trophäen, Tagebücher,
+Reittiere) galten als qualifizierbar.
+
+- **Neue Datenquelle:** `@maxqualitylevel` aus `items.json` des Dumps. 5 =
+  Normal bis Meisterwerk, 1 oder fehlend = keine Qualität. Enchantments
+  tragen keinen eigenen Wert. `build_graph.py` schreibt es als Knotenfeld
+  `mq` (immer, fehlend = 1) nach `rezepte.js` und bildet den `q`-Merker in
+  `item-namen.js` jetzt ebenfalls daraus (vorher: Top-Level-Gruppe
+  equipmentitem/weapon/transformationweapon; 359 Items verlieren `q`, v. a.
+  Werkzeuge und UNIQUE-Vanity, 51 Reittiere bekommen es). Der Graph selbst
+  ist bis auf `mq` unverändert gegenüber dem Stand vom 13.09.2026 (geprüft),
+  `namen` hat 19 neue Einträge aus dem aktuellen Namensdump.
+- `REGELN.istQualifizierbar(item, cc, mq)`: mit `mq` gilt `mq > 1`, ohne
+  `mq` die alte Kategorie-Logik. Neu `REGELN.istQualifizierbarId(id)`
+  (Graph, sonst `item-namen.js`). Rechenkern (Weiche in
+  `kostenBeiQualitaet()`, Wurzelschlüssel in `kosten()`), `chancen.js` und
+  `preisvergleich.js` nutzen sie. Im Graphen wird damit kein Item neu
+  qualifizierbar, nur 2.047 Graph-Items ohne Qualität richtig erkannt (Artefakte,
+  Questitems, Tagebücher, Möbel, Reittiere mit mq 1, Rohstoffe ohne cc u. a.).
+- **Oberfläche:** im Kostenrechner ist das Feld „Qualität“ bei nicht
+  qualifizierbarem Item ausgeblendet; gerechnet, abgerufen und der Gewinn
+  bewertet wird dann in Normal (`effektiveQualitaet()` in `js/ui.js`). Die
+  gespeicherte Einstellung bleibt und gilt beim nächsten qualifizierbaren
+  Item wieder. Der bisherige Hinweis „Zielqualität wird ignoriert“ im
+  Ergebnis entfällt. Im Preisvergleich fehlt das Qualitätswahlfeld wie bisher
+  bei nicht qualifizierbaren Items, gerechnet wird dort dann immer mit
+  Qualität 1.
+- `veredeln.js` setzt ohnehin `qualitaet: 1`, unverändert.
+- Headless mit Live-Preisen geprüft: Bett T8.0, Lymhurst, Meisterwerk und
+  Normal je 664.399 Silber über Craften, Feld ausgeblendet; Breitschwert
+  blendet es wieder ein.
+- Selbsttest **545/545** grün (vorher 524, 21 neue: die sieben Items aus dem
+  Auftrag gegen `rezepte.js`, mq-Vorrang und Rückfall, Preisvergleich,
+  Bett in allen fünf Qualitäten gleich Normal, Schwert-Gegenprobe).
+
+**Nebenbefund, nicht behoben:** das Bett zeigt im Bauplan
+„Rückgewinnung 0 %“, weil es keine `craftingcategory` hat (dieselbe Regel wie
+bei Fischsauce). Ob Möbel im Spiel Rückgewinnung bekommen, ist nicht belegt;
+bei Bedarf im Craft-Fenster ablesen lassen.
 
 ## Nachtrag v3.8.1 (08.10.2026): „CHANCEN is not defined“
 

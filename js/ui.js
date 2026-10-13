@@ -916,8 +916,29 @@ const UI = (function () {
       sucheEl.setAttribute("aria-expanded", "true");
     }
 
+    // v3.8.2 (13.10.2026): Items ohne Qualitaetsstufen (maxqualitylevel 1
+    // oder fehlend im Dump, s. REGELN.istQualifizierbar) blenden das Feld
+    // "Qualitaet" aus und rechnen intern mit Normal. Die gespeicherte
+    // Einstellung bleibt erhalten und gilt wieder beim naechsten
+    // qualifizierbaren Item.
+    function itemQualifizierbar() {
+      if (!zustand.item) return true;
+      const node = REZEPTGRAPH && REZEPTGRAPH.items[zustand.item];
+      return !node || REGELN.istQualifizierbar(zustand.item, node.cc || null, node.mq);
+    }
+
+    function effektiveQualitaet() {
+      return itemQualifizierbar() ? einstellungen.qualitaetsIndex || 0 : 0;
+    }
+
+    function qualitaetsFeldAktualisieren() {
+      const feld = qualitaetEl.closest(".feld") || qualitaetEl.parentElement;
+      if (feld) feld.style.display = itemQualifizierbar() ? "" : "none";
+    }
+
     function waehleItem(uniquename, name) {
       zustand.item = uniquename;
+      qualitaetsFeldAktualisieren();
       sucheEl.value = name;
       schliesseTrefferliste();
       ausgewaehltTextEl.textContent = name + " (T" + (REZEPTGRAPH.items[uniquename].t || 0) + ")";
@@ -1023,7 +1044,7 @@ const UI = (function () {
       berechnenBtn.disabled = true;
       refreshBtn.disabled = true;
       const stadt = einstellungen.stadt;
-      const qualitaet = einstellungen.qualitaetsIndex || 0;
+      const qualitaet = effektiveQualitaet();
       setStatus("Sammle Markt-IDs (" + stadt + ") ...");
       try {
         const ids = PREISE.sammleMarktIds(zustand.item, zustand.stufe);
@@ -1145,7 +1166,7 @@ const UI = (function () {
         eigenpreise: eigenpreiseFuerOpts(),
         kaufweg: einstellungen.kaufweg,
         stadt: einstellungen.stadt,
-        qualitaetsIndex: einstellungen.qualitaetsIndex || 0,
+        qualitaetsIndex: effektiveQualitaet(),
         qualitaetsChancenpunkte: einstellungen.qualitaetsChancenpunkte || 0,
         stationssaetze: einstellungen.stationssaetze,
         fce: einstellungen.fce,
@@ -1221,7 +1242,7 @@ const UI = (function () {
       // das belegt die Motivation des Features (Gelehrtengugel T4.4 Normal
       // 53.043 gegen Exzellent 71.581). preiseQualitaetRoh ist nur bei
       // qualitaet > 0 befuellt (s. berechnen()).
-      const qualitaet = einstellungen.qualitaetsIndex || 0;
+      const qualitaet = effektiveQualitaet();
       const quelle = qualitaet > 0 ? zustand.preiseQualitaetRoh : zustand.preiseRoh;
       const eintrag = quelle && quelle[marktId];
       if (!eintrag) return null;
@@ -1251,23 +1272,15 @@ const UI = (function () {
       heroEl.className = "hero";
       const wegLabel = { kaufen: "Kaufen", craften: "Craften", verzaubern: "Verzaubern", reroll: "Craften + Reroll" }[r.weg.typ] || r.weg.typ;
       const gewinnInfo = berechneGewinn(r);
-      // Bugfix Audit-Befund 7 (19.09.2026): Speisen/Traenke/Werkzeuge (ausser
-      // Angelrute) sind nicht qualifizierbar, s. REGELN.istQualifizierbar()
-      // und rechenkern.js/kostenBeiQualitaet(). Wurde eine Zielqualitaet >
-      // Normal eingestellt, aber fuer DIESES Item ignoriert (Ergebnis ist
-      // effektiv Normal), macht das die Oberflaeche transparent, statt
-      // stillschweigend eine Qualitaetsstufe zu zeigen, die nicht wirkt.
-      const wurzelNode = REZEPTGRAPH && REZEPTGRAPH.items[zustand.item];
-      const qualitaetIgnoriert =
-        (einstellungen.qualitaetsIndex || 0) > 0 && wurzelNode && !REGELN.istQualifizierbar(zustand.item, wurzelNode.cc || null);
+      // Nicht qualifizierbare Items (Audit-Befund 7, seit v3.8.2 ueber
+      // maxqualitylevel): das Feld "Qualitaet" ist dann ausgeblendet und die
+      // Rechnung laeuft in Normal (effektiveQualitaet()), ein eigener Hinweis
+      // im Ergebnis ist deshalb nicht mehr noetig.
       let html = "<div class='cols'>";
       html +=
         "<div><div class='k'>Guenstigster Weg</div><div class='v'>" +
         wegLabel +
         "</div>" +
-        (qualitaetIgnoriert
-          ? "<div class='w'>Nicht qualifizierbar (Speisen/Traenke/Werkzeuge), Zielqualitaet wird fuer dieses Item ignoriert</div>"
-          : "") +
         "</div>";
       html += "<div><div class='k'>Kosten</div><div class='v'>" + formatSilber(r.silber) + "</div><div class='w'>Silber</div></div>";
       html += "<div class='nur-fokus'><div class='k'>Fokus</div><div class='v'>" + formatFokus(r.fokus) + "</div></div>";

@@ -40,11 +40,17 @@ OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rezepte.
 # Namensdump, nicht nur die ~4200 Knoten des Rezeptgraphen - er ist eine
 # reine Marktabfrage auch fuer Rohstoffe, Reittiere und Kosmetik, die nie
 # Teil eines Rezepts sind. Deshalb ein zweiter, unabhaengiger Output.
-# Qualitaetsstufen-Erkennung wie im Eintopf-Rechner belegt (13.09.2026, Dump
-# UND Live-API gegengeprueft, s. EINTOPF-KONTEXT-ARCHIV.md): nur die drei Top-Level-
-# Kategorien equipmentitem/weapon/transformationweapon kennen echte,
-# unterschiedliche Preise je Qualitaetsstufe.
-QUALITAETS_KATEGORIEN = {"equipmentitem", "weapon", "transformationweapon"}
+# Qualitaetsstufen-Erkennung (seit v3.8.2, 13.10.2026): massgeblich ist das
+# Item-Attribut @maxqualitylevel aus items.json. "5" = Qualitaetsstufen
+# Normal bis Meisterwerk, "1" oder fehlend = keine Qualitaet. Vorher galt die
+# Top-Level-Gruppe (equipmentitem/weapon/transformationweapon) als Merkmal;
+# das markierte Werkzeuge (Spitzhacke usw.), Vanity-Ausruestung (UNIQUE_*)
+# und einen Teil der Reittiere falsch. Verzauberungsstufen (enchantments)
+# tragen im Dump kein eigenes @maxqualitylevel, der Wert gilt fuers ganze Item.
+def max_qualitaet(entry):
+    return to_int(entry.get("@maxqualitylevel"), 1) or 1
+
+
 ITEM_NAMEN_OUTPUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "item-namen.js")
 
 # Heuristik fuer Zutaten ohne echte Marktaussicht (Arena, GvG, Fraktionen).
@@ -318,8 +324,12 @@ def is_excluded_root(name, entry):
 
 def build_node(entry):
     # Item-Knoten: t=tier, cc=craftingcategory, iv=itemvalue, el=eigene
-    # Verzauberungsstufe, r=baseRecipes, e=enchantments je Stufe (s. parse_enchantments)
+    # Verzauberungsstufe, mq=maxqualitylevel, r=baseRecipes, e=enchantments je
+    # Stufe (s. parse_enchantments)
     node = {}
+    # mq immer schreiben (auch 1), damit die App "keine Qualitaet" von
+    # "Feld fehlt, alter Datenstand" unterscheiden kann (REGELN.istQualifizierbar).
+    node["mq"] = max_qualitaet(entry)
     if entry.get("@tier") is not None:
         node["t"] = to_int(entry["@tier"])
     if entry.get("@craftingcategory"):
@@ -533,12 +543,13 @@ def find_non_tradeable_candidates(index, nodes):
     return sorted(candidates)
 
 
-def build_item_namen_liste(names_dump, group_of):
+def build_item_namen_liste(names_dump, index):
     """Alle Items aus dem Namensdump, je mit deutschem Namen (Fallback Englisch,
     sonst die ID selbst) und einem Merker q=1, falls das Item Qualitaetsstufen
-    kennt. Portiert 1:1 aus der ehemaligen item_liste_holen() des eigenstaendigen
-    Eintopf-Rechners (eintopf_update.py), s. kostenrechner-KONTEXT.md."""
-    quali_ids = {uname for uname, gruppe in group_of.items() if gruppe in QUALITAETS_KATEGORIEN}
+    kennt (@maxqualitylevel > 1, s. max_qualitaet). Portiert aus der ehemaligen
+    item_liste_holen() des eigenstaendigen Eintopf-Rechners (eintopf_update.py),
+    s. kostenrechner-KONTEXT.md."""
+    quali_ids = {uname for uname, entry in index.items() if max_qualitaet(entry) > 1}
     alle = []
     for it in names_dump:
         uid = it.get("UniqueName")
@@ -593,7 +604,7 @@ def write_output(nodes, names, missing, candidates, meta):
         "fehlendeZutaten": missing,
         "nichtHandelbareKandidaten": candidates,
         "schema": {
-            "item": "t=tier, cc=craftingcategory, iv=itemvalue, ivd=itemvalue abgeleitet statt aus Dump, "
+            "item": "t=tier, cc=craftingcategory, mq=maxqualitylevel (fehlt im Dump=1, >1 = qualifizierbar), iv=itemvalue, ivd=itemvalue abgeleitet statt aus Dump, "
             "ivm=abweichende ItemValues der Alternativrezepte, el=eigene Verzauberungsstufe des Items "
             "(fehlt=0, nur bei veredelten Rohstoffen/Runen/Seelen/Relikten, NICHT bei Ausruestung, "
             "s. e-Schluessel dort), r=Basisrezepte, e=Verzauberungsstufen",
@@ -686,6 +697,20 @@ def run_self_checks(nodes):
         "Ausruestung T4_HEAD_CLOTH_SET1 hat kein el-Feld (Stufe steckt im e-Schluessel)",
         "el" not in nodes.get("T4_HEAD_CLOTH_SET1", {}),
     )
+    # mq-Feld (maxqualitylevel, v3.8.2): Grundlage von REGELN.istQualifizierbar.
+    erwartet_mq = {
+        "T8_FURNITUREITEM_BED": 1,
+        "T8_MOUNT_DRAKE_FIRE": 1,
+        "T3_MOUNT_HORSE": 5,
+        "T4_2H_TOOL_FISHINGROD": 5,
+        "T4_2H_TOOL_PICK": 1,
+        "T4_MAIN_SWORD": 5,
+        "T8_MEAL_STEW": 1,
+        "T4_CLOTH": 1,
+    }
+    for name, mq in erwartet_mq.items():
+        check(f"{name} hat mq = {mq}", nodes.get(name, {}).get("mq") == mq)
+    check("jeder Knoten traegt ein mq-Feld", all("mq" in n for n in nodes.values()))
     el_count = sum(1 for n in nodes.values() if n.get("el"))
     print(f"[INFO] {el_count} Knoten mit eigenem el-Feld (erwartet um die 312)")
 
@@ -707,6 +732,11 @@ def run_item_namen_self_checks(liste):
     check("T4_BAG (Ausruestung) hat q=1 (kennt Qualitaetsstufen)", by_id.get("T4_BAG", {}).get("q") == 1)
     check("T8_MEAL_STEW (Speise) hat kein q-Feld (keine Qualitaetsstufen)", "q" not in by_id.get("T8_MEAL_STEW", {}))
     check("T4_WOOD (Rohstoff) hat kein q-Feld", "q" not in by_id.get("T4_WOOD", {}))
+    check("T4_2H_TOOL_PICK (Werkzeug) hat kein q-Feld", "q" not in by_id.get("T4_2H_TOOL_PICK", {}))
+    check("T4_2H_TOOL_FISHINGROD (Angelrute) hat q=1", by_id.get("T4_2H_TOOL_FISHINGROD", {}).get("q") == 1)
+    check("T8_FURNITUREITEM_BED (Moebel) hat kein q-Feld", "q" not in by_id.get("T8_FURNITUREITEM_BED", {}))
+    check("T3_MOUNT_HORSE (Reittier mit Qualitaet) hat q=1", by_id.get("T3_MOUNT_HORSE", {}).get("q") == 1)
+    check("T8_MOUNT_DRAKE_FIRE (Reittier ohne Qualitaet) hat kein q-Feld", "q" not in by_id.get("T8_MOUNT_DRAKE_FIRE", {}))
     check(
         "Liste ist nach Namen sortiert",
         all(liste[i]["n"] <= liste[i + 1]["n"] for i in range(len(liste) - 1)),
@@ -768,7 +798,7 @@ def main():
     size = write_output(nodes, names, missing, candidates, meta)
     print(f"rezepte.js geschrieben: {size / 1024:.1f} KB, {len(nodes)} Knoten")
 
-    item_namen_liste = build_item_namen_liste(names_dump, group_of)
+    item_namen_liste = build_item_namen_liste(names_dump, index)
     item_namen_meta = {"generated": generated, "count": len(item_namen_liste)}
     item_namen_size = write_item_namen(item_namen_liste, item_namen_meta)
     print(f"item-namen.js geschrieben: {item_namen_size / 1024:.1f} KB, {len(item_namen_liste)} Items")

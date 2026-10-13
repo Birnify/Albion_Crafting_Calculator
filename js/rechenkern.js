@@ -1012,12 +1012,14 @@ const RECHENKERN = (function () {
 
     // Bugfix Audit-Befund 7 (19.09.2026): Speisen, Traenke und Werkzeuge
     // (ausser Angelrute) sind im Spiel grundsaetzlich nicht qualifizierbar
-    // (s. REGELN.istQualifizierbar()). Fuer solche Items faellt die Rechnung
+    // (s. REGELN.istQualifizierbar()). Seit v3.8.2 entscheidet das Knotenfeld
+    // mq (@maxqualitylevel aus dem Dump), damit greift die Weiche auch fuer
+    // Items ohne craftingcategory (Moebel, Trophaeen, Reittiere mit mq 1). Fuer solche Items faellt die Rechnung
     // transparent auf Normal zurueck (identisch zu kostenGesamt()), statt
     // Kaufen-bei-Qualitaet-/Reroll-/Wurf-Kosten fuer einen im Spiel nicht
     // existierenden Mechanismus vorzugaukeln.
     const nodeFuerQualitaetscheck = opts.graph.items[item];
-    if (nodeFuerQualitaetscheck && !REGELN.istQualifizierbar(item, nodeFuerQualitaetscheck.cc || null)) {
+    if (nodeFuerQualitaetscheck && !REGELN.istQualifizierbar(item, nodeFuerQualitaetscheck.cc || null, nodeFuerQualitaetscheck.mq)) {
       return kostenGesamt(item, stufe, opts, tiefe, pfad);
     }
 
@@ -1198,7 +1200,7 @@ const RECHENKERN = (function () {
     // zurueck, deshalb dort denselben Rueckfall nachbilden.
     const wurzelNode = opts.graph.items[item];
     const wurzelMitQualitaet =
-      opts.qualitaetsIndex && !(wurzelNode && !REGELN.istQualifizierbar(item, wurzelNode.cc || null));
+      opts.qualitaetsIndex && !(wurzelNode && !REGELN.istQualifizierbar(item, wurzelNode.cc || null, wurzelNode.mq));
     opts._wurzelSchluessel = item + "@" + (stufe || 0) + (wurzelMitQualitaet ? "@q" + opts.qualitaetsIndex : "");
 
     const ergebnis = opts.qualitaetsIndex
