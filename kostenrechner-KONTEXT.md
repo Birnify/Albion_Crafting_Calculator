@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-13 · Version: v3.10.0 · Veredeln leveln: Handelsstädte und neues Layout
+Stand: 2026-10-13 · Version: v3.10.1 · Veredeln leveln: Darstellungsfixes
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,14 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.10.1 (13.10.2026): Veredeln leveln, Darstellungsfixes
+
+Inline nach Sichtprüfung des Hauptagenten. Lange Zutatennamen (z. B.
+"Ungewöhnliche Bernstein-Baumwolle") liefen in das Preisfeld; `.vd-zname`
+bricht jetzt um. "verkauft/Tag" mit Tausenderpunkt (`toLocaleString("de-DE")`).
+Stationssatz-Felder in einem zweispaltigen Raster, die Eingabefelder stehen
+bündig untereinander. Keine Rechenänderung, Tests 619/619.
 
 ## Nachtrag v3.10.0 (13.10.2026): Veredeln leveln, Handelsstädte und neues Layout
 

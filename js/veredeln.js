@@ -1127,7 +1127,7 @@ const VEREDELN = (function () {
     const fmt = (n) => (typeof UI !== "undefined" && UI.formatSilber ? UI.formatSilber(n) : String(Math.round(n)));
     const fmtFokus = (n) => (typeof UI !== "undefined" && UI.formatFokus ? UI.formatFokus(n) : String(Math.round(n)));
     const prozent = (a) => (a * 100).toFixed(1).replace(".", ",") + " %";
-    const stueck = (n) => (n == null ? "k. A." : n >= 10 ? String(Math.round(n)) : n.toFixed(1).replace(".", ","));
+    const stueck = (n) => (n == null ? "k. A." : n >= 10 ? Math.round(n).toLocaleString("de-DE") : n.toFixed(1).replace(".", ","));
     const TRANSPORT = "Transportkosten, Gewicht und Reiserisiko sind nicht eingerechnet.";
 
     /** Icon mit festem Platz; schlaegt das Laden fehl, bleibt nur das leere Feld (kein Layout-Springen). */
