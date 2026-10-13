@@ -1409,7 +1409,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       const testGraph = {
         items: {
           QUAL_WURF_R: { iv: 10, t: 4 },
-          QUAL_WURF_M: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ f: 0, i: [{ n: "QUAL_WURF_R", c: 4 }] }] },
+          // f > 0 seit v3.8.3: Rueckgewinnung gibt es nur bei craftingfocus > 0, und dieser Test will sie mitpruefen.
+          QUAL_WURF_M: { t: 4, cc: "cloth_helmet", ivd: true, r: [{ f: 10, i: [{ n: "QUAL_WURF_R", c: 4 }] }] },
         },
       };
       const opts = {
@@ -1435,7 +1436,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         // Gegenprobe RRR-bewusst nachgerechnet (nicht nur 4x10 Silber
         // angenommen): das Material unterliegt derselben Rueckgewinnung wie
         // ein normaler Craft-Schritt, unabhaengig von der Qualitaetsfrage.
-        const rrrWert = REGELN.rrr({ cc: "cloth_helmet", stadt: "Lymhurst", mitFokus: wurfKandidat.weg.mitFokus });
+        const rrrWert = REGELN.rrr({ cc: "cloth_helmet", stadt: "Lymhurst", mitFokus: wurfKandidat.weg.mitFokus, craftingfocus: 10 });
         const pErfolg = REGELN.qualitaetWurfErfolgswahrscheinlichkeit(1, 0);
         const jeVersuch = 4 * (1 - rrrWert) * 10; // 4x QUAL_WURF_R a 10 Silber, RRR-bereinigt, Station 0, kein Rezeptsilber
         const erwartet = jeVersuch / pErfolg;
@@ -1843,6 +1844,109 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       !swNormal.gesperrt && !swGut.gesperrt && swGut.silber > swNormal.silber && swGut.weg.qualitaet === 1,
       swNormal.silber + " vs " + swGut.silber + " (" + swGut.weg.typ + "/" + swGut.weg.qualitaetsart + ")"
     );
+  })();
+
+  // -----------------------------------------------------------------------
+  // Regressionstest v3.8.3 (13.10.2026): Rueckgewinnung haengt an
+  // craftingfocus > 0, nicht an der craftingcategory; Moebel zahlen
+  // Stationsgebuehr beim Werkzeugmacher. Belege: Craft-Fenster, ohne Fokus,
+  // Screenshots 13.10.2026, alle drei Moebel mit demselben Satz 970:
+  // Tisch des Grossmeisters 15,2 % / 7.680 / 8.381, Reparatursatz des
+  // Adepten 15,2 % / 256 / 279, Hai-Trophaee 0 % / 1.736 / 1.894.
+  // -----------------------------------------------------------------------
+  (function () {
+    const ids = ["T8_FURNITUREITEM_BED", "T7_FURNITUREITEM_TABLE", "T4_FURNITUREITEM_REPAIRKIT", "T8_FURNITUREITEM_TROPHY_FISHING_BOSS", "T8_MEAL_STEW", "T4_CLOTH", "T4_MAIN_SWORD", "T4_HEAD_CLOTH_ROYAL", "T1_FISHSAUCE_LEVEL1", "T4_MOUNT_HORSE", "T4_SIEGE_BANNER", "T8_MEAL_SPECIAL_FOOD_DRAKE_EGG"];
+    if (typeof REZEPTGRAPH === "undefined" || ids.some((id) => !REZEPTGRAPH.items[id])) {
+      pruefe("Regressionstest Moebel-Rueckgewinnung uebersprungen (REZEPTGRAPH nicht geladen)", true, "rezepte.js fehlt in diesem Kontext");
+      return;
+    }
+    const OHNE = 0.18 / 1.18;
+    const P = (preis) => ({ sell: { preis, kein: false }, buy: { preis: 0, kein: true } });
+    // Alle Items zu einem festen Preis kaufbar, damit jeder Craft-Weg loesbar ist.
+    const preise = new Proxy({}, { get: () => P(1000) });
+    function basisOpts(extra) {
+      return Object.assign({ preise, preiseQualitaet: {}, stationssaetze: { Werkzeugmacher: 970 }, stadt: "Lymhurst", fce: 0, fokuswert: 0, qualitaetsChancenpunkte: 0, qualitaetsIndex: 0 }, extra || {});
+    }
+    function craftWeg(item, stufe, extra, mitFokus) {
+      const r = RECHENKERN.kosten(item, stufe, 1, basisOpts(extra));
+      const k = r.alleWege.find((w) => w.weg && w.weg.typ === "craften" && !!w.weg.mitFokus === !!mitFokus && !w.gesperrt);
+      return k ? k.weg : null;
+    }
+    function nah(a, b) {
+      return typeof a === "number" && Math.abs(a - b) < 1e-9;
+    }
+
+    // REGELN.rrr: neue Regel und Rueckfall fuer aeltere Aufrufer.
+    pruefe("Moebel-RRR: REGELN.rrr ohne cc, craftingfocus > 0 -> Grundproduktion 0,18/1,18", nah(REGELN.rrr({ cc: null, stadt: "Lymhurst", craftingfocus: 4924 }), OHNE));
+    pruefe("Moebel-RRR: REGELN.rrr ohne cc, craftingfocus > 0, mit Fokus -> 0,77/1,77", nah(REGELN.rrr({ cc: null, stadt: "Lymhurst", mitFokus: true, craftingfocus: 4924 }), 0.77 / 1.77));
+    pruefe("Moebel-RRR: REGELN.rrr mit cc, craftingfocus 0 -> 0 (auch mit Fokus)", REGELN.rrr({ cc: "food", stadt: "Caerleon", mitFokus: true, craftingfocus: 0 }) === 0);
+    pruefe("Moebel-RRR: REGELN.rrr ohne craftingfocus-Angabe wie bisher (ohne cc 0, mit cc Grundproduktion)", REGELN.rrr({ cc: null, stadt: "Lymhurst" }) === 0 && nah(REGELN.rrr({ cc: "fiber", stadt: "Martlock" }), OHNE));
+    pruefe("Moebel-RRR: ohne Kategorie kein Stadtbonus (Caerleon, Lymhurst)", nah(REGELN.rrr({ cc: null, stadt: "Caerleon", craftingfocus: 1 }), OHNE) && nah(REGELN.rrr({ cc: null, stadt: "Lymhurst", craftingfocus: 1 }), OHNE));
+
+    // Gebuehrengruppen ueber die Item-Art.
+    pruefe("Moebel-Gebuehr: furnitureitem ohne cc -> Werkzeugmacher", REGELN.gebaeudeVonItem(REZEPTGRAPH.items.T8_FURNITUREITEM_BED) === "Werkzeugmacher");
+    pruefe(
+      "Moebel-Gebuehr: Reittier und Belagerungsbanner je eigene Gebuehrengruppe, nicht geraten",
+      REGELN.gebaeudeVonItem(REZEPTGRAPH.items.T4_MOUNT_HORSE) === REGELN.ITEMART_ZU_GEBAEUDE.mount &&
+        REGELN.gebaeudeVonItem(REZEPTGRAPH.items.T4_SIEGE_BANNER) === REGELN.ITEMART_ZU_GEBAEUDE.siegebanner &&
+        REGELN.alleGebaeude().filter((g) => g === REGELN.ITEMART_ZU_GEBAEUDE.mount || g === REGELN.ITEMART_ZU_GEBAEUDE.siegebanner).length === 2 &&
+        Object.keys(REGELN.KATEGORIE_ZU_GEBAEUDE).every((k) => REGELN.KATEGORIE_ZU_GEBAEUDE[k] !== REGELN.ITEMART_ZU_GEBAEUDE.mount && REGELN.KATEGORIE_ZU_GEBAEUDE[k] !== REGELN.ITEMART_ZU_GEBAEUDE.siegebanner)
+    );
+    pruefe("Moebel-Gebuehr: koenigliche Gugel (ohne cc) bleibt ohne Gebuehrengruppe", REGELN.gebaeudeVonItem(REZEPTGRAPH.items.T4_HEAD_CLOTH_ROYAL) === null);
+    pruefe("Moebel-Gebuehr: mit cc bleibt die Kategorie massgeblich", REGELN.gebaeudeVonItem(REZEPTGRAPH.items.T4_MAIN_SWORD) === "Kriegerschmiede" && REGELN.gebaeudeVonItem(REZEPTGRAPH.items.T4_CLOTH) === "Weber");
+    const alle = REGELN.alleGebaeude();
+    pruefe("Moebel-Gebuehr: alleGebaeude() ohne Doppelte, Werkzeugmacher genau einmal", alle.length === new Set(alle).size && alle.filter((g) => g === "Werkzeugmacher").length === 1);
+    pruefe("Moebel-Gebuehr: Standardeinstellungen belegen auch die neuen Gruppen mit 400 vor", UI.defaultEinstellungen().stationssaetze[REGELN.ITEMART_ZU_GEBAEUDE.mount] === 400 && UI.defaultEinstellungen().stationssaetze[REGELN.ITEMART_ZU_GEBAEUDE.siegebanner] === 400);
+    const pferd = craftWeg("T4_MOUNT_HORSE", 0, { stationssaetze: { [REGELN.ITEMART_ZU_GEBAEUDE.mount]: 500 } });
+    pruefe("Moebel-Gebuehr: Reittier rechnet mit dem Satz seiner eigenen Gruppe", pferd && pferd.gebaeude === REGELN.ITEMART_ZU_GEBAEUDE.mount && pferd.stationssatz === 500 && pferd.stationsgebuehrJeStueck > 0, pferd && pferd.stationsgebuehrJeStueck);
+
+    // Spielwerte aus dem Craft-Fenster (Satz 970, ohne Fokus).
+    [
+      ["T7_FURNITUREITEM_TABLE", 7680, 8381, OHNE],
+      ["T4_FURNITUREITEM_REPAIRKIT", 256, 279, OHNE],
+      ["T8_FURNITUREITEM_TROPHY_FISHING_BOSS", 1736, 1894, 0],
+    ].forEach(([id, iv, gebuehr, rrrSoll]) => {
+      const w = craftWeg(id, 0);
+      pruefe(
+        "Moebel im Spiel: " + id + " Gegenstandswert " + iv + ", Stationsgebuehr " + gebuehr + " bei Satz 970, Rueckgewinnung " + (rrrSoll ? "15,2 %" : "0 %"),
+        w && w.gebaeude === "Werkzeugmacher" && w.itemWertJeStueck === iv && Math.round(w.stationsgebuehrJeStueck) === gebuehr && nah(w.rrr, rrrSoll),
+        w ? w.gebaeude + " / " + w.itemWertJeStueck + " / " + w.stationsgebuehrJeStueck + " / " + w.rrr : "kein Craft-Weg"
+      );
+    });
+    const trophaeeFokus = craftWeg("T8_FURNITUREITEM_TROPHY_FISHING_BOSS", 0, null, true);
+    pruefe("Moebel im Spiel: Hai-Trophaee (Fokus 0) auch mit Fokus ohne Rueckgewinnung", trophaeeFokus && trophaeeFokus.rrr === 0, trophaeeFokus && trophaeeFokus.rrr);
+
+    // Soerens Fall: Bett T8.0, Lymhurst, ohne Fokus.
+    const bett = craftWeg("T8_FURNITUREITEM_BED", 0, { fokusAus: true });
+    pruefe("Bett T8.0 Lymhurst ohne Fokus: Rueckgewinnung 0,18/1,18 statt 0 %", bett && nah(bett.rrr, OHNE), bett && bett.rrr);
+    pruefe("Bett T8.0 Lymhurst: Stationsgebuehr > 0 beim Werkzeugmacher (7.680 x 0,1125 x 970 / 100)", bett && bett.gebaeude === "Werkzeugmacher" && nahe(bett.stationsgebuehrJeStueck, 7680 * 0.1125 * 9.7, 1e-6), bett && bett.stationsgebuehrJeStueck);
+    pruefe("Bett T8.0 Lymhurst: Rueckgewinnung wirkt auf die Zutaten", bett && bett.zutaten.length === 2 && bett.zutaten.every((z) => nah(z.effektiveMenge, z.menge * (1 - OHNE))));
+    const bettFokus = craftWeg("T8_FURNITUREITEM_BED", 0, null, true);
+    pruefe("Bett T8.0 Lymhurst mit Fokus: Rueckgewinnung 0,77/1,77", bettFokus && nah(bettFokus.rrr, 0.77 / 1.77), bettFokus && bettFokus.rrr);
+    const bettOhneSatz = RECHENKERN.kosten("T8_FURNITUREITEM_BED", 0, 1, basisOpts({ stationssaetze: {}, fokusAus: true }));
+    pruefe("Bett T8.0: ohne gepflegten Werkzeugmacher-Satz als unvollstaendig markiert", bettOhneSatz.alleWege.some((w) => w.weg.typ === "craften" && w.unvollstaendig && (w.fehlendeGebaeude || []).indexOf("Werkzeugmacher") !== -1));
+    const bettErgebnis = RECHENKERN.kosten("T8_FURNITUREITEM_BED", 0, 1, basisOpts({ preise: { T8_PLANKS: P(1000), T8_CLOTH: P(1000) }, fokusAus: true }));
+    const bettGebaeude = !bettErgebnis.gesperrt ? UI.sammleVerwendeteGebaeude(bettErgebnis.weg) : [];
+    pruefe("Bett T8.0: Werkzeugmacher erscheint in der Stationssatz-Liste des Bauplans", bettErgebnis.weg.typ === "craften" && bettGebaeude.indexOf("Werkzeugmacher") !== -1, bettGebaeude.join(", "));
+
+    // Bestehende Faelle unveraendert.
+    const eintopf = craftWeg("T8_MEAL_STEW", 0);
+    pruefe("Unveraendert: Rindfleischeintopf Lymhurst ohne Fokus 0,18/1,18 (15,2 % im Spiel)", eintopf && nah(eintopf.rrr, OHNE), eintopf && eintopf.rrr);
+    const eintopfF = craftWeg("T8_MEAL_STEW", 0, null, true);
+    pruefe("Unveraendert: Rindfleischeintopf Lymhurst mit Fokus 0,77/1,77 (43,5 % im Spiel)", eintopfF && nah(eintopfF.rrr, 0.77 / 1.77), eintopfF && eintopfF.rrr);
+    const stoff = craftWeg("T4_CLOTH", 0);
+    pruefe("Unveraendert: Stoff in Lymhurst mit Veredelungsbonus 0,58/1,58, Weber", stoff && nah(stoff.rrr, 0.58 / 1.58) && stoff.gebaeude === "Weber", stoff && stoff.rrr);
+    const schwert = craftWeg("T4_MAIN_SWORD", 0);
+    pruefe("Unveraendert: Breitschwert in Lymhurst mit Craftbonus 0,33/1,33, Kriegerschmiede", schwert && nah(schwert.rrr, 0.33 / 1.33) && schwert.gebaeude === "Kriegerschmiede", schwert && schwert.rrr);
+    const sauce = craftWeg("T1_FISHSAUCE_LEVEL1", 0);
+    const sauceF = craftWeg("T1_FISHSAUCE_LEVEL1", 0, null, true);
+    pruefe("Unveraendert: Fischsauce ohne Rueckgewinnung und ohne Gebuehrengruppe (auch mit Fokus)", sauce && sauce.rrr === 0 && sauce.gebaeude === null && sauceF && sauceF.rrr === 0, sauce && sauce.rrr);
+    const gugel = craftWeg("T4_HEAD_CLOTH_ROYAL", 0);
+    pruefe("Unveraendert: Koenigliche Gugel ohne Rueckgewinnung und ohne Stationsgebuehr", gugel && gugel.rrr === 0 && gugel.gebaeude === null && gugel.stationsgebuehrJeStueck === 0, gugel && gugel.rrr + " / " + gugel.stationsgebuehrJeStueck);
+    // Einzige Kategorie-Rezeptur mit Fokus 0 im Graphen: verliert ihre
+    // Rueckgewinnung (vorher 0,18 bzw. mit "Fokus" sogar 0,77 bei 0 Fokuskosten).
+    const ei = craftWeg("T8_MEAL_SPECIAL_FOOD_DRAKE_EGG", 0, null, true);
+    pruefe("Neu: Jungdrachenei-Kekse (cc food, craftingfocus 0) ohne Rueckgewinnung, auch mit Fokus", ei && ei.rrr === 0, ei && ei.rrr);
   })();
 
   // -----------------------------------------------------------------------

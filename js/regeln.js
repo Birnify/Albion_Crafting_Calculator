@@ -275,6 +275,52 @@ const REGELN = (function () {
     return KATEGORIE_ZU_GEBAEUDE[cc] || null;
   }
 
+  // -----------------------------------------------------------------------
+  // Item-Art -> Gebaeude / Gebuehrengruppe, NUR fuer Items ohne
+  // craftingcategory (v3.8.3, 13.10.2026). Item-Art ist die Top-Level-Gruppe
+  // des Dumps, build_graph.py liefert sie als Knotenfeld `ia`.
+  //
+  // - furnitureitem -> Werkzeugmacher: Nutzerangabe plus Gegenprobe im
+  //   Craft-Fenster (Screenshots 13.10.2026). Tisch des Grossmeisters
+  //   (Gegenstandswert 7.680), Reparatursatz des Adepten (256) und
+  //   Hai-Trophaee (1.736) ergeben mit demselben Satz 970 genau die
+  //   abgelesenen Silberkosten 8.381 / 279 / 1.894.
+  // - mount, siegebanner: Gebaeude nicht belegt. Nach "Vorgehen statt Raten"
+  //   (CLAUDE.md) je eine eigene Gebuehrengruppe, der Nutzer traegt den Satz
+  //   der Station ein, die er tatsaechlich benutzt.
+  // - Alle uebrigen Arten ohne Kategorie (u. a. equipmentitem mit den
+  //   koeniglichen Items, simpleitem, hideoutitem) bleiben bewusst ohne
+  //   Gebuehrengruppe wie bisher: kein Beleg, und die koeniglichen Items
+  //   sind ein bestehender Fall, der sich ohne Beleg nicht aendern darf.
+  // -----------------------------------------------------------------------
+
+  const ITEMART_ZU_GEBAEUDE = {
+    furnitureitem: "Werkzeugmacher",
+    mount: "Reittiere (Gebaeude nicht belegt)",
+    siegebanner: "Belagerungsbanner (Gebaeude nicht belegt)",
+  };
+
+  /**
+   * Gebaeude/Gebuehrengruppe eines Graph-Knotens: mit craftingcategory ueber
+   * die Kategorie (unveraendert), ohne ueber die Item-Art `ia`.
+   */
+  function gebaeudeVonItem(node) {
+    if (!node) return null;
+    if (node.cc) return gebaeudeVonKategorie(node.cc);
+    return (node.ia && ITEMART_ZU_GEBAEUDE[node.ia]) || null;
+  }
+
+  /** Alle Gebaeude/Gebuehrengruppen (Kategorien und Item-Arten), ohne Doppelte. */
+  function alleGebaeude() {
+    const liste = [];
+    [KATEGORIE_ZU_GEBAEUDE, ITEMART_ZU_GEBAEUDE].forEach((tabelle) => {
+      Object.keys(tabelle).forEach((k) => {
+        if (liste.indexOf(tabelle[k]) === -1) liste.push(tabelle[k]);
+      });
+    });
+    return liste;
+  }
+
   function hatCraftBonus(cc, stadt) {
     const s = STADTBONUS[stadt];
     return !!(s && cc && s.craft.indexOf(cc) !== -1);
@@ -290,13 +336,26 @@ const REGELN = (function () {
   // -----------------------------------------------------------------------
 
   /**
-   * @param {{cc: ?string, stadt: string, mitFokus: boolean, tagesbonus: ?("silber"|"gold"), zusatzbonus?: number}} p
-   * @returns {number} RRR zwischen 0 und <1. 0, wenn cc fehlt (keine
-   *   craftingcategory -> keine Rueckgewinnung moeglich, s. koenigliche Items).
+   * @param {{cc: ?string, stadt: string, mitFokus: boolean, tagesbonus: ?("silber"|"gold"), zusatzbonus?: number, craftingfocus?: number}} p
+   * @returns {number} RRR zwischen 0 und <1.
+   *
+   * Seit v3.8.3 (13.10.2026) haengt die Rueckgewinnung am Grundfokus des
+   * Rezepts, nicht an der craftingcategory: mit `craftingfocus` gilt
+   * Rueckgewinnung genau dann, wenn craftingfocus > 0. Beleg: Craft-Fenster
+   * (Screenshots 13.10.2026) zeigt 15,2 % fuer Tisch des Grossmeisters und
+   * Reparatursatz (beide ohne Kategorie, Fokus > 0) und 0 % fuer Hai-Trophaee
+   * und Unterschlupf (Fokus 0); Fischsauce (Fokus 0) hat ebenfalls keine.
+   * Den Stadtbonus gibt es weiter nur ueber die Kategorie, Items ohne
+   * Kategorie bekommen Grundproduktion, Fokus, Tagesbonus und Zusatzbonus.
+   * Ohne `craftingfocus` (aeltere Aufrufer) gilt die alte Regel: ohne cc 0.
    */
   function rrr(p) {
     p = p || {};
-    if (!p.cc) return 0;
+    if (p.craftingfocus != null) {
+      if (!(Number(p.craftingfocus) > 0)) return 0;
+    } else if (!p.cc) {
+      return 0;
+    }
     let b = RRR_GRUNDPRODUKTION;
     if (hatCraftBonus(p.cc, p.stadt)) b += RRR_STADTBONUS_CRAFT;
     if (hatVeredelBonus(p.cc, p.stadt)) b += RRR_STADTBONUS_VEREDELN;
@@ -1946,6 +2005,9 @@ const REGELN = (function () {
     KATEGORIE_ZU_GEBAEUDE,
     STADTBONUS,
     gebaeudeVonKategorie,
+    ITEMART_ZU_GEBAEUDE,
+    gebaeudeVonItem,
+    alleGebaeude,
     hatCraftBonus,
     hatVeredelBonus,
     rrr,

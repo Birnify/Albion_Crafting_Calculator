@@ -83,7 +83,7 @@ const UI = (function () {
       // dieses Feldes, keine Konstante in rechenkern.js/regeln.js. Vorher war
       // stationssaetze leer, jedes Gebaeude startete als "nicht gepflegt" und
       // machte das Ergebnis unvollstaendig, bis der Nutzer es manuell eintrug.
-      stationssaetze: Array.from(new Set(Object.values(REGELN.KATEGORIE_ZU_GEBAEUDE))).reduce((acc, g) => {
+      stationssaetze: REGELN.alleGebaeude().reduce((acc, g) => {
         acc[g] = 400;
         return acc;
       }, {}),
@@ -202,13 +202,30 @@ const UI = (function () {
     return kategorien;
   }
 
-  /** Alle Gebaeude/Gebuehrengruppen, die der Bauplan braucht (ueber REGELN.gebaeudeVonKategorie). */
+  /**
+   * Alle Gebaeude/Gebuehrengruppen, die der Bauplan braucht. Seit v3.8.3 aus
+   * weg.gebaeude der Craft-Schritte (der Rechenkern setzt es ueber
+   * REGELN.gebaeudeVonItem, also auch fuer Items ohne craftingcategory wie
+   * Moebel), mit Rueckfall auf die Kategorie.
+   */
   function sammleVerwendeteGebaeude(weg) {
     const gebaeude = [];
-    sammleVerwendeteKategorien(weg).forEach((cc) => {
-      const g = REGELN.gebaeudeVonKategorie(cc);
+    function merke(g) {
       if (g && gebaeude.indexOf(g) === -1) gebaeude.push(g);
-    });
+    }
+    function besuche(w) {
+      if (!w) return;
+      if (w.typ === "craften") {
+        merke(w.gebaeude || REGELN.gebaeudeVonKategorie(w.craftingcategory));
+        (w.zutaten || []).forEach((z) => besuche(z.weg));
+      } else if (w.typ === "verzaubern") {
+        besuche(w.vorstufe);
+        (w.materialien || []).forEach((m) => besuche(m.weg));
+      } else if (w.typ === "reroll") {
+        besuche(w.basis);
+      }
+    }
+    besuche(weg);
     return gebaeude;
   }
 
@@ -713,7 +730,7 @@ const UI = (function () {
           .filter(Boolean)
       )
     ).sort();
-    const ALLE_GEBAEUDE = Array.from(new Set(Object.keys(REGELN.KATEGORIE_ZU_GEBAEUDE).map((k) => REGELN.KATEGORIE_ZU_GEBAEUDE[k])));
+    const ALLE_GEBAEUDE = REGELN.alleGebaeude();
 
     const suchIndex = Object.keys(REZEPTGRAPH.items).map((uniquename) => ({
       uniquename,

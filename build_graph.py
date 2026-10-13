@@ -605,6 +605,7 @@ def write_output(nodes, names, missing, candidates, meta):
         "nichtHandelbareKandidaten": candidates,
         "schema": {
             "item": "t=tier, cc=craftingcategory, mq=maxqualitylevel (fehlt im Dump=1, >1 = qualifizierbar), iv=itemvalue, ivd=itemvalue abgeleitet statt aus Dump, "
+            "ia=Item-Art (Top-Level-Gruppe des Dumps, nur ohne cc), "
             "ivm=abweichende ItemValues der Alternativrezepte, el=eigene Verzauberungsstufe des Items "
             "(fehlt=0, nur bei veredelten Rohstoffen/Runen/Seelen/Relikten, NICHT bei Ausruestung, "
             "s. e-Schluessel dort), r=Basisrezepte, e=Verzauberungsstufen",
@@ -711,6 +712,17 @@ def run_self_checks(nodes):
     for name, mq in erwartet_mq.items():
         check(f"{name} hat mq = {mq}", nodes.get(name, {}).get("mq") == mq)
     check("jeder Knoten traegt ein mq-Feld", all("mq" in n for n in nodes.values()))
+    # ia-Feld (Item-Art, v3.8.3): nur ohne craftingcategory.
+    erwartet_ia = {
+        "T8_FURNITUREITEM_BED": "furnitureitem",
+        "T8_FURNITUREITEM_TROPHY_FISHING_BOSS": "furnitureitem",
+        "T4_MOUNT_HORSE": "mount",
+        "T4_SIEGE_BANNER": "siegebanner",
+    }
+    for name, ia in erwartet_ia.items():
+        check(f"{name} hat ia = {ia}", nodes.get(name, {}).get("ia") == ia)
+    check("T4_MAIN_SWORD (mit cc) hat kein ia-Feld", "ia" not in nodes.get("T4_MAIN_SWORD", {}))
+    check("kein Knoten traegt cc und ia zugleich", not any("cc" in n and "ia" in n for n in nodes.values()))
     el_count = sum(1 for n in nodes.values() if n.get("el"))
     print(f"[INFO] {el_count} Knoten mit eigenem el-Feld (erwartet um die 312)")
 
@@ -760,6 +772,14 @@ def main():
     print(f"Item-Index geladen: {len(index)} Items ueber alle Gruppen")
 
     nodes, missing = build_graph(index)
+    # ia = Item-Art (Top-Level-Gruppe des Dumps, z.B. furnitureitem, mount,
+    # siegebanner), seit v3.8.3 (13.10.2026). Nur bei Knoten OHNE
+    # craftingcategory: dort ordnet REGELN.gebaeudeVonItem() die Gebuehren-
+    # gruppe ueber die Item-Art zu (Moebel -> Werkzeugmacher, im Spiel
+    # belegt). Mit cc bleibt die Kategorie allein massgeblich.
+    for name, node in nodes.items():
+        if "cc" not in node and group_of.get(name):
+            node["ia"] = group_of[name]
     recipe_node_count = sum(1 for n in nodes.values() if n.get("r") or n.get("e"))
     print(f"Graph gebaut: {len(nodes)} Knoten, davon {recipe_node_count} mit eigenem Rezept")
     if missing:

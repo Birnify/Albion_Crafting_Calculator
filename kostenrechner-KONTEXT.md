@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-13 · Version: v3.8.2 · Fix: Qualität nur für Items mit maxqualitylevel > 1
+Stand: 2026-10-13 · Version: v3.8.3 · Fix: Rückgewinnung an craftingfocus, Möbel beim Werkzeugmacher
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -73,6 +73,53 @@ Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
 
+## Nachtrag v3.8.3 (13.10.2026): Rückgewinnung und Stationsgebühr bei Möbeln
+
+Sören meldete am Bett des Ältesten (T8.0) „Rückgewinnung 0 %“ und
+„Stationsgebuehr 0“; beides stimmt im Spiel nicht. Belege, Craft-Fenster ohne
+Fokus, Screenshots 13.10.2026: Tisch des Großmeisters 15,2 % / Gegenstandswert
+7.680 / Silberkosten 8.381, Reparatursatz des Adepten 15,2 % / 256 / 279,
+Hai-Trophäe 0 % / 1.736 / 1.894, Unterschlupf-Baukasten 0 %. Alle drei Möbel
+ergeben mit demselben Satz 970 genau ihre Silberkosten; laut Sören werden sie
+beim Werkzeugmacher gefertigt.
+
+- **Rückgewinnung hängt an `craftingfocus > 0`, nicht an der
+  `craftingcategory`.** `REGELN.rrr()` nimmt dafür `craftingfocus` (Rechenkern
+  übergibt `rezept.f`); ohne die Angabe gilt für ältere Aufrufer die alte
+  Regel. Items ohne Kategorie bekommen Grundproduktion, Fokus, Tagesbonus und
+  Zusatzbonus, aber keinen Stadtbonus. Im Graphen betrifft das 141 Items ohne
+  Kategorie mit Fokus > 0 (23 Möbel, 45 Reittiere, 5 Belagerungsbanner,
+  9 Artefakt-Umhänge `T6_CAPE_*_KEEPER/MORGANA/UNDEAD`, 59 UNIQUE-Vanity). Einzige
+  Kategorie-Rezeptur mit Fokus 0: `T8_MEAL_SPECIAL_FOOD_DRAKE_EGG`, die verliert
+  ihre Rückgewinnung (vorher bekam sie mit „Fokus“ sogar +0,59 bei 0
+  Fokuskosten). Fischsauce, Eintopf, Veredelung, Ausrüstung, Königliche
+  Gugel unverändert (Tests).
+- **Gebührengruppe über die Item-Art.** `build_graph.py` liefert für Knoten
+  ohne `cc` das Feld `ia` (Top-Level-Gruppe des Dumps); `rezepte.js` neu
+  erzeugt aus demselben Dump-Stand, Diff geprüft: außer `ia`, Zeitstempel und
+  Schema-Text unverändert. `REGELN.gebaeudeVonItem(node)`:
+  `furnitureitem` → **Werkzeugmacher** (belegt), `mount` → „Reittiere
+  (Gebaeude nicht belegt)“, `siegebanner` → „Belagerungsbanner (Gebaeude nicht
+  belegt)“, je eigene Gruppe mit Vorgabe 400. Alle übrigen Arten ohne
+  Kategorie (u. a. königliche Ausrüstung, `simpleitem`, `hideoutitem`) bleiben
+  bewusst ohne Gruppe. `REGELN.alleGebaeude()` speist Standardsätze und
+  Stationstabelle, `UI.sammleVerwendeteGebaeude()` liest jetzt `weg.gebaeude`.
+- Ein bestehender synthetischer Test (Qualitätswurf, `QUAL_WURF_M`) hatte
+  `f: 0` und erwartete trotzdem Rückgewinnung; auf `f: 10` gestellt, Absicht
+  des Tests unverändert.
+- Headless mit Live-Preisen: Bett T8.0, Lymhurst, mit Fokus zeigt
+  „Stationsgebuehr 3.456 (Werkzeugmacher), Rueckgewinnung 43,5 %“, der
+  Werkzeugmacher steht „im Bauplan“ in der Stationstabelle.
+- Selbsttest **574/574** grün (vorher 545, 29 neue).
+
+**Offen, nicht geraten:** Gebäude für Reittiere und Belagerungsbanner;
+Gebühr und Rückgewinnung der königlichen Items und der UNIQUE-/Artefakt-Umhänge
+ohne Kategorie (Umhänge und Vanity bekommen jetzt Rückgewinnung, aber keine
+Gebühr); Unterschlupf (Silberkosten 11.619.050 passen nicht zu ItemValue
+54.112 mit Satz 970, nicht weiter verfolgt). FCE für Items ohne Kategorie:
+unverändert der globale FCE-Wert, der Knoten im Schicksalsbrett ist nicht
+modelliert.
+
 ## Nachtrag v3.8.2 (13.10.2026): Qualität nur, wo das Item eine hat
 
 Sören meldete: Bett des Ältesten (T8.0, Lymhurst, ohne Fokus) kostete je
@@ -114,10 +161,8 @@ Reittiere) galten als qualifizierbar.
   Auftrag gegen `rezepte.js`, mq-Vorrang und Rückfall, Preisvergleich,
   Bett in allen fünf Qualitäten gleich Normal, Schwert-Gegenprobe).
 
-**Nebenbefund, nicht behoben:** das Bett zeigt im Bauplan
-„Rückgewinnung 0 %“, weil es keine `craftingcategory` hat (dieselbe Regel wie
-bei Fischsauce). Ob Möbel im Spiel Rückgewinnung bekommen, ist nicht belegt;
-bei Bedarf im Craft-Fenster ablesen lassen.
+**Nebenbefund „Rückgewinnung Möbel“: GEKLÄRT und behoben in v3.8.3**, s.
+Nachtrag oben (im Spiel abgelesen, Rückgewinnung hängt an `craftingfocus`).
 
 ## Nachtrag v3.8.1 (08.10.2026): „CHANCEN is not defined“
 

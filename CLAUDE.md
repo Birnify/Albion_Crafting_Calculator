@@ -254,6 +254,21 @@ einer Rückgewinnungs-Kategorie zu. Fischsauce ist damit eine reine Umwandlung:
 kein Fokus, keine Rückgewinnung. Vom Nutzer im Spiel bestätigt; die Option
 existiert dort schlicht nicht.
 
+**Präzisiert 13.10.2026 (v3.8.3): die Rückgewinnung hängt an
+`craftingfocus > 0`, nicht an der `craftingcategory`.** Die Kategorie
+bestimmt nur den Stadtbonus und (wo vorhanden) das Gebäude. Beleg,
+Craft-Fenster ohne Fokus, Screenshots 13.10.2026: Tisch des Großmeisters und
+Reparatursatz des Adepten (beide ohne Kategorie, Fokus 5.627 bzw. 280) zeigen
+15,2 %, Hai-Trophäe und Unterschlupf-Baukasten (Fokus 0) 0 %. Items ohne
+Kategorie bekommen Grundproduktion, Fokus, Tagesbonus, keinen Stadtbonus.
+
+**Möbel (`furnitureitem`, ohne Kategorie) werden beim Werkzeugmacher
+gefertigt** (Nutzerangabe) und zahlen Stationsgebühr nach derselben Formel.
+Gegenprobe mit einem Satz 970 an drei Möbeln (Screenshots 13.10.2026):
+Gegenstandswert 7.680 → 8.381, 256 → 279, 1.736 → 1.894 Silber, jeweils exakt.
+Reittiere und Belagerungsbanner (ebenfalls ohne Kategorie): Gebäude nicht
+belegt, in der App je eigene Gebührengruppe.
+
 Nur der Eintopf-Craft selbst bekommt Fokus und Rückgewinnung.
 
 ## Belegte Spielformeln
@@ -316,6 +331,8 @@ B = Grundproduktion 0,18
   + Tagesbonus 0,10 oder 0,20 (Silber- bzw. Goldtag, rotiert je Stadt)
   + Zusatzbonus              (in der App frei einstellbar, kein Spielwert)
 ```
+
+Gilt nur für Rezepte mit `craftingfocus > 0` (sonst 0 %), s. „Rezeptdaten“.
 
 Daraus die geläufigen Werte: 15,3 % (B 0,18) · 24,8 % (B 0,33, Craft-Bonusstadt)
 · 36,7 % (B 0,58, Veredelungs-Bonusstadt) · 43,5 % (B 0,77) · 47,9 % (B 0,92)

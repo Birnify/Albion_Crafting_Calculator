@@ -288,7 +288,7 @@ const RECHENKERN = (function () {
    *   gepflegt zeigt an, ob das eine echte, gueltige Angabe war.
    */
   function stationssatzFuer(gebaeude, opts) {
-    if (!gebaeude) return { satz: 0, gepflegt: true }; // kein Gebaeude noetig (z.B. koenigliche Items ohne craftingcategory)
+    if (!gebaeude) return { satz: 0, gepflegt: true }; // kein Gebaeude zugeordnet (z.B. koenigliche Items: ohne craftingcategory und ohne belegte Item-Art)
     const roh = opts.stationssaetze[gebaeude];
     if (roh == null) return { satz: 0, gepflegt: false };
     if (typeof roh === "string" && roh.trim() === "") return { satz: 0, gepflegt: false };
@@ -392,7 +392,8 @@ const RECHENKERN = (function () {
 
     const amountcrafted = rezept.a || 1;
     const cc = node.cc || null;
-    const gebaeude = REGELN.gebaeudeVonKategorie(cc);
+    // v3.8.3: ohne craftingcategory ueber die Item-Art (Moebel -> Werkzeugmacher), s. REGELN.gebaeudeVonItem.
+    const gebaeude = REGELN.gebaeudeVonItem(node);
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
     const fce = fceFuer(item, cc, opts);
@@ -404,7 +405,8 @@ const RECHENKERN = (function () {
     // mit doppelter Ausbeute kostet doppelt so viel Fokus, s. CLAUDE.md
     // "craftingfocus aus dem Dump" und AUDIT-2026-09-13.md Befund 1.
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) : 0;
-    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts), zusatzbonus: opts.zusatzProduktionsbonus });
+    // v3.8.3: Rueckgewinnung genau dann, wenn das Rezept Grundfokus > 0 hat, s. REGELN.rrr.
+    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts), zusatzbonus: opts.zusatzProduktionsbonus, craftingfocus: rezept.f || 0 });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
     // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
     // gebuehrenfrei, s. REGELN.stationsgebuehrGiltFuerTier().
@@ -743,7 +745,8 @@ const RECHENKERN = (function () {
     const hatP = REGELN.rezeptHatPreservequality(rezept);
     const amountcrafted = rezept.a || 1;
     const cc = node.cc || null;
-    const gebaeude = REGELN.gebaeudeVonKategorie(cc);
+    // v3.8.3: ohne craftingcategory ueber die Item-Art (Moebel -> Werkzeugmacher), s. REGELN.gebaeudeVonItem.
+    const gebaeude = REGELN.gebaeudeVonItem(node);
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
     const fce = fceFuer(item, cc, opts);
@@ -755,7 +758,8 @@ const RECHENKERN = (function () {
     // mit doppelter Ausbeute kostet doppelt so viel Fokus, s. CLAUDE.md
     // "craftingfocus aus dem Dump" und AUDIT-2026-09-13.md Befund 1.
     const fokusJeStueck = mitFokus ? REGELN.fokusKosten(rezept.f, fce, 1) : 0;
-    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts), zusatzbonus: opts.zusatzProduktionsbonus });
+    // v3.8.3: Rueckgewinnung genau dann, wenn das Rezept Grundfokus > 0 hat, s. REGELN.rrr.
+    const rrrWert = REGELN.rrr({ cc, stadt: opts.stadt, mitFokus, tagesbonus: tagesbonusFuer(cc, opts), zusatzbonus: opts.zusatzProduktionsbonus, craftingfocus: rezept.f || 0 });
     const itemWertJeStueck = REGELN.itemWert(item, stufe, rezept, opts.graph);
     // Bugfix Audit-Befund 8 (19.09.2026): T1/T2-Items sind im Spiel
     // gebuehrenfrei, s. REGELN.stationsgebuehrGiltFuerTier(). Praktisch ohne
