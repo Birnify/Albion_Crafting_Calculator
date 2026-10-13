@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-13 · Version: v3.8.3 · Fix: Rückgewinnung an craftingfocus, Möbel beim Werkzeugmacher
+Stand: 2026-10-13 · Version: v3.9.0 · Feature: Veredeln leveln mit eigenen Einkaufspreisen, Höchstpreis und Stationssätzen
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,59 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.9.0 (13.10.2026): Veredeln leveln, eigener Preis und Höchstpreis
+
+Wunsch von Sören: nach der Entscheidung für einen Vorgang kauft er die Zutat,
+der Preis steigt dabei; er will sehen, wie viel Gewinn bis zu welcher
+Preisgrenze bleibt.
+
+- **Einkaufspreis je Zutat überschreibbar.** In der Spalte „Einsatz je
+  Vorgang, Einkaufspreis“ ist der Preis ein Eingabefeld (Wert ohne
+  Einstellgebühr, wie im Marktfenster). Die Zeile rechnet sofort neu. Eigene
+  Preise: goldener Rahmen, ✕ je Feld, Knopf „Eigene Preise zurücksetzen (n)“,
+  Tooltip mit dem aktuellen Marktpreis. Leer oder ≤ 0 setzt zurück.
+- **Entscheidung, Verhältnis zu den vorhandenen Mechanismen:** eigenes,
+  kleines Speicherfeld `preisUeberschreibungen` (Stadt → Markt-ID → Silber) im
+  Reiter-Speicher `albion_kostenrechner_veredeln_v1`. Keine Wiederverwendung,
+  weil keiner der beiden Kostenrechner-Wege passt: die Eigenpreise
+  (`PREISE.eigenpreis*`, „kein Eigenpreis“-Felder) greifen nur, wenn GAR kein
+  Marktpreis da ist; die Preisübersteuerungen (`einstellungen.
+  preisUebersteuerungen`) sind stadtunabhängig und ein fester Kaufpreis ohne
+  Einstellgebühr. Der eigene Preis wird als Marktpreis in `opts.preise`
+  eingesetzt (beide Seiten, ohne Datum), gilt je Stadt und Markt-ID in allen
+  Zeilen und wirkt nur auf den Einkauf; der Erlös rechnet weiter mit dem
+  Markt. Bei eigener Kauforder ist er der Orderpreis, die 2,5 % kommen
+  obendrauf. **„Preise aktualisieren“ lässt eigene Preise stehen**, bis sie
+  zurückgesetzt werden; der Tooltip zeigt den frischen Marktpreis daneben.
+- **Höchstpreis je Zutat** („max. 1.236“, rot bei Verlust, „kein Preis
+  reicht“ wenn ≤ 0): Preis, bei dem der Gewinn der Zeile auf 0 fällt, alle
+  anderen fest. Lineare Herleitung, belegt: mit `nurDirekteEbene` wird jede
+  Zutat gekauft (Kosten = Preis × Kauffaktor), die Rückgewinnung ist ein
+  fester Mengenfaktor, die Gebühr hängt am Gegenstandswert. Also
+  `p* = p0 + Gewinn / (effektiveMenge × Kauffaktor)` (`VEREDELN.hoechstpreis`).
+  Selbsttests setzen p* über den echten Rechenkern ein (Sofortkauf, Kauforder,
+  Kauf- und Verkaufsorder, Verlustfall) und prüfen Gewinn ≈ 0 sowie die
+  Linearität an drei Punkten. Live gegengerechnet: Seltener Hanf 1.198,
+  Gewinn 49/Stück, 2 × (1 − 0,367) → 1.198 + 49 / 1,266 = 1.236.
+- **Stationssätze im Reiter** für die angehakten Rohstoffe (Weber, Sägewerk,
+  Schmelze, Steinmetz, Gerberei), je 100 Nahrung. Dieselbe Einstellung wie im
+  Kostenrechner: `UI.stationssatzSetzen()` schreibt `einstellungen.
+  stationssaetze` und meldet per Ereignis `albion:stationssaetze`; der
+  Kostenrechner übernimmt den einen Satz in seinen Arbeitsspeicher (sonst
+  würde er beim nächsten Speichern den alten Stand zurückschreiben), der
+  Reiter zieht umgekehrt nach. 0 ist erlaubt, leer ändert nichts. Fehlt ein
+  Satz, sagt die Fußzeile „mit 0 gerechnet“.
+- **Nachrechnen ohne Abruf:** die Suche legt Preise und Handelsvolumen je
+  Stadt ab (`daten`), `VEREDELN.zeilenRechnen()` baut daraus die Zeilen.
+  Neu gerechnet wird bei eigenem Preis, Stationssatz und jetzt auch bei
+  Einkauf, Verkauf, Fokus, Zusatzbonus und Tagesbonus (vorher erst beim
+  nächsten Suchen). Städte/Rohstoffe/Tier/Stufe brauchen weiter eine Suche.
+- Selbsttest **594/594** grün (vorher 574, 20 neue). Headless mit
+  Live-Preisen (Lymhurst, Faser T4–T6) durchgeklickt, auch bei 390 px.
+
+**Nebenbefund, nicht behoben:** bei 390 px Breite ist die Seite 601 px breit,
+die Reiterleiste bricht nicht um (auch schon in v3.8.3 so gemessen).
 
 ## Nachtrag v3.8.3 (13.10.2026): Rückgewinnung und Stationsgebühr bei Möbeln
 
@@ -1100,6 +1153,9 @@ hier ebenfalls entfernt.
    Beschriftung unveraendert. Keine Rechenlogik angefasst.
 
 **Kleinere offene Punkte, unverändert seit früheren Paketen:**
+
+- Reiterleiste bricht bei schmaler Breite nicht um (390 px Ansicht, Seite
+  601 px breit, waagerechtes Scrollen). Gefunden in v3.9.0, schon vorher so.
 
 - Ein Eigenpreis von 0 könnte legitim sein, wenn der Nutzer eine Zutat schon
   auf Lager hat ("kostet mich nichts mehr"). In P6 bewusst nicht gelöst,

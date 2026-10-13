@@ -128,6 +128,14 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 #tab-veredeln .staedte{margin-top:14px;padding-top:12px}
 #tab-veredeln .staedte .mini{margin-left:10px}
 .vd-tag select{width:auto;padding:3px 6px;font-size:12.5px}
+#tab-veredeln .staedte input.vd-satz{width:80px;padding:4px 6px}
+.vd-zutat{display:flex;flex-wrap:nowrap;white-space:nowrap;align-items:center;gap:6px;margin:3px 0}
+.vd-preisfeld{display:inline-flex;align-items:center;gap:3px}
+input.vd-preis{width:84px;padding:3px 6px;font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums}
+input.vd-preis.vd-eigen{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.vd-reset{padding:2px 6px;font-size:11px;line-height:1;background:transparent;color:var(--dim);border:1px solid var(--line)}
+.vd-max{font-size:11.5px;color:var(--good);white-space:nowrap}
+.vd-max.vd-verlust{color:var(--bad)}
 .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;
       white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
 .pill.good{background:var(--good-bg);color:var(--good)}
@@ -994,40 +1002,42 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 <div id="vdRohstoffe" class="staedte"></div>
 <div id="vdTiers" class="staedte"></div>
 <div id="vdStufen" class="staedte"></div>
+<div id="vdStationen" class="staedte" title="Nutzungsgebühr der Station je 100 Nahrung, vom Besitzer gesetzt und je Gebäude verschieden, im Spiel an der Station ablesen. Dieselbe Einstellung wie im Kostenrechner, eine Änderung gilt in beiden Reitern. T2 ist gebührenfrei."></div>
 <div class="staedte" title="Täglich rotierender Bonus auf die Rückgewinnung: +10 % am Silbertag, +20 % am Goldtag, je Stadt und Warengruppe. Über keine Schnittstelle abrufbar, deshalb im Spiel auf der Stadtkarte ablesen und hier eintragen.">
   <div class="t">Tagesbonus je Stadt (im Spiel ablesen)</div>
   <div id="vdTagesbonus" style="width:100%"></div>
 </div>
 <div class="bar" style="margin:16px 0 0">
   <button type="button" id="vdStart">Gelegenheiten suchen</button>
-  <button type="button" id="vdRefresh" class="mini" title="Zwischenspeicher umgehen und alle Preise und Handelsvolumen der Auswahl neu abrufen, danach neu rechnen.">Preise aktualisieren</button>
+  <button type="button" id="vdRefresh" class="mini" title="Zwischenspeicher umgehen und alle Preise und Handelsvolumen der Auswahl neu abrufen, danach neu rechnen. Eigene Einkaufspreise bleiben stehen.">Preise aktualisieren</button>
+  <button type="button" id="vdPreiseReset" class="mini" hidden title="Alle eigenen Einkaufspreise entfernen, wieder mit den Marktpreisen rechnen.">Eigene Preise zurücksetzen</button>
   <label style="display:flex;align-items:center;gap:7px;margin:0;text-transform:none" title="Auch Vorgänge zeigen, die mehr als die Toleranz verlieren."><input type="checkbox" id="vdVerluste" style="width:auto">Verluste zeigen</label>
   <span id="vdStatus"></span>
 </div>
 </div>
 
 <div class="panel gp-panel ch-tabellenrahmen">
-<div id="vdAusgabe"><div class="ch-hinweis">Premium, Stationssätze je Gebäude (Weber, Sägewerk, Schmelze, Steinmetz, Gerberei), FCE und Höchstalter der Preise kommen aus den Einstellungen des Kostenrechners.</div></div>
+<div id="vdAusgabe"><div class="ch-hinweis">Premium, FCE und Höchstalter der Preise kommen aus den Einstellungen des Kostenrechners; die Stationssätze oben sind dieselben wie dort.</div></div>
 </div>
 
 </div><!-- /tab-veredeln -->
 
 </div>
 
-<script src="rezepte.js?v=3.8.3"></script>
-<script src="item-namen.js?v=3.8.3"></script>
-<script src="js/preise.js?v=3.8.3"></script>
-<script src="js/regeln.js?v=3.8.3"></script>
-<script src="js/rechenkern.js?v=3.8.3"></script>
-<script src="js/ui.js?v=3.8.3"></script>
-<script src="js/eintopf-daten.js?v=3.8.3"></script>
-<script src="js/eintopf-preise.js?v=3.8.3"></script>
-<script src="js/eintopf-rechenkern.js?v=3.8.3"></script>
-<script src="js/eintopf-ui.js?v=3.8.3"></script>
-<script src="js/tabs.js?v=3.8.3"></script>
-<script src="js/preisvergleich.js?v=3.8.3"></script>
-<script src="js/chancen.js?v=3.8.3"></script>
-<script src="js/veredeln.js?v=3.8.3"></script>
+<script src="rezepte.js?v=3.9.0"></script>
+<script src="item-namen.js?v=3.9.0"></script>
+<script src="js/preise.js?v=3.9.0"></script>
+<script src="js/regeln.js?v=3.9.0"></script>
+<script src="js/rechenkern.js?v=3.9.0"></script>
+<script src="js/ui.js?v=3.9.0"></script>
+<script src="js/eintopf-daten.js?v=3.9.0"></script>
+<script src="js/eintopf-preise.js?v=3.9.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.9.0"></script>
+<script src="js/eintopf-ui.js?v=3.9.0"></script>
+<script src="js/tabs.js?v=3.9.0"></script>
+<script src="js/preisvergleich.js?v=3.9.0"></script>
+<script src="js/chancen.js?v=3.9.0"></script>
+<script src="js/veredeln.js?v=3.9.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

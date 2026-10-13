@@ -172,6 +172,29 @@ const UI = (function () {
     }
   }
 
+  // v3.9.0 (13.10.2026): Stationssaetze sind eine gemeinsame Einstellung von
+  // Kostenrechner und "Veredeln leveln". Wer einen Satz aendert, meldet das
+  // per Ereignis auf document; der jeweils andere Reiter zieht nach. Ohne das
+  // wuerde der Kostenrechner beim naechsten Speichern seinen alten Stand aus
+  // dem Arbeitsspeicher zurueckschreiben.
+  const STATIONSSAETZE_EVENT = "albion:stationssaetze";
+
+  function stationssaetzeMelden(gebaeude, wert, quelle) {
+    if (typeof document === "undefined" || typeof CustomEvent === "undefined") return;
+    document.dispatchEvent(new CustomEvent(STATIONSSAETZE_EVENT, { detail: { gebaeude, wert, quelle } }));
+  }
+
+  /** Einen Stationssatz (Zahl >= 0) speichern und melden. Liefert den gespeicherten Wert oder null bei ungueltiger Eingabe. */
+  function stationssatzSetzen(gebaeude, wert, quelle) {
+    const zahl = Number(wert);
+    if (!gebaeude || wert === "" || wert == null || !isFinite(zahl) || zahl < 0) return null;
+    const e = einstellungenLesen();
+    e.stationssaetze[gebaeude] = zahl;
+    einstellungenSchreiben(e);
+    stationssaetzeMelden(gebaeude, zahl, quelle || null);
+    return zahl;
+  }
+
   // -----------------------------------------------------------------------
   // Reine Hilfsfunktionen, ohne DOM, s. tests/test.html
   // -----------------------------------------------------------------------
@@ -2580,6 +2603,7 @@ const UI = (function () {
           if (input.value.trim() === "") delete einstellungen.stationssaetze[g];
           else einstellungen.stationssaetze[g] = Number(input.value);
           persistiereUndRechne();
+          stationssaetzeMelden(g, einstellungen.stationssaetze[g] != null ? einstellungen.stationssaetze[g] : null, "kostenrechner");
         });
         tdInput.appendChild(input);
         tr.appendChild(tdName);
@@ -2763,6 +2787,18 @@ const UI = (function () {
       persistiereUndRechne();
     });
 
+    // v3.9.0: Stationssatz in "Veredeln leveln" geaendert. Nur den einen
+    // Satz in den Arbeitsspeicher uebernehmen (nicht den ganzen Speicherstand),
+    // dann speichern, Tabelle nachziehen und, falls gerechnet, neu rechnen.
+    document.addEventListener(STATIONSSAETZE_EVENT, (ev) => {
+      const d = ev.detail || {};
+      if (d.quelle === "kostenrechner" || !d.gebaeude) return;
+      if (d.wert == null) delete einstellungen.stationssaetze[d.gebaeude];
+      else einstellungen.stationssaetze[d.gebaeude] = d.wert;
+      persistiereUndRechne();
+      if (!(zustand.item && zustand.preiseRoh)) renderStationTabelle(zustand.ergebnis || null);
+    });
+
     // ---- Start ----
     ladeEinstellungenInFormular();
     renderSpezialisierungsknoten(null);
@@ -2782,6 +2818,8 @@ const UI = (function () {
   return {
     defaultEinstellungen,
     einstellungenLesen,
+    STATIONSSAETZE_EVENT,
+    stationssatzSetzen,
     fceUeberschreibungenAus,
     sammleVerwendeteKategorien,
     sammleVerwendeteGebaeude,

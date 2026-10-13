@@ -110,6 +110,45 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       CHANCEN.erloesJeStueck === REGELN.erloesJeStueck && CHANCEN.preiseZuOptsFormat === REGELN.preiseZuOptsFormat,
     typeof REGELN.erloesJeStueck
   );
+  // v3.9.0: Stationssaetze sind eine gemeinsame Einstellung von Kostenrechner
+  // und "Veredeln leveln". Speicherstand vorher sichern und danach zurueckschreiben.
+  (function () {
+    const KEY = "albion_kostenrechner_einstellungen";
+    let vorher = null;
+    try { vorher = localStorage.getItem(KEY); } catch (e) { /* ignorieren */ }
+    const gemeldet = [];
+    const horcher = (ev) => gemeldet.push(ev.detail);
+    document.addEventListener(UI.STATIONSSAETZE_EVENT, horcher);
+    try {
+      const alt = UI.einstellungenLesen();
+      const gesetzt = UI.stationssatzSetzen("Weber", 275, "veredeln");
+      const neu = UI.einstellungenLesen();
+      pruefe(
+        "veredeln: Stationssatz aus dem Reiter landet in einstellungen.stationssaetze des Kostenrechners, andere Saetze bleiben",
+        gesetzt === 275 && neu.stationssaetze.Weber === 275 && neu.stationssaetze.Schmelze === alt.stationssaetze.Schmelze,
+        JSON.stringify({ Weber: neu.stationssaetze.Weber, Schmelze: neu.stationssaetze.Schmelze })
+      );
+      pruefe(
+        "veredeln: Aenderung wird per Ereignis gemeldet (Gebaeude, Wert, Quelle), damit der Kostenrechner nachzieht",
+        gemeldet.length === 1 && gemeldet[0].gebaeude === "Weber" && gemeldet[0].wert === 275 && gemeldet[0].quelle === "veredeln",
+        JSON.stringify(gemeldet)
+      );
+      const null0 = UI.stationssatzSetzen("Weber", 0, "veredeln");
+      const leer = UI.stationssatzSetzen("Weber", "", "veredeln");
+      const neg = UI.stationssatzSetzen("Weber", -5, "veredeln");
+      pruefe(
+        "veredeln: Stationssatz 0 ist gueltig, leer oder negativ aendert nichts",
+        null0 === 0 && leer === null && neg === null && UI.einstellungenLesen().stationssaetze.Weber === 0 && gemeldet.length === 2,
+        [null0, leer, neg, UI.einstellungenLesen().stationssaetze.Weber].join(",")
+      );
+    } finally {
+      document.removeEventListener(UI.STATIONSSAETZE_EVENT, horcher);
+      try {
+        if (vorher == null) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, vorher);
+      } catch (e) { /* ignorieren */ }
+    }
+  })();
   pruefe(
     "veredeln: VEREDELN haengt nicht von CHANCEN ab (kein Verweis im Modulcode)",
     !/CHANCEN/.test(Object.values(VEREDELN).filter((f) => typeof f === "function").map(String).join("\n")),
