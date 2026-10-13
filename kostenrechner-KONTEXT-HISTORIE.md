@@ -7,6 +7,604 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+<!-- Am 13.10.2026 (v3.10.0) aus kostenrechner-KONTEXT.md verschoben, unverkuerzt. -->
+
+## Nachtrag v3.8.3 (13.10.2026): Rückgewinnung und Stationsgebühr bei Möbeln
+
+Sören meldete am Bett des Ältesten (T8.0) „Rückgewinnung 0 %“ und
+„Stationsgebuehr 0“; beides stimmt im Spiel nicht. Belege, Craft-Fenster ohne
+Fokus, Screenshots 13.10.2026: Tisch des Großmeisters 15,2 % / Gegenstandswert
+7.680 / Silberkosten 8.381, Reparatursatz des Adepten 15,2 % / 256 / 279,
+Hai-Trophäe 0 % / 1.736 / 1.894, Unterschlupf-Baukasten 0 %. Alle drei Möbel
+ergeben mit demselben Satz 970 genau ihre Silberkosten; laut Sören werden sie
+beim Werkzeugmacher gefertigt.
+
+- **Rückgewinnung hängt an `craftingfocus > 0`, nicht an der
+  `craftingcategory`.** `REGELN.rrr()` nimmt dafür `craftingfocus` (Rechenkern
+  übergibt `rezept.f`); ohne die Angabe gilt für ältere Aufrufer die alte
+  Regel. Items ohne Kategorie bekommen Grundproduktion, Fokus, Tagesbonus und
+  Zusatzbonus, aber keinen Stadtbonus. Im Graphen betrifft das 141 Items ohne
+  Kategorie mit Fokus > 0 (23 Möbel, 45 Reittiere, 5 Belagerungsbanner,
+  9 Artefakt-Umhänge `T6_CAPE_*_KEEPER/MORGANA/UNDEAD`, 59 UNIQUE-Vanity). Einzige
+  Kategorie-Rezeptur mit Fokus 0: `T8_MEAL_SPECIAL_FOOD_DRAKE_EGG`, die verliert
+  ihre Rückgewinnung (vorher bekam sie mit „Fokus“ sogar +0,59 bei 0
+  Fokuskosten). Fischsauce, Eintopf, Veredelung, Ausrüstung, Königliche
+  Gugel unverändert (Tests).
+- **Gebührengruppe über die Item-Art.** `build_graph.py` liefert für Knoten
+  ohne `cc` das Feld `ia` (Top-Level-Gruppe des Dumps); `rezepte.js` neu
+  erzeugt aus demselben Dump-Stand, Diff geprüft: außer `ia`, Zeitstempel und
+  Schema-Text unverändert. `REGELN.gebaeudeVonItem(node)`:
+  `furnitureitem` → **Werkzeugmacher** (belegt), `mount` → „Reittiere
+  (Gebaeude nicht belegt)“, `siegebanner` → „Belagerungsbanner (Gebaeude nicht
+  belegt)“, je eigene Gruppe mit Vorgabe 400. Alle übrigen Arten ohne
+  Kategorie (u. a. königliche Ausrüstung, `simpleitem`, `hideoutitem`) bleiben
+  bewusst ohne Gruppe. `REGELN.alleGebaeude()` speist Standardsätze und
+  Stationstabelle, `UI.sammleVerwendeteGebaeude()` liest jetzt `weg.gebaeude`.
+- Ein bestehender synthetischer Test (Qualitätswurf, `QUAL_WURF_M`) hatte
+  `f: 0` und erwartete trotzdem Rückgewinnung; auf `f: 10` gestellt, Absicht
+  des Tests unverändert.
+- Headless mit Live-Preisen: Bett T8.0, Lymhurst, mit Fokus zeigt
+  „Stationsgebuehr 3.456 (Werkzeugmacher), Rueckgewinnung 43,5 %“, der
+  Werkzeugmacher steht „im Bauplan“ in der Stationstabelle.
+- Selbsttest **574/574** grün (vorher 545, 29 neue).
+
+**Offen, nicht geraten:** Gebäude für Reittiere und Belagerungsbanner;
+Gebühr und Rückgewinnung der königlichen Items und der UNIQUE-/Artefakt-Umhänge
+ohne Kategorie (Umhänge und Vanity bekommen jetzt Rückgewinnung, aber keine
+Gebühr); Unterschlupf (Silberkosten 11.619.050 passen nicht zu ItemValue
+54.112 mit Satz 970, nicht weiter verfolgt). FCE für Items ohne Kategorie:
+unverändert der globale FCE-Wert, der Knoten im Schicksalsbrett ist nicht
+modelliert.
+
+## Nachtrag v3.8.2 (13.10.2026): Qualität nur, wo das Item eine hat
+
+Sören meldete: Bett des Ältesten (T8.0, Lymhurst, ohne Fokus) kostete je
+nach Feld „Qualität“ 896.543 (Gut) bis 43.108.497 Silber (Meisterwerk), über
+„Craften + Reroll“. Ein Bett hat im Spiel keine Qualität. Ursache:
+`REGELN.istQualifizierbar(item, cc)` war eine Sperrliste nach
+`craftingcategory`; Items **ohne** cc (Möbel, Trophäen, Tagebücher,
+Reittiere) galten als qualifizierbar.
+
+- **Neue Datenquelle:** `@maxqualitylevel` aus `items.json` des Dumps. 5 =
+  Normal bis Meisterwerk, 1 oder fehlend = keine Qualität. Enchantments
+  tragen keinen eigenen Wert. `build_graph.py` schreibt es als Knotenfeld
+  `mq` (immer, fehlend = 1) nach `rezepte.js` und bildet den `q`-Merker in
+  `item-namen.js` jetzt ebenfalls daraus (vorher: Top-Level-Gruppe
+  equipmentitem/weapon/transformationweapon; 359 Items verlieren `q`, v. a.
+  Werkzeuge und UNIQUE-Vanity, 51 Reittiere bekommen es). Der Graph selbst
+  ist bis auf `mq` unverändert gegenüber dem Stand vom 13.09.2026 (geprüft),
+  `namen` hat 19 neue Einträge aus dem aktuellen Namensdump.
+- `REGELN.istQualifizierbar(item, cc, mq)`: mit `mq` gilt `mq > 1`, ohne
+  `mq` die alte Kategorie-Logik. Neu `REGELN.istQualifizierbarId(id)`
+  (Graph, sonst `item-namen.js`). Rechenkern (Weiche in
+  `kostenBeiQualitaet()`, Wurzelschlüssel in `kosten()`), `chancen.js` und
+  `preisvergleich.js` nutzen sie. Im Graphen wird damit kein Item neu
+  qualifizierbar, nur 2.047 Graph-Items ohne Qualität richtig erkannt (Artefakte,
+  Questitems, Tagebücher, Möbel, Reittiere mit mq 1, Rohstoffe ohne cc u. a.).
+- **Oberfläche:** im Kostenrechner ist das Feld „Qualität“ bei nicht
+  qualifizierbarem Item ausgeblendet; gerechnet, abgerufen und der Gewinn
+  bewertet wird dann in Normal (`effektiveQualitaet()` in `js/ui.js`). Die
+  gespeicherte Einstellung bleibt und gilt beim nächsten qualifizierbaren
+  Item wieder. Der bisherige Hinweis „Zielqualität wird ignoriert“ im
+  Ergebnis entfällt. Im Preisvergleich fehlt das Qualitätswahlfeld wie bisher
+  bei nicht qualifizierbaren Items, gerechnet wird dort dann immer mit
+  Qualität 1.
+- `veredeln.js` setzt ohnehin `qualitaet: 1`, unverändert.
+- Headless mit Live-Preisen geprüft: Bett T8.0, Lymhurst, Meisterwerk und
+  Normal je 664.399 Silber über Craften, Feld ausgeblendet; Breitschwert
+  blendet es wieder ein.
+- Selbsttest **545/545** grün (vorher 524, 21 neue: die sieben Items aus dem
+  Auftrag gegen `rezepte.js`, mq-Vorrang und Rückfall, Preisvergleich,
+  Bett in allen fünf Qualitäten gleich Normal, Schwert-Gegenprobe).
+
+**Nebenbefund „Rückgewinnung Möbel“: GEKLÄRT und behoben in v3.8.3**, s.
+Nachtrag oben (im Spiel abgelesen, Rückgewinnung hängt an `craftingfocus`).
+
+## Nachtrag v3.8.1 (08.10.2026): „CHANCEN is not defined“
+
+Sören bekam im Reiter „Veredeln leveln“ auf der Pages-Seite „Fehler: CHANCEN
+is not defined“. Headless mit derselben Auswahl nicht nachstellbar; die
+Pages-Builds waren erfolgreich. Der Fehler heißt, dass `js/chancen.js` in
+seinem Browser gar nicht ausgeführt wurde (sonst käme „before
+initialization“); naheliegend sind ein Werbeblocker oder ein gemischter
+Zwischenspeicher, **die Ursache ist nicht belegt**.
+
+- `preiseZuOptsFormat` und `erloesJeStueck` liegen jetzt in `js/regeln.js`
+  (`REGELN.*`); `CHANCEN` verweist auf dieselben Funktionen, `VEREDELN`
+  braucht `CHANCEN` nicht mehr. Headless geprüft: mit blockiertem
+  `chancen.js` rechnet „Veredeln leveln“ weiter.
+- Ladeprüfung am Seitenende: fehlt ein Modul, steht oben ein roter Hinweis
+  mit dem Dateinamen.
+- Alle Skripte tragen `?v=3.8.1`, damit nach einem Update keine alten
+  Dateien aus dem Browser-Zwischenspeicher kommen. Bei jedem Release mitziehen.
+- Zwei Regressionstests. Selbsttest 524/524 grün.
+
+**Tagesbonus belegt:** Sörens Reddit-Auszug (Kommentar von Mordant808)
+rechnet `RRR = LPB / (1 + LPB)` mit Stadtbonus 0,40, Tagesbonus 0,20 und
+Grund 0,18: „0,78 / 1,78 = 0,438“. Genau so rechnet die App (additiv in B),
+ein Selbsttest prüft denselben Wert.
+
+## Nachtrag v3.8.0 (08.10.2026): Knopf „Preise aktualisieren“
+
+Wunsch von Sören. Kostenrechner, Eintopf-Rechner und Preisvergleich hatten
+ihn schon; neu in „Veredeln leveln“ (`#vdRefresh`) und „Schnelles Geld“
+(`#chRefresh`). Beide rufen die Suche mit `erzwingen: true` auf, also
+`PREISE.preiseAbrufen` ohne den 30-Minuten-Zwischenspeicher, und rechnen
+danach neu. Die Statuszeile nennt die Uhrzeit des Abrufs. Handelsvolumen
+(`absatzAbrufen`) hat ohnehin keinen Zwischenspeicher. Selbsttest 522/522.
+
+## Nachtrag v3.7.0 (08.10.2026): Einzelpreise zur Absicherung
+
+Wunsch von Sören: im Reiter „Veredeln leveln“ die Rohstoffpreise sehen, um
+die Rechnung gegenzuprüfen. Die Spalte „Einsatz je Vorgang, Einkaufspreis“
+zeigt je Zutat Menge und den vom Rechenkern angesetzten Stückpreis
+(`weg.zutaten[].silberJeStueck`, bei eigener Kauforder inkl. 2,5 %), der
+Tooltip Quelle und Alter. Unter dem Erlös steht der Bruttopreis des Produkts
+(höchste Kauforder bzw. günstigste Verkaufsorder) mit Alter im Tooltip.
+Felder `zutatenPreise`, `produktPreis`, `produktAlterMin` in `zeileBauen()`.
+Selbsttest 522/522 grün (1 neuer).
+
+## Nachtrag v3.6.0 (08.10.2026): Tagesbonus und Zusatzbonus
+
+Wunsch von Sören: den täglichen Bonus einrechnen und einen eigenen
+Zusatzbonus einstellen können.
+
+- **Tagesbonus** (+0,10 Silbertag, +0,20 Goldtag) war schon belegt
+  (`AUDIT-2026-09-13.md`, Wiki `Resource_return_rate`: "each day two items
+  have an extra 10% or 20%") und im Kostenrechner als Schalter je Kategorie
+  vorhanden. Er rotiert je Stadt und Warengruppe und ist über keine
+  Schnittstelle abrufbar. Der Reiter „Veredeln leveln“ hat dafür jetzt eine
+  eigene Tabelle Stadt × Rohstoff (aus/+10 %/+20 %), gespeichert unter
+  `tagesbonus` im Reiter-Speicher; den Kostenrechner-Wert nutzt er nicht mehr.
+  **Überholt seit v3.9.1:** der Bonus gilt in allen Städten gleich, der
+  Reiter nutzt wieder die gemeinsame Einstellung, s. Nachtrag v3.9.1.
+  Am 08.10.2026 neu nachzulesen ging nicht: Wiki-Seite `Local_Production_Bonus`,
+  das Forum und albiononline.com antworten aus der Cloud mit 403,
+  `Resource_return_rate` erwähnt den Tagesbonus laut Abruf nicht mehr. Wer
+  genaue Regeln will (welche Gruppen, wann), muss im Spiel nachsehen.
+- **Zusatzbonus** (kein Spielwert, frei): Prozentpunkte Produktionsbonus,
+  die in `REGELN.rrr()` als `zusatzbonus` (Anteil) zu B addiert werden.
+  Rechenkern `opts.zusatzProduktionsbonus`, Feld im Kostenrechner
+  (`einstellungen.zusatzbonusProzent`, wirkt auch in „Schnelles Geld“) und
+  eigenes Feld im Reiter „Veredeln leveln“. Negative Werte zählen als 0.
+
+Selbsttest 521/521 grün (4 neue).
+
+## Nachtrag v3.5.0 (08.10.2026): Reiter „Veredeln leveln“
+
+Wunsch von Sören: Stellen finden, an denen sich Veredeln zum Leveln lohnt.
+Rohstoff und Vorstufe in einer Stadt kaufen, dort veredeln, das Produkt in
+derselben Stadt verkaufen; gesucht sind Gewinn oder etwa Null.
+
+**Bereich 5, Veredeln leveln** (`js/veredeln.js`, Objekt `VEREDELN`):
+
+- Checkboxen für Städte (Vorgabe Lymhurst), Rohstoffe (alle fünf), Tier
+  (Vorgabe T4 bis T8) und Verzauberung (alle), dazu Einkauf (Sofortkauf
+  oder eigene Kauforder), Verkauf (Sofortverkauf oder eigene
+  Verkaufsorder), Fokus (Vorgabe ohne), Toleranz „etwa Null“ (Vorgabe 5 %
+  Verlust auf die Kosten) und Menge (Vorgabe 1.000 Stück, für „Gewinn
+  gesamt“). Gespeichert in `albion_kostenrechner_veredeln_v1`.
+- **Keine eigene Rechenlogik:** jede Zeile ist der Craft-Kandidat genau
+  dieses Rezepts aus `RECHENKERN.kosten()` mit `nurDirekteEbene` (Zutaten
+  gekauft), also dieselbe Rückgewinnung (+0,40 in der Veredelungs-
+  Bonusstadt, +0,59 mit Fokus), Stationsgebühr und Fokusformel wie im
+  Kostenrechner. Erlös über `CHANCEN.erloesJeStueck`. Die Rückgewinnung
+  wirkt auf Rohstoff UND Vorstufe, wie im Rechenkern.
+- Aus den Kostenrechner-Einstellungen: Premium, Stationssätze je Gebäude,
+  Tagesbonus, FCE, Höchstalter der Preise. Fokusregeln je Kategorie/Knoten
+  und eigene Preise werden bewusst ignoriert, der Reiter-Schalter gilt.
+- Rezepte mit Fraktionsmarke fallen weg (kein Marktpreis). Beim Stein zählt
+  die Verzauberung des eingesetzten Steins (2/4/8 Blöcke je Vorgang).
+- Rangliste nach Marge; ohne „Verluste zeigen“ nur Gewinn und etwa Null.
+  Spalten: Rückgewinnung (mit Fokus je Vorgang), Kosten, Erlös, Gewinn je
+  Stück, Marge, Gewinn je Vorgang und gesamt, verkauft/Tag (history/,
+  Untergrenze).
+- **Nicht modelliert: Craft-Fame.** Kein belegter Wert im Repo; Silber je
+  Fame bräuchte eine Ablesung im Spiel.
+
+Selbsttest 517/517 grün (13 neue). Im Browser headless gegen synthetische
+Preise durchgeklickt; der echte Abruf ist aus der Cloud nicht prüfbar.
+
+## Nachtrag v3.4.1 (29.09.2026): Marktbegriffe wie im Spiel
+
+Wunsch von Sören: die Preisspalten heißen jetzt wie im Marktfenster des
+Spiels. **"Verkaufsorders"** ist das günstigste Angebot (`sell_price_min`),
+**"Kauforders"** das höchste Gebot (`buy_price_max`); vorher "Sofortkauf"
+und "Kaufgesuch" bzw. "Kauforder". Betrifft den Preisvergleich, die Tabelle
+"Rohpreise & Handelsvolumen" im Eintopf-Rechner, Tooltips (Spanne,
+Bezugsart, Städteauswahl) und die Meldung "keine Verkaufsorder/Kauforder am
+Markt" in Schnelles Geld.
+
+**Bewusst unverändert:** die Handelswege "Sofortkauf", "Kauforder",
+"Sofortverkauf", "Verkaufsorder" (Radio-Knöpfe, Checkboxen, Wegbeschreibung).
+Das sind Handlungen, keine Marktspalten; "Verkaufsorder" ist dort schon als
+eigener Verkaufsweg belegt. Keine Rechenlogik geändert. Selbsttest 504/504
+grün.
+
+## Nachtrag v3.4.0 (29.09.2026): Städteauswahl im Preisvergleich
+
+Wunsch von Sören: im Reiter Preisvergleich oben per Checkbox wählen, welche
+Städte in den Tabellen erscheinen. Umgesetzt unter dem Suchfeld
+(`#pvStaedte`, gleiche Optik wie die Städte-Checkboxen im Eintopf-Rechner).
+
+- Standard: alle sieben Städte an. Knopf "Alle auswählen/Alle abwählen".
+- Gespeichert in `albion_kostenrechner_preisvergleich_staedte_v1`, getrennt
+  von der Item-Auswahl. Unbekannte Namen fallen beim Laden weg, die
+  Reihenfolge folgt immer `STAEDTE`; keine Stadt angehakt ist erlaubt und
+  zeigt einen Hinweis statt einer leeren Tabelle.
+- **Nur Anzeigefilter:** abgerufen werden weiter alle Städte (ein Request
+  je Block), das Umschalten braucht deshalb keinen neuen Abruf.
+- Die Markierung der günstigsten Verkaufsorder gilt nur unter den
+  angezeigten Städten.
+- Neue reine Funktionen `staedteBereinigen()` und `tabellenZeilen()` in
+  `js/preisvergleich.js`, zehn neue Tests. Selbsttest 504/504 grün.
+
+## Nachtrag v3.3.0 (29.09.2026): Fokus-Schalter und eigene Preise im Bauplan
+
+Zwei Wünsche von Sören, zusammen umgesetzt (Backlog-Punkt 5 damit erledigt):
+
+- **Fokus komplett aus.** Neues Feld "Fokus" oben im Kostenrechner (Mit
+  Fokus / Ohne Fokus), gespeichert als `einstellungen.fokusAus`. Der
+  Rechenkern (`opts.fokusAus`) erzeugt dann gar keine Craft-Varianten mit
+  Fokus, auch keine gesperrten Platzhalter, und schlägt damit Knoten- und
+  Kategorie-Regeln ("immer" wird zu ohne Fokus). Fokus-Kachel im Ergebnis,
+  Fokus-Spalte in "Alle Wege" (`.nur-fokus`) und die Fokus-Schalter je
+  Knoten im Text-Bauplan verschwinden. "Schnelles Geld" liest dieselbe
+  Einstellung mit.
+- **Eigene Preise je Knoten.** Im grafischen Bauplan hat jeder Knoten außer
+  der Wurzel einen Stift-Knopf; Enter übernimmt, Escape bricht ab, leer
+  setzt zurück, ✕ entfernt den Preis, "Eigene Preise zurücksetzen (n)" in
+  der Bauplan-Leiste entfernt alle. Gespeichert als
+  `einstellungen.preisUebersteuerungen` ("item@stufe[@qN]" -> Silber, 0
+  erlaubt), Rechenkern `opts.preisUebersteuerungen`.
+  **Entscheidung:** ein Knoten mit eigenem Preis wird zum festen
+  Kaufen-Blatt zu genau diesem Preis. Der Rechner sucht dort keinen
+  anderen Weg mehr (auch nicht, wenn Craften billiger wäre) und steigt
+  nicht tiefer ab; alles darüber wählt wie gewohnt den günstigsten Weg.
+  Grund: die eingetragene Zahl soll genau die sein, mit der gerechnet wird.
+  Die Wurzel ist ausgenommen. Gilt überall im Baum, wo derselbe Knoten
+  vorkommt, und bleibt gespeichert, deshalb goldener Rahmen und Badge
+  "Eigener Preis". "Schnelles Geld" nutzt die eigenen Preise bewusst nicht,
+  dort zählt der Markt.
+- Der grafische Baum behält beim Neuberechnen desselben Items Auf-/Zuklapp-
+  Zustand und Scrollposition.
+
+Selbsttest 494/494 grün (19 neue Tests). Im Browser gegen synthetische
+Preise durchgeklickt.
+
+## Nachtrag v3.2.1 (29.09.2026): keine Qualität auf Veredelung
+
+Sören meldete für Kunstvoller Stoff 1.292 Silber (Lymhurst, Zielqualität
+Exzellent) und vermutete eine fehlende Rückgewinnung. Die Rückgewinnung war
+richtig (36,7 % ohne, 53,9 % mit Fokus). Ursache war die Zielqualität:
+`REGELN.istQualifizierbar()` kannte nur Speisen, Tränke und Werkzeuge als
+nicht qualifizierbar, Stoff lief deshalb über Qualitätswurf und Reroll.
+Jetzt sind auch `fiber`, `ore`, `hide`, `wood`, `rock` und `meat_*`
+ausgenommen (Beleg: Client-Dump, keines dieser Items gehört zu `equipmentitem`/`weapon`, kein `q` in `item-namen.js`). Selbsttest 475/475.
+
+## Aktueller Stand (v3.2.0, Reiter „Schnelles Geld", 19.09.2026)
+
+**Auftrag (Sören, 19.09.2026):** „ich möchte in der Webapp die Möglichkeit
+haben auf Crafting Knoten Ebene mir anzeigen zu lassen was es sich gerade zu
+craften lohnt. ich möchte filtern können nach absatzzahlen und gewinn."
+Nachgeschoben: „mache mir die eingaben wirklich einfach und nicht so viele
+Felder die ich ausfüllen kann. es geht um das schnelle geld."
+
+**Bereich 4, Schnelles Geld** (`js/chancen.js`, neuer Reiter): einen
+Schicksalsbrett-Knoten wählen (z. B. „Gelehrtengugel"), und die Liste zeigt je
+Tier, Verzauberungsstufe und Qualität, wie viel davon am Tag gehandelt wird,
+was eine Einheit kostet, was nach Steuer und Einstellgebühr übrig bleibt, die
+Marge und den Gewinn je Tag. Sortiert nach Gewinn je Tag.
+
+**Drei Eingaben, mehr nicht** (Nutzer-Vorgabe): Knoten, „mindestens
+verkauft/Tag" (Vorgabe 5), „Mindestgewinn %" (Vorgabe 5). Stadt, Kauf- und
+Verkaufsweg, Premium, FCE, Spezialisierungsknoten, Stationsgebühren,
+Fokuswert und Höchstalter der Preise kommen unverändert aus den Einstellungen
+des Kostenrechner-Reiters, damit dieselben Werte nicht an zwei Stellen
+gepflegt werden müssen.
+
+**Die Absatzzahl ist geprüft und bewusst vorsichtig benannt.** `history/`
+liefert je Item eine Zeile **je Qualität** mit Tageswerten (`item_count`,
+`avg_price`, `timestamp`), am 19.09.2026 gegen die echte API abgelesen
+(T4_BAG, Lymhurst, Qualitäten 1 bis 4). Der Parameter `qualities` wird von
+`history/` **ignoriert**, ein Abruf mit `qualities=4` bzw. `=5` lieferte
+unverändert alle vorhandenen Qualitätszeilen; deshalb wird er gar nicht erst
+gesetzt und stattdessen die ganze Antwort ausgewertet. Die Spalte heißt
+„verkauft/Tag" und die Fußzeile sagt ausdrücklich, dass nur gemeldet wird, was
+Spieler mit laufendem Data-Client sehen, die echte Zahl also eher höher liegt.
+Das Wort „Absatz" steht bewusst nirgends in der Oberfläche.
+
+**Gerechnet wird auf der direkten Ebene**, wie vom Nutzer vorgegeben
+(„unter berücksichtigung der Beschaffungskosten der Materialien auf der
+direkten Ebene"). Dafür hat `js/rechenkern.js` eine neue Option
+`nurDirekteEbene`: ab Tiefe 1 bleibt nur der Kaufen-Weg stehen, der
+Wurzelknoten selbst darf weiter gecraftet, verzaubert und hochgerollt werden.
+Ohne die Option verhält sich der Rechenkern unverändert, der
+Kostenrechner-Reiter rechnet also weiter über den ganzen Rezeptbaum.
+
+**Umgesetzt:**
+
+- `js/chancen.js` (neu): Knotenliste je Gebäude (375 Knoten in 15 Gebäuden,
+  abgeleitet aus `REGELN.spezialisierungsGruppen`, also dieselbe Liste wie im
+  FCE-Panel), Knotennamen aus dem deutschen Item-Namen ohne Tier-Titel
+  („Gelehrtengugel des Adepten" → „Gelehrtengugel"), Kandidatenbildung,
+  Erlösrechnung, Zeilenbau, Filter und Sortierung, dazu die Oberfläche.
+- `js/preise.js`: `normalisiereAbsatzZeile()`, `absatzAusAntwort()` und
+  `absatzAbrufen()`. Anders als `volumenAbrufen()` (dort gewinnt bei mehreren
+  Qualitätszeilen die zuletzt gelesene, bei Rohstoffen folgenlos, bei
+  Ausrüstung wäre es falsch) wird hier nach Qualität getrennt. Tage ohne
+  Handel zählen als 0, geteilt wird durch die volle Fensterbreite.
+- `js/rechenkern.js`: `opts.nurDirekteEbene`.
+- `js/ui.js`: `einstellungenLesen()` und die neue, parameterisierte
+  `fceUeberschreibungenAus(einstellungen)` sind jetzt exportiert, damit der
+  neue Reiter mit exakt denselben FCE-Werten rechnet statt die Logik zu
+  kopieren. Die bisherige innere Fassung ruft sie auf, Verhalten unverändert.
+- `Kostenrechner.html`: Reiterknopf, Reiterinhalt, CSS, Skript.
+
+**Im Browser gegengeprüft** (headless Chromium, `fetch` durch synthetische,
+aber schemagetreue Antworten ersetzt, weil die echte API aus einem
+Cloud-Thread gesperrt ist): Knotenauswahl gefüllt, Suche läuft durch, Tabelle
+rendert, Fokusangabe erscheint, keine Konsolenfehler aus eigenem Code.
+
+**Getestet:** `tests/test.html` headless über Chromium/Playwright,
+**467/467 grün** (446 bisherige, 21 neue: 14 für `js/chancen.js`, 4 für
+`nurDirekteEbene`, 3 für die Absatzauswertung).
+
+**Offen, bewusst:** der echte Datenabruf ist aus der Cloud nicht prüfbar,
+Sören sieht beim ersten Öffnen, ob plausible Stückzahlen erscheinen. Ein
+Kaufen-Weg kann in der Liste stehen, wenn Kaufen billiger ist als Craften; das
+ist gewollt (auch Weiterverkauf ist schnelles Geld) und steht in der
+Weg-Spalte.
+
+---
+
+## Aktueller Stand (v3.1.10, Audit-Befund 1 behoben: Fokus-Grundwert gilt je Stück, 19.09.2026)
+
+**Auftrag:** Audit-Befund 1 entscheidungsreif machen und, sobald die Ablesung
+da ist, umsetzen. Die Frage war, ob `craftingfocus` aus dem Client-Dump den
+Grundfokus je Charge oder je Stück meint; bei `amountcrafted=10` ein Faktor 10.
+
+**Die Ablesung, die es entschieden hat: Steinmetz statt Schicksalsbrett.**
+`T4_STONEBLOCK` hat vier Rezepte mit identischem `f=54` und `amountcrafted`
+1/2/4/8 (verzauberter Stein liefert mehr Blöcke, verzauberte Steinblöcke gibt
+es nicht als eigene Items). Dasselbe Item, derselbe Spezialisierungsknoten,
+dieselbe FCE, die eigene Spezialisierung kürzt sich also vollständig heraus.
+Nutzerablesung: "2 Blöcke brauchen doppelt so viel Fokus wie ein Block."
+Damit gilt der Dumpwert **je Stück**, der Rohfokus eines Craft-Vorgangs ist
+`craftingfocus x amountcrafted`. Die Schicksalsbrett-Screenshots aus dem
+v3.1.9-Zyklus sagen unabhängig davon dasselbe (FCE zwischen 31.300 und 34.300,
+"je Stück" verlangt 34.242, "je Charge" verlangt 1.022 und ist in dem Bereich
+nicht erreichbar).
+
+**Umgesetzt** (`js/rechenkern.js`, `Kostenrechner.html`, `js/regeln.js`,
+`js/eintopf-rechenkern.js`, `tests/test.html`, `CLAUDE.md`,
+`AUDIT-2026-09-13.md`):
+
+- `craftKandidat()` und `craftBeiQualitaetKandidat()` rechnen `fokusJeStueck`
+  ohne die Division durch `amountcrafted`.
+- Beide melden `weg.grundfokus = rezept.f x amountcrafted`. Das Feld füttert den
+  Umrechner "FCE aus abgelesenem Fokus" in `js/ui.js`, und das Craft-Fenster
+  zeigt den Wert des ganzen Vorgangs. Ohne diese Multiplikation lieferte der
+  Umrechner bei Speisen/Tränken/Steinblöcken eine um Faktor `amountcrafted` zu
+  kleine FCE; genau das war der innere Widerspruch zwischen den zwei
+  FCE-Eingabewegen, den das Audit beschrieben hat.
+- Fokus-Tooltip in `Kostenrechner.html`, zwei Selbsttest-Bezeichnungen in
+  `js/regeln.js` (2.192 von 23.530 statt von 2.353) und der Kommentar bei
+  `FEFF` in `js/eintopf-rechenkern.js` nachgezogen.
+- `CLAUDE.md`: Abschnitt "Spielerprofil" und "Achtung, Bezugsgröße" neu
+  geschrieben, Wertetabelle korrigiert. Die belegte Ablesung 2.192 bleibt
+  unverändert, nur ihre Bezugsgröße ändert sich: **FCE 34.242** statt 1.022,
+  Fokus-Effizienz **9,32 %** statt 93,16 %.
+
+**Der Eintopf-Reiter bleibt rechnerisch unberührt**, nur der Kommentar wurde
+präzisiert. Er multipliziert den Dumpwert mit `FEFF = 2192/2353` und behandelt
+das Ergebnis als Fokus je Charge; `f x (2192/2353)` ist identisch mit
+`f x 10 x (2192/23530)`, die beiden Lesarten kürzen sich dort heraus, weil
+`FEFF` direkt gegen die Messung geeicht ist.
+
+**Testlücke geschlossen, das war der eigentliche Befund unter dem Befund.** Vor
+dem Fix deckte kein einziger Test die Bezugsgröße ab: eine Probeänderung auf die
+andere Lesart ließ die Suite unverändert grün. Acht neue Tests pinnen jetzt
+beide Codestellen (normaler und Qualitäts-Craftweg), den Gleichstand bei
+`amountcrafted=1` und die Gegenprobe gegen den echten Dump.
+
+**Wirkung:** 313 von 13.010 Rezepten im Graphen rechneten den Fokus zu billig,
+davon 120 Speisen (`a=10`), 172 Tränke (`a=5`/`a=10`), 15 Steinblöcke
+(`a=2/4/8`) und 6 Tierhaltungsrezepte (`a=18`). Ausrüstung, Barren, Bretter,
+Leder und Stoff haben durchweg `a=1` und waren nie betroffen. Silberkosten
+ändern sich nirgends, nur Fokus.
+
+**Hinweis für den Nutzer:** wer die FCE bisher über den Umrechner aus der
+Ablesung 2.192 gesetzt hatte, hat 1.022 im Feld stehen und muss auf **34.242**
+ziehen (oder den Umrechner erneut aufrufen, der holt sich den Grundfokus jetzt
+richtig). Sonst werden Speisen und Tränke um `amountcrafted` zu teuer
+gerechnet.
+
+**Getestet:** `tests/test.html` zweimal ausgeführt, in Node gegen die Dateien
+auf der Platte und headless über Chromium, beide Male **441/441 grün** (433
+bisherige plus 8 neue).
+
+---
+
+## Aktueller Stand (v3.1.9, die neun echten Kochknoten, 19.09.2026)
+
+**Auslöser:** Sören hat drei Screenshots des Fensters
+"Koch-Handwerksspezialisierung" geschickt. Damit war die Knotenfrage für
+Speisen entschieden, die vorher nur als "braucht eine Ablesung" offen stand.
+
+**Die neun Knoten, in Fensterreihenfolge:** Suppen, Salate, Pasteten, Braten,
+Omelette, Eintöpfe, Sandwiches, Kochzutaten, Fleisch. Die App leitete dafür
+bisher 25 Gruppen ab.
+
+**Umgesetzt (Audit-Befund 4, Speisen-Teil):**
+
+- `js/regeln.js`: neue Tabelle `SPEZ_KNOTEN` (bisher nur `food`) mit den neun
+  Knoten, ihren Anzeigenamen und den Präfixen des tierlosen
+  Gruppenschlüssels. Bewusst Präfixe statt fester Item-Listen: künftige
+  Varianten (`MEAL_STEW_IRGENDWAS`) wandern damit automatisch in den richtigen
+  Knoten, statt beim nächsten Dump-Lauf still zu verschwinden.
+- Neue Tabelle `SPEZ_FAMILIE` plus `spezFamilieVonKategorie()`: mehrere
+  `craftingcategory`-Werte können sich einen Schicksalsbrett-Baum teilen. Nötig
+  für den Knoten "Fleisch", dessen Items `meat_chicken` bis `meat_sheep`
+  tragen, im Spiel aber im Koch-Fenster stehen. Die Gebührengruppe bleibt
+  davon unberührt (`meat_*` weiter unter "Tierhaltung").
+- `gruppenSchluesselVonItem()`, `istEchterKnoten()` und
+  `spezialisierungsGruppen()` arbeiten jetzt über die Knotenliste, wo es eine
+  gibt. `spezialisierungsGruppen()` liefert sie in Fensterreihenfolge statt
+  alphabetisch, damit sich das Panel neben dem Spielfenster abtippen lässt,
+  und bringt den echten Knotennamen als `label` mit ("Suppen" statt
+  "Möhrensuppe").
+- `js/rechenkern.js`: `fceFuer()` bildet den Knotenschlüssel über die Familie,
+  damit rohes Fleisch auf `food|FLEISCH` trifft.
+- `js/ui.js`: zwei kleine Stellen. Das Panel nutzt das `label`, wenn es eines
+  gibt, und die Liste der "verwendeten" Kategorien läuft über die Familie,
+  damit rohes Fleisch im Bauplan das Speisen-Panel öffnet statt sechs eigener.
+
+**Unabhängige Gegenprobe, als Test verankert:** das Wiki nennt 55.000 FCE als
+Endwert des Kochbaums. Neun Knoten auf Stufe 100 plus Meisterschaft 100 ergeben
+jetzt exakt `25.000 + 9 × 3.000 + 3.000 = 55.000`. Mit acht oder zehn Knoten
+ginge das nicht auf, die Knotenzahl ist damit doppelt belegt.
+
+**Bewusst ohne Knoten:** `T8_MEAL_SPECIAL_FOOD_DRAKE_EGG`
+(Jungdrachenei-Kekse), im Fenster gibt es keinen passenden Knoten. Klein und
+offen: ob `ALCOHOL` wirklich unter "Kochzutaten" hängt.
+
+**Tränke bleiben offen**, dort fehlt derselbe Screenshot; die Wiki-Seiten
+`Potion`/`Potions`/`Alchemist` liefern 403.
+
+**Nebenbefund, wichtig und nicht Teil dieses Pakets: Audit-Befund 1 ist durch
+dieselben Screenshots rechnerisch entschieden.** Aus den Stufen folgt
+`FCE(Eintöpfe) = 31.300 + 30 × Meisterschaft`, also 31.300 bis 34.300. Die
+Lesart "Dump-Fokus je Stück" verlangt 34.243 und passt, die Lesart "je Charge"
+verlangt 1.022 und ist in diesem Bereich unerreichbar. Die Division durch
+`amountcrafted` in `craftKandidat()` ist damit falsch; betroffen sind 120
+Speise-, 172 Trank-, 15 Steinblock- und sechs Tierhaltungs-Rezepte. Umsetzung
+steht aus, s. `AUDIT-2026-09-13.md` Befund 1.
+
+**Getestet:** `tests/test.html` headless über Chromium/Playwright,
+**433/433 grün** (419 bisherige, 14 neue für die Knotenliste, die
+Familienzuordnung und die 55.000-Gegenprobe).
+
+---
+
+## Aktueller Stand (v3.1.8, Global Discount, 19.09.2026)
+
+**Auftrag:** Sören hat nach dem Wiki-Nachschlag entschieden: "zieh die Daten
+live und lass die Stationsgebühren einfach in Ruhe."
+
+**Umgesetzt (Audit-Befund 9):**
+
+- `js/regeln.js`: `GLOBAL_DISCOUNT_SCHWELLE` (3.000), `globalDiscount()` und
+  `silberRabattFaktor()`. Formel wörtlich aus der Wiki-Seite
+  `Global_Discount`: `(1 - Goldpreis / 3000) x 100 %`, aktiv unter einem
+  Goldpreis von 3.000. `rerollKostenZuQualitaet()` nimmt den Faktor als
+  vierten, optionalen Parameter; ohne ihn verhält sie sich unverändert.
+- `js/rechenkern.js`: neues `opts.silberRabattFaktor` (Default 1), an beide
+  Reroll-Aufrufstellen durchgereicht.
+- `js/preise.js`: `goldpreisAbrufen()` gegen `/stats/gold.json?count=2` auf
+  demselben Europa-Realm, mit derselben 429-Disziplin wie die übrigen Abrufe,
+  plus die reine, offline testbare `normalisiereGoldAntwort()`.
+- `js/ui.js`: der Goldpreis wird beim Preisabruf mitgezogen, in `zustand.gold`
+  gehalten (nur Seitenspeicher, kein localStorage) und über
+  `opts.silberRabattFaktor` in die Rechnung gegeben. Die Statuszeile nennt
+  Goldpreis und Rabatt und sagt ausdrücklich, dass er auf die Reroll-Kosten
+  wirkt.
+
+**Bewusst NICHT auf die Stationsgebühr angewendet**, Nutzer-Entscheidung. Die
+Wiki-Seite nennt als Silbersenken nur Reparatur, Transmutation und
+Qualitätsverbesserungen; die Nutzungsgebühr geht an den Gebäudebesitzer.
+
+**Fehlertoleranz ist hier der Kern:** das Antwortschema des Goldendpunkts ist
+nicht dokumentiert (nur der Pfad selbst), und aus dem Cloud-Thread ist die API
+nicht erreichbar, der Abruf konnte also nicht live geprüft werden. Deshalb
+wertet `normalisiereGoldAntwort()` beide Schreibweisen aus und liefert bei
+allem Unbrauchbaren `null`; der Faktor bleibt dann 1 und die App rechnet exakt
+wie vorher. Ein erfundener Ersatz-Goldpreis wäre schlimmer als gar keiner.
+**Im Browser gegenzuprüfen**, sobald Sören die Seite das nächste Mal öffnet:
+ob die Statuszeile einen plausiblen Goldpreis nennt.
+
+Ein Testfall hat dabei einen echten Fehler gefunden: `Number(null)` ist 0, und
+ein Goldpreis von 0 bedeutet nach der Wiki-Skala 100 % Rabatt. Ohne die
+ausdrückliche `null`-Prüfung hätte ein fehlgeschlagener Abruf also alle
+Reroll-Kosten auf 0 gesetzt.
+
+**Getestet:** `tests/test.html` headless über Chromium/Playwright,
+**419/419 grün** (408 bisherige, 11 neue für Global Discount und
+Goldpreis-Auswertung).
+
+---
+
+## Aktueller Stand (v3.1.7, Audit-Befund 4 für Veredeln behoben, 19.09.2026)
+
+**Vorheriger Stand (v3.1.7, Audit-Befund 4 für Veredeln behoben)** unverkürzt
+nach `kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
+
+**Auftrag:** Audit-Befund 1 entscheidungsreif machen und, sobald die Ablesung
+da ist, umsetzen. Die Frage war, ob `craftingfocus` aus dem Client-Dump den
+Grundfokus je Charge oder je Stück meint; bei `amountcrafted=10` ein Faktor 10.
+
+**Die Ablesung, die es entschieden hat: Steinmetz statt Schicksalsbrett.**
+`T4_STONEBLOCK` hat vier Rezepte mit identischem `f=54` und `amountcrafted`
+1/2/4/8 (verzauberter Stein liefert mehr Blöcke, verzauberte Steinblöcke gibt
+es nicht als eigene Items). Dasselbe Item, derselbe Spezialisierungsknoten,
+dieselbe FCE, die eigene Spezialisierung kürzt sich also vollständig heraus.
+Nutzerablesung: "2 Blöcke brauchen doppelt so viel Fokus wie ein Block."
+Damit gilt der Dumpwert **je Stück**, der Rohfokus eines Craft-Vorgangs ist
+`craftingfocus x amountcrafted`.
+
+**Umgesetzt** (`js/rechenkern.js`, `Kostenrechner.html`, `js/regeln.js`,
+`js/eintopf-rechenkern.js`, `tests/test.html`, `CLAUDE.md`,
+`AUDIT-2026-09-13.md`):
+
+- `craftKandidat()` und `craftBeiQualitaetKandidat()` rechnen `fokusJeStueck`
+  ohne die Division durch `amountcrafted`.
+- Beide melden `weg.grundfokus = rezept.f x amountcrafted`. Das Feld füttert den
+  Umrechner "FCE aus abgelesenem Fokus" in `js/ui.js`, und das Craft-Fenster
+  zeigt den Wert des ganzen Vorgangs. Ohne diese Multiplikation lieferte der
+  Umrechner bei Speisen/Tränken/Steinblöcken eine um Faktor `amountcrafted` zu
+  kleine FCE; genau das war der innere Widerspruch zwischen den zwei
+  FCE-Eingabewegen, den das Audit beschrieben hat.
+- Fokus-Tooltip in `Kostenrechner.html`, zwei Selbsttest-Bezeichnungen in
+  `js/regeln.js` (2.192 von 23.530 statt von 2.353) und der Kommentar bei
+  `FEFF` in `js/eintopf-rechenkern.js` nachgezogen.
+- `CLAUDE.md`: Abschnitt "Spielerprofil" und "Achtung, Bezugsgröße" neu
+  geschrieben, Wertetabelle korrigiert. Die belegte Ablesung 2.192 bleibt
+  unverändert, nur ihre Bezugsgröße ändert sich: **FCE 34.242** statt 1.022,
+  Fokus-Effizienz **9,32 %** statt 93,16 %. Damit löst sich auch der seit
+  04.09.2026 dokumentierte Widerspruch zur Angabe des Nutzers, sein Kochbaum
+  sei weit ausgebaut: 34.242 von maximal 55.000 passt dazu, 1.022 nicht.
+
+**Der Eintopf-Reiter bleibt rechnerisch unberührt**, nur der Kommentar wurde
+präzisiert. Er multipliziert den Dumpwert mit `FEFF = 2192/2353` und behandelt
+das Ergebnis als Fokus je Charge; `f x (2192/2353)` ist identisch mit
+`f x 10 x (2192/23530)`, die beiden Lesarten kürzen sich dort heraus, weil
+`FEFF` direkt gegen die Messung geeicht ist.
+
+**Testlücke geschlossen, das war der eigentliche Befund unter dem Befund.** Vor
+dem Fix deckte kein einziger der 408 Tests die Bezugsgröße ab: eine
+Probeänderung auf die andere Lesart ließ die Suite unverändert grün. Acht neue
+Tests pinnen jetzt beide Codestellen (normaler und Qualitäts-Craftweg), den
+Gleichstand bei `amountcrafted=1` und die Gegenprobe gegen den echten Dump.
+
+**Wirkung:** 313 von 13.010 Rezepten im Graphen rechneten den Fokus zu billig,
+davon 120 Speisen (`a=10`), 172 Tränke (`a=5`/`a=10`), 15 Steinblöcke
+(`a=2/4/8`) und 6 Tierhaltungsrezepte (`a=18`). Ausrüstung, Barren, Bretter,
+Leder und Stoff haben durchweg `a=1` und waren nie betroffen.
+
+**Getestet:** `tests/test.html` zweimal ausgeführt, in Node gegen die Dateien
+auf der Platte und headless über Chromium, beide Male **416/416 grün** (408
+bisherige plus 8 neue).
+
+---
+
+**Vorheriger Stand (v2.1.0-v2.1.4 und alles davor)** unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` ausgelagert (Schlankheitsregel, s.
+"Entwicklungsweise / Mitarbeit" unten).
+
+
+---
+
 ## Aktueller Stand (v3.1.6, Repo für Claude Projects eigenständig gemacht, 19.09.2026)
 
 **Vorheriger Stand (v3.1.5, Befund 7 und 8 aus dem Audit)** unverkürzt nach

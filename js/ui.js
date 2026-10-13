@@ -216,6 +216,23 @@ const UI = (function () {
     return w;
   }
 
+  // v3.10.0 (13.10.2026): Premium ist eine gemeinsame Einstellung von
+  // Kostenrechner und "Veredeln leveln" (Schalter in beiden Reitern), Abgleich
+  // wie bei Stationssaetzen und Tagesbonus per Ereignis.
+  const PREMIUM_EVENT = "albion:premium";
+
+  /** Premium setzen (true/false), speichern und melden. Liefert den gespeicherten Wert. */
+  function premiumSetzen(wert, quelle) {
+    const w = !!wert;
+    const e = einstellungenLesen();
+    e.premium = w;
+    einstellungenSchreiben(e);
+    if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
+      document.dispatchEvent(new CustomEvent(PREMIUM_EVENT, { detail: { wert: w, quelle: quelle || null } }));
+    }
+    return w;
+  }
+
   // -----------------------------------------------------------------------
   // Reine Hilfsfunktionen, ohne DOM, s. tests/test.html
   // -----------------------------------------------------------------------
@@ -2750,6 +2767,10 @@ const UI = (function () {
     premiumEl.addEventListener("change", () => {
       einstellungen.premium = premiumEl.value === "1";
       persistiereUndRechne();
+      // v3.10.0: "Veredeln leveln" hat denselben Schalter.
+      if (typeof CustomEvent !== "undefined") {
+        document.dispatchEvent(new CustomEvent(PREMIUM_EVENT, { detail: { wert: einstellungen.premium, quelle: "kostenrechner" } }));
+      }
     });
     if (zusatzbonusEl)
       zusatzbonusEl.addEventListener("change", () => {
@@ -2836,6 +2857,15 @@ const UI = (function () {
       if (!(zustand.item && zustand.preiseRoh)) renderTagesbonus(zustand.ergebnis || null);
     });
 
+    // v3.10.0: Premium in "Veredeln leveln" umgeschaltet.
+    document.addEventListener(PREMIUM_EVENT, (ev) => {
+      const d = ev.detail || {};
+      if (d.quelle === "kostenrechner") return;
+      einstellungen.premium = !!d.wert;
+      premiumEl.value = einstellungen.premium ? "1" : "0";
+      persistiereUndRechne();
+    });
+
     // ---- Start ----
     ladeEinstellungenInFormular();
     renderSpezialisierungsknoten(null);
@@ -2859,6 +2889,8 @@ const UI = (function () {
     stationssatzSetzen,
     TAGESBONUS_EVENT,
     tagesbonusSetzen,
+    PREMIUM_EVENT,
+    premiumSetzen,
     fceUeberschreibungenAus,
     sammleVerwendeteKategorien,
     sammleVerwendeteGebaeude,

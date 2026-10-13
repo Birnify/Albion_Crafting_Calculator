@@ -2,8 +2,9 @@
 //
 // Reiter "Veredeln leveln" (08.10.2026): findet Stellen, an denen sich
 // Veredeln zum Leveln lohnt. Rohstoff (Faser, Holz, Erz, Stein, Fell) und die
-// Vorstufe in einer Stadt kaufen, dort veredeln, das Produkt in derselben
-// Stadt wieder verkaufen; gesucht sind Gewinn oder etwa Null.
+// Vorstufe kaufen, veredeln, das Produkt verkaufen; gesucht sind Gewinn oder
+// etwa Null. Bis v3.9.1 alles in derselben Stadt, seit v3.10.0 Einkauf,
+// Fertigung und Verkauf getrennt (s. unten).
 //
 // Bewusst keine eigene Rechenlogik fuer Rueckgewinnung, Stationsgebuehr und
 // Fokus: jede Zeile ist der Craft-Kandidat aus RECHENKERN.kosten() mit
@@ -48,27 +49,49 @@
 // einem Reiter wirkt im anderen. Nachrechnen ohne neuen Abruf: die
 // abgerufenen Preise und Handelsvolumen bleiben je Stadt in `daten` liegen.
 
+// v3.10.0 (13.10.2026): Handelsstaedte getrennt. Mehrere Einkaufs- und
+// Verkaufsstaedte (Mehrfachauswahl) und genau eine Fertigungsstadt. Die
+// Fertigungsstadt bestimmt Stadtbonus, Rueckgewinnung und Stationssatz (der
+// Rechenkern rechnet mit opts.stadt = Fertigungsstadt). Je Zutat zaehlt die
+// guenstigste angehakte Einkaufsstadt nach Kaufweg (Sofortkauf
+// sell_price_min, Kauforder buy_price_max, Hoechstalter beachtet, eigene
+// Preise der jeweiligen Stadt eingerechnet), je Produkt die angehakte
+// Verkaufsstadt mit dem hoechsten Netto-Erloes. Die Kosten sind je Zutat
+// getrennt (Summe Preis x Menge), die guenstigste Stadt je Zutat ergibt
+// deshalb auch die guenstigste Kombination. Transportkosten, Gewicht und
+// Reiserisiko sind nicht modelliert. Der Hoechstpreis einer Zutat bezieht
+// sich auf die gewaehlte Einkaufsstadt bei sonst festen Preisen; steigt der
+// Preis dort ueber den einer anderen angehakten Stadt, waere diese guenstiger.
+//
+// Speicherstand bis v3.9.1 (eine Liste `staedte` fuer alles) wird beim Laden
+// auf Einkauf = Verkauf = diese Staedte und Fertigung = Lymhurst (falls
+// angehakt, sonst die erste) abgebildet, s. einstellungenBereinigen().
+
 const VEREDELN = (function () {
   "use strict";
 
   const STAEDTE = ["Lymhurst", "Fort Sterling", "Bridgewatch", "Martlock", "Thetford", "Caerleon", "Brecilien"];
 
   const ROHSTOFFE = [
-    { cc: "fiber", label: "Faser → Stoff" },
-    { cc: "wood", label: "Holz → Bretter" },
-    { cc: "ore", label: "Erz → Barren" },
-    { cc: "rock", label: "Stein → Blöcke" },
-    { cc: "hide", label: "Fell → Leder" },
+    { cc: "fiber", name: "Faser", label: "Faser → Stoff", bonusText: "Faser zu Stoff", icon: "T4_FIBER" },
+    { cc: "wood", name: "Holz", label: "Holz → Bretter", bonusText: "Holz zu Brettern", icon: "T4_WOOD" },
+    { cc: "ore", name: "Erz", label: "Erz → Barren", bonusText: "Erz zu Barren", icon: "T4_ORE" },
+    { cc: "rock", name: "Stein", label: "Stein → Blöcke", bonusText: "Stein zu Blöcken", icon: "T4_ROCK" },
+    { cc: "hide", name: "Fell", label: "Fell → Leder", bonusText: "Fell zu Leder", icon: "T4_HIDE" },
   ];
 
   const TIERS = [2, 3, 4, 5, 6, 7, 8];
   const STUFEN = [0, 1, 2, 3, 4];
   const TAGE_FENSTER = 7;
   const SPEICHER_KEY = "albion_kostenrechner_veredeln_v1";
+  // Sortierschluessel der Tabellenkoepfe; Kosten aufsteigend, alle anderen absteigend.
+  const SORTIERUNGEN = ["kosten", "stueck", "marge", "gesamt"];
 
   function standardEinstellungen() {
     return {
-      staedte: ["Lymhurst"],
+      einkaufStaedte: ["Lymhurst"],
+      verkaufStaedte: ["Lymhurst"],
+      fertigungsstadt: "Lymhurst",
       rohstoffe: ROHSTOFFE.map((r) => r.cc),
       tiers: [4, 5, 6, 7, 8],
       stufen: STUFEN.slice(),
@@ -79,8 +102,41 @@ const VEREDELN = (function () {
       menge: 1000,
       verlusteZeigen: false,
       zusatzbonusProzent: 0,
+      sortierung: "marge",
       preisUeberschreibungen: {}, // Stadt -> Markt-ID -> Silber je Stueck (> 0), s. Modulkommentar
     };
+  }
+
+  /** Icon vom offiziellen Albion-Bildserver; doppelte Pixelzahl fuer scharfe Darstellung. */
+  function iconUrl(itemId, px) {
+    return "https://render.albiononline.com/v1/item/" + encodeURIComponent(itemId) + ".png?size=" + Math.round((px || 32) * 2);
+  }
+
+  /** Stadtschilder (Einkaufsstadt je Zutat, Verkaufsstadt je Produkt) nur, wenn mehr als eine Stadt angehakt ist. */
+  function schilderZeigen(staedte) {
+    return Array.isArray(staedte) && staedte.length > 1;
+  }
+
+  /** Rohstoff, fuer den die Stadt den Veredelungsbonus (+0,40) hat, oder null. */
+  function veredelBonusVon(stadt) {
+    return ROHSTOFFE.find((r) => REGELN.hatVeredelBonus(r.cc, stadt)) || null;
+  }
+
+  /** Rueckgewinnung je angehaktem Rohstoff in der Fertigungsstadt, mit Fokus, Tagesbonus und Zusatzbonus. */
+  function rueckgewinnungJeRohstoff(auswahl, einstellungen) {
+    const tb = (einstellungen && einstellungen.tagesbonus) || {};
+    return ROHSTOFFE.filter((r) => (auswahl.rohstoffe || []).indexOf(r.cc) !== -1).map((r) => ({
+      cc: r.cc,
+      name: r.name,
+      rrr: REGELN.rrr({
+        cc: r.cc,
+        stadt: auswahl.fertigungsstadt,
+        mitFokus: !!auswahl.mitFokus,
+        tagesbonus: tb[r.cc] || null,
+        zusatzbonus: (auswahl.zusatzbonusProzent || 0) / 100,
+        craftingfocus: 1, // alle Veredelungsrezepte haben craftingfocus > 0
+      }),
+    }));
   }
 
   /** Gebaeude je Rohstoff, dieselben Schluessel wie einstellungen.stationssaetze. */
@@ -147,17 +203,30 @@ const VEREDELN = (function () {
     return basisPreis + gewinnJeStueck / (effektiveMenge * kaufFaktor);
   }
 
-  /** Gespeicherten Stand gegen die erlaubten Werte pruefen; Unbekanntes faellt weg, Fehlendes kommt aus dem Standard. */
+  /**
+   * Gespeicherten Stand gegen die erlaubten Werte pruefen; Unbekanntes faellt
+   * weg, Fehlendes kommt aus dem Standard. Migration bis v3.9.1: die alte
+   * Liste `staedte` (Einkauf, Fertigung und Verkauf in derselben Stadt) wird
+   * zu Einkauf = Verkauf = diesen Staedten; Fertigung ist Lymhurst, falls
+   * angehakt, sonst die erste. Neue Felder haben Vorrang vor dem Altstand.
+   */
   function einstellungenBereinigen(roh) {
     const basis = standardEinstellungen();
     if (!roh || typeof roh !== "object") return basis;
     const liste = (wert, erlaubt) => (Array.isArray(wert) ? erlaubt.filter((x) => wert.indexOf(x) !== -1) : null);
-    const staedte = liste(roh.staedte, STAEDTE);
+    const alt = liste(roh.staedte, STAEDTE);
+    const altGefuellt = alt && alt.length ? alt : null;
+    const einkauf = liste(roh.einkaufStaedte, STAEDTE) || (altGefuellt && altGefuellt.slice());
+    const verkauf = liste(roh.verkaufStaedte, STAEDTE) || (altGefuellt && altGefuellt.slice());
+    let fertigung = STAEDTE.indexOf(roh.fertigungsstadt) !== -1 ? roh.fertigungsstadt : null;
+    if (!fertigung && altGefuellt) fertigung = altGefuellt.indexOf("Lymhurst") !== -1 ? "Lymhurst" : altGefuellt[0];
     const rohstoffe = liste(roh.rohstoffe, ROHSTOFFE.map((r) => r.cc));
     const tiers = liste(roh.tiers, TIERS);
     const stufen = liste(roh.stufen, STUFEN);
     return {
-      staedte: staedte || basis.staedte,
+      einkaufStaedte: einkauf || basis.einkaufStaedte,
+      verkaufStaedte: verkauf || basis.verkaufStaedte,
+      fertigungsstadt: fertigung || basis.fertigungsstadt,
       rohstoffe: rohstoffe || basis.rohstoffe,
       tiers: tiers || basis.tiers,
       stufen: stufen || basis.stufen,
@@ -168,6 +237,7 @@ const VEREDELN = (function () {
       menge: isFinite(Number(roh.menge)) && Number(roh.menge) > 0 ? Number(roh.menge) : basis.menge,
       verlusteZeigen: !!roh.verlusteZeigen,
       zusatzbonusProzent: isFinite(Number(roh.zusatzbonusProzent)) && Number(roh.zusatzbonusProzent) > 0 ? Number(roh.zusatzbonusProzent) : 0,
+      sortierung: SORTIERUNGEN.indexOf(roh.sortierung) !== -1 ? roh.sortierung : basis.sortierung,
       preisUeberschreibungen: ueberschreibungenBereinigen(roh.preisUeberschreibungen),
     };
   }
@@ -342,10 +412,15 @@ const VEREDELN = (function () {
     // angesetzte Stueckpreis inkl. Gebuehr.
     const kaufFaktor = REGELN.kaufKostenJeStueck(1, opts.kaufweg === "order" ? "order" : "sofort");
     const ueber = opts.ueberschreibungen || {};
+    // v3.10.0: Herkunft je Zutat (Einkaufsstadt, Rohpreis der Stadt, eigener Preis), s. zeilenRechnen().
+    const herkunft = opts.herkunft || null;
     z.kaufFaktor = kaufFaktor;
     z.zutatenPreise = (craft.weg.zutaten || []).map((zt) => {
       const marktId = zt.weg && zt.weg.marktId ? zt.weg.marktId : null;
+      const h = herkunft && marktId ? herkunft[marktId] : null;
       return {
+        stadt: h ? h.stadt : stadt,
+        roh: h ? h.roh : null,
         n: zt.item,
         stufe: zt.stufe,
         menge: zt.menge * kandidat.menge,
@@ -353,7 +428,7 @@ const VEREDELN = (function () {
         basisPreis: zt.silberJeStueck / kaufFaktor,
         effektiveMenge: zt.effektiveMenge,
         marktId,
-        uebersteuert: !!(marktId && ueber[marktId] != null),
+        uebersteuert: h ? !!h.eigen : !!(marktId && ueber[marktId] != null),
         hoechstpreis: null,
       };
     });
@@ -380,63 +455,154 @@ const VEREDELN = (function () {
     return "verlust";
   }
 
-  /** Nur Zeilen mit Ergebnis; ohne verlusteZeigen nur Gewinn und etwa Null. Sortiert nach Marge absteigend. */
+  /** Sortieren nach Tabellenkopf: Kosten/Stueck aufsteigend, Gewinn/Stueck, Marge, Gewinn gesamt absteigend. */
+  function sortiere(zeilen, schluessel) {
+    const wert = {
+      kosten: (z) => z.silber,
+      stueck: (z) => z.gewinn,
+      marge: (z) => z.marge,
+      gesamt: (z) => z.gewinnGesamt,
+    }[SORTIERUNGEN.indexOf(schluessel) !== -1 ? schluessel : "marge"];
+    const auf = schluessel === "kosten";
+    return zeilen.slice().sort((a, b) => (auf ? wert(a) - wert(b) : wert(b) - wert(a)));
+  }
+
+  /** Nur Zeilen mit Ergebnis; ohne verlusteZeigen nur Gewinn und etwa Null. Sortiert nach opts.sortierung (Vorgabe Marge absteigend). */
   function filtereUndSortiere(zeilen, opts) {
     opts = opts || {};
-    return zeilen
-      .filter((z) => z.gewinn != null && z.marge != null)
-      .filter((z) => opts.verlusteZeigen || z.einstufung !== "verlust")
-      .sort((a, b) => b.marge - a.marge);
+    return sortiere(
+      zeilen.filter((z) => z.gewinn != null && z.marge != null).filter((z) => opts.verlusteZeigen || z.einstufung !== "verlust"),
+      opts.sortierung || "marge"
+    );
+  }
+
+  /** Einkaufspreis ohne Einstellgebuehr einer Marktseite, oder null (kein Preis, <= 0, zu alt; wie im Rechenkern). */
+  function einkaufsBasisPreis(seite, maxPreisAlterMin, jetzt) {
+    if (!seite || seite.kein || seite.preis == null || !(seite.preis > 0)) return null;
+    if (maxPreisAlterMin != null && seite.datum) {
+      const t = REGELN.parseApiDatumUtc(seite.datum);
+      if (isFinite(t) && ((jetzt == null ? Date.now() : jetzt) - t) / 60000 > maxPreisAlterMin) return null;
+    }
+    return seite.preis;
+  }
+
+  /**
+   * Guenstigste Einkaufsstadt einer Zutat. einkaufDaten: [{stadt, preise
+   * (opts-Format, eigene Preise der Stadt schon eingesetzt), preiseRoh}] in
+   * Reihenfolge der Staedte; bei Gleichstand gewinnt die erste. Ohne gueltigen
+   * Preis in irgendeiner Stadt kommt die erste Stadt mit basis null zurueck,
+   * damit der Rechenkern den Grund (kein Preis, zu alt) liefert.
+   */
+  function einkaufWaehlen(marktId, einkaufDaten, kaufweg, maxPreisAlterMin, jetzt) {
+    let best = null;
+    (einkaufDaten || []).forEach((d) => {
+      const e = d.preise && d.preise[marktId];
+      const basis = einkaufsBasisPreis(e ? (kaufweg === "order" ? e.buy : e.sell) : null, maxPreisAlterMin, jetzt);
+      if (basis != null && (!best || basis < best.basis)) best = { stadt: d.stadt, eintrag: e, basis };
+    });
+    if (!best) {
+      const erste = (einkaufDaten || [])[0];
+      if (!erste) return null;
+      best = { stadt: erste.stadt, eintrag: (erste.preise && erste.preise[marktId]) || null, basis: null };
+    }
+    const quelle = einkaufDaten.find((x) => x.stadt === best.stadt);
+    best.roh = quelle && quelle.preiseRoh ? quelle.preiseRoh[marktId] || null : null;
+    return best;
+  }
+
+  /**
+   * Verkaufsstadt mit dem hoechsten Netto-Erloes (REGELN.erloesJeStueck je
+   * Stadt). eintraege: [{stadt, eintrag}]. Ohne verwertbaren Preis kommt die
+   * erste Stadt mit ihrem Grund zurueck; ohne Stadt null.
+   */
+  function verkaufWaehlen(eintraege, opts) {
+    let best = null;
+    let erstes = null;
+    (eintraege || []).forEach(({ stadt, eintrag }) => {
+      const erloes = REGELN.erloesJeStueck(eintrag, opts);
+      if (!erstes) erstes = { stadt, erloes };
+      if (erloes.netto != null && (!best || erloes.netto > best.erloes.netto)) best = { stadt, erloes };
+    });
+    return best || erstes;
   }
 
   /**
    * Alle Zeilen aus bereits abgerufenen Daten, ohne Netz. Wird nach jeder
-   * Suche und bei jeder Aenderung von eigenem Preis, Stationssatz oder
-   * Rechenoption erneut aufgerufen.
+   * Suche und bei jeder Aenderung von eigenem Preis, Stationssatz,
+   * Rechenoption oder Staedtewahl (soweit Daten vorliegen) erneut aufgerufen.
+   * Eine Zeile je Vorgang: gefertigt in auswahl.fertigungsstadt, jede Zutat
+   * aus ihrer guenstigsten Einkaufsstadt, verkauft in der besten Verkaufsstadt.
    *
    * @param kand Kandidatenliste (kandidaten())
-   * @param stadtDaten [{stadt, preiseRoh, absatz}] wie von PREISE geliefert
+   * @param stadtDaten [{stadt, preiseRoh, absatz}] wie von PREISE geliefert;
+   *   eine Stadt zaehlt als Einkaufs- bzw. Verkaufsquelle, wenn sie in
+   *   auswahl.einkaufStaedte bzw. auswahl.verkaufStaedte steht
    * @param auswahl Reiter-Einstellungen (einstellungenBereinigen())
    * @param einstellungen Kostenrechner-Einstellungen (UI.einstellungenLesen())
    */
-  function zeilenRechnen(kand, stadtDaten, auswahl, einstellungen) {
+  function zeilenRechnen(kand, stadtDaten, auswahl, einstellungen, jetzt) {
     const maxPreisAlterMin =
       einstellungen.maxPreisAlterMin === "" || einstellungen.maxPreisAlterMin == null ? null : Number(einstellungen.maxPreisAlterMin);
+    const zeit = jetzt == null ? Date.now() : jetzt;
     const fceUeb = typeof UI !== "undefined" && UI.fceUeberschreibungenAus ? UI.fceUeberschreibungenAus(einstellungen) : {};
-    const zeilen = [];
-    (stadtDaten || []).forEach((d) => {
-      const stadt = d.stadt;
-      const ueber = (auswahl.preisUeberschreibungen || {})[stadt] || {};
-      const opts = {
-        preise: preiseMitUeberschreibungen(REGELN.preiseZuOptsFormat(d.preiseRoh), ueber),
-        eigenpreise: {},
-        kaufweg: auswahl.kaufweg,
-        stadt,
-        stationssaetze: einstellungen.stationssaetze || {},
-        fce: einstellungen.fce,
-        fceUeberschreibungen: fceUeb,
-        fokusAus: !auswahl.mitFokus,
-        fokusRegelJeKategorie: {},
-        fokusUebersteuerungJeKnoten: {},
-        fokuswert: 0,
-        tagesbonus: einstellungen.tagesbonus || {}, // v3.9.1: gilt in allen Staedten gleich
-        zusatzProduktionsbonus: (auswahl.zusatzbonusProzent || 0) / 100,
-        maxPreisAlterMin,
-        nurDirekteEbene: true,
-      };
-      kand.forEach((k) => {
-        const craft = craftKandidatAus(RECHENKERN.kosten(k.item, k.stufe, 1, opts), k.rezeptIndex, auswahl.mitFokus);
-        const erloes = REGELN.erloesJeStueck((d.preiseRoh || {})[k.marktId], {
-          verkaufsweg: auswahl.verkaufsweg,
-          premium: einstellungen.premium,
-          maxPreisAlterMin,
-        });
-        const zeile = zeileBauen(k, stadt, craft, erloes, ((d.absatz || {})[k.marktId] || {})[1], Object.assign({}, auswahl, { ueberschreibungen: ueber }));
-        zeile.preiseRoh = d.preiseRoh;
-        zeilen.push(zeile);
+    const fertigung = auswahl.fertigungsstadt || "Lymhurst";
+    const ueberAlle = auswahl.preisUeberschreibungen || {};
+    const datenVon = (stadt) => (stadtDaten || []).find((d) => d.stadt === stadt && d.preiseRoh);
+    const einkaufDaten = (auswahl.einkaufStaedte || []).map(datenVon).filter(Boolean).map((d) => ({
+      stadt: d.stadt,
+      preiseRoh: d.preiseRoh,
+      preise: preiseMitUeberschreibungen(REGELN.preiseZuOptsFormat(d.preiseRoh), ueberAlle[d.stadt] || {}),
+    }));
+    const verkaufDaten = (auswahl.verkaufStaedte || []).map(datenVon).filter(Boolean);
+    const optsBasis = {
+      eigenpreise: {},
+      kaufweg: auswahl.kaufweg,
+      stadt: fertigung,
+      stationssaetze: einstellungen.stationssaetze || {},
+      fce: einstellungen.fce,
+      fceUeberschreibungen: fceUeb,
+      fokusAus: !auswahl.mitFokus,
+      fokusRegelJeKategorie: {},
+      fokusUebersteuerungJeKnoten: {},
+      fokuswert: 0,
+      tagesbonus: einstellungen.tagesbonus || {}, // v3.9.1: gilt in allen Staedten gleich
+      zusatzProduktionsbonus: (auswahl.zusatzbonusProzent || 0) / 100,
+      maxPreisAlterMin,
+      nurDirekteEbene: true,
+    };
+    const erloesOpts = { verkaufsweg: auswahl.verkaufsweg, premium: einstellungen.premium, maxPreisAlterMin, jetzt: zeit };
+    const wahl = {};
+    const einkaufVon = (id) => {
+      if (!(id in wahl)) {
+        const w = einkaufWaehlen(id, einkaufDaten, auswahl.kaufweg, maxPreisAlterMin, zeit);
+        if (w) w.eigen = !!(ueberAlle[w.stadt] && ueberAlle[w.stadt][id] != null);
+        wahl[id] = w;
+      }
+      return wahl[id];
+    };
+    return kand.map((k) => {
+      const preise = {};
+      const herkunft = {};
+      k.zutaten.forEach((zt) => {
+        const id = marktIdVon(zt.n, zt.stufe);
+        const w = einkaufVon(id);
+        if (!w) return;
+        herkunft[id] = w;
+        if (w.eintrag) preise[id] = w.eintrag;
       });
+      const craft = craftKandidatAus(
+        RECHENKERN.kosten(k.item, k.stufe, 1, Object.assign({}, optsBasis, { preise })),
+        k.rezeptIndex,
+        auswahl.mitFokus
+      );
+      const vk =
+        verkaufWaehlen(verkaufDaten.map((d) => ({ stadt: d.stadt, eintrag: d.preiseRoh[k.marktId] })), erloesOpts) ||
+        { stadt: null, erloes: { netto: null, grund: "keine Verkaufsstadt angehakt" } };
+      const vkDaten = verkaufDaten.find((d) => d.stadt === vk.stadt) || {};
+      const zeile = zeileBauen(k, fertigung, craft, vk.erloes, ((vkDaten.absatz || {})[k.marktId] || {})[1], Object.assign({}, auswahl, { herkunft }));
+      zeile.vkStadt = vk.stadt;
+      return zeile;
     });
-    return zeilen;
   }
 
   // -----------------------------------------------------------------------
@@ -483,10 +649,10 @@ const VEREDELN = (function () {
     pruefe(
       "einstellungenBereinigen: Unbekanntes faellt weg, Fehlendes kommt aus dem Standard",
       (function () {
-        const e = einstellungenBereinigen({ staedte: ["Lymhurst", "Atlantis"], tiers: [4, 9], kaufweg: "quatsch", toleranzProzent: -3 });
-        return e.staedte.join() === "Lymhurst" && e.tiers.join() === "4" && e.kaufweg === "sofort" && e.toleranzProzent === 0 && e.rohstoffe.length === 5;
+        const e = einstellungenBereinigen({ einkaufStaedte: ["Lymhurst", "Atlantis"], tiers: [4, 9], kaufweg: "quatsch", toleranzProzent: -3, sortierung: "quatsch" });
+        return e.einkaufStaedte.join() === "Lymhurst" && e.sortierung === "marge" && e.tiers.join() === "4" && e.kaufweg === "sofort" && e.toleranzProzent === 0 && e.rohstoffe.length === 5;
       })(),
-      JSON.stringify(einstellungenBereinigen({ staedte: ["Lymhurst", "Atlantis"], tiers: [4, 9] }))
+      JSON.stringify(einstellungenBereinigen({ einkaufStaedte: ["Lymhurst", "Atlantis"], tiers: [4, 9] }))
     );
 
     pruefe(
@@ -613,9 +779,10 @@ const VEREDELN = (function () {
       basisZ.silber + " / " + gebuehr
     );
     // v3.9.1: Tagesbonus gilt in allen Staedten gleich, aus den gemeinsamen Einstellungen.
-    const tagDaten = ["Lymhurst", "Martlock", "Caerleon"].map((stadt) => ({ stadt, preiseRoh, absatz: {} }));
-    const tagAus = { staedte: ["Lymhurst", "Martlock", "Caerleon"], kaufweg: "sofort", verkaufsweg: "sofort" };
-    const tagZ = rechne(tagAus, tagDaten, Object.assign({}, einst, { tagesbonus: { fiber: "gold" } }));
+    // v3.10.0: eine Zeile je Vorgang, die Stadt ist die Fertigungsstadt.
+    const tagAus = { kaufweg: "sofort", verkaufsweg: "sofort" };
+    const rechneIn = (aus, e) => ["Lymhurst", "Martlock", "Caerleon"].map((f) => rechne(Object.assign({}, aus, { fertigungsstadt: f }), null, e)[0]);
+    const tagZ = rechneIn(tagAus, Object.assign({}, einst, { tagesbonus: { fiber: "gold" } }));
     const rrrVon = (zs, stadt) => (zs.find((z) => z.stadt === stadt) || {}).rrr;
     pruefe(
       "Tagesbonus Faser 20 % wirkt in jeder Stadt: Lymhurst B = 0,18 + 0,40 + 0,20, Martlock und Caerleon B = 0,18 + 0,20",
@@ -623,13 +790,13 @@ const VEREDELN = (function () {
         Math.abs(rrrVon(tagZ, "Caerleon") - 0.38 / 1.38) < 1e-9,
       ["Lymhurst", "Martlock", "Caerleon"].map((s) => s + ":" + rrrVon(tagZ, s)).join(", ")
     );
-    const tagSilberAndere = rechne(tagAus, tagDaten, Object.assign({}, einst, { tagesbonus: { fiber: "silber", wood: "gold", ore: "gold" } }));
+    const tagSilberAndere = rechneIn(tagAus, Object.assign({}, einst, { tagesbonus: { fiber: "silber", wood: "gold", ore: "gold" } }));
     pruefe(
       "Tagesbonus: mehrere Rohstoffe gleichzeitig, Faser 10 % gibt Martlock B = 0,28; Holz/Erz-Bonus beruehrt Faser nicht",
       Math.abs(rrrVon(tagSilberAndere, "Martlock") - 0.28 / 1.28) < 1e-9 && Math.abs(rrrVon(tagSilberAndere, "Lymhurst") - 0.68 / 1.68) < 1e-9,
       rrrVon(tagSilberAndere, "Martlock") + " / " + rrrVon(tagSilberAndere, "Lymhurst")
     );
-    const tagAlt = rechne(Object.assign({}, tagAus, { tagesbonus: { Martlock: { fiber: "gold" } } }), tagDaten, einst);
+    const tagAlt = rechneIn(Object.assign({}, tagAus, { tagesbonus: { Martlock: { fiber: "gold" } } }), einst);
     pruefe(
       "Tagesbonus: ein alter Eintrag je Stadt im Reiter-Speicher wirkt nicht mehr (nur die gemeinsame Einstellung zaehlt)",
       Math.abs(rrrVon(tagAlt, "Martlock") - 0.18 / 1.18) < 1e-9,
@@ -644,13 +811,13 @@ const VEREDELN = (function () {
       JSON.stringify({ s: mit150.silber, g: mit150.gewinn })
     );
     const zweiStaedte = rechne(
-      { staedte: ["Lymhurst", "Martlock"], kaufweg: "sofort", verkaufsweg: "sofort", preisUeberschreibungen: { Lymhurst: { T4_FIBER: 150 } } },
+      { einkaufStaedte: ["Lymhurst", "Martlock"], kaufweg: "sofort", verkaufsweg: "sofort", preisUeberschreibungen: { Lymhurst: { T4_FIBER: 150 } } },
       [{ stadt: "Lymhurst", preiseRoh, absatz: {} }, { stadt: "Martlock", preiseRoh, absatz: {} }]
-    );
+    )[0];
     pruefe(
-      "Eigener Preis gilt nur in seiner Stadt (Lymhurst 150, Martlock weiter Markt 100)",
-      zweiStaedte[0].zutatenPreise[0].preis === 150 && zweiStaedte[1].zutatenPreise[0].preis === 100 && !zweiStaedte[1].zutatenPreise[0].uebersteuert,
-      zweiStaedte.map((z) => z.stadt + ":" + z.zutatenPreise[0].preis).join(",")
+      "Eigener Preis gilt nur in seiner Stadt: Lymhurst 150 eigen, Martlock Markt 100, gekauft wird in Martlock zu 100",
+      zweiStaedte.zutatenPreise[0].preis === 100 && zweiStaedte.zutatenPreise[0].stadt === "Martlock" && !zweiStaedte.zutatenPreise[0].uebersteuert,
+      JSON.stringify(zweiStaedte.zutatenPreise.map((x) => x.stadt + ":" + x.preis))
     );
     const produktUeb = rechne({ kaufweg: "sofort", verkaufsweg: "sofort", preisUeberschreibungen: { Lymhurst: { T4_CLOTH: 999 } } })[0];
     pruefe(
@@ -728,6 +895,171 @@ const VEREDELN = (function () {
       JSON.stringify(ueberschreibungenBereinigen({ Lymhurst: { T4_FIBER: 120, T3_CLOTH: 0 }, Atlantis: { T4_FIBER: 5 } }))
     );
 
+    // ---- v3.10.0: Einkaufs-, Verkaufs- und Fertigungsstadt getrennt ----
+    const mehr = (lym, mar, bri) => [
+      { stadt: "Lymhurst", preiseRoh: lym, absatz: {} },
+      { stadt: "Martlock", preiseRoh: mar, absatz: { T4_CLOTH: { 1: { stueckJeTag: 42 } } } },
+      { stadt: "Bridgewatch", preiseRoh: bri, absatz: {} },
+    ];
+    const dreiDaten = mehr(
+      { T4_FIBER: roh(100, 90), T3_CLOTH: roh(200, 180), T4_CLOTH: roh(320, 300) },
+      { T4_FIBER: roh(80, 95), T3_CLOTH: roh(250, 170), T4_CLOTH: roh(330, 350) },
+      { T4_FIBER: roh(90, 70), T3_CLOTH: roh(190, 175), T4_CLOTH: roh(310, null) }
+    );
+    const alleDrei = ["Lymhurst", "Martlock", "Bridgewatch"];
+    const besteEk = rechne({ einkaufStaedte: alleDrei, verkaufStaedte: ["Lymhurst"], kaufweg: "sofort", verkaufsweg: "sofort" }, dreiDaten)[0];
+    pruefe(
+      "Einkauf: je Zutat die guenstigste angehakte Stadt (Faser Martlock 80, Vorstufe Bridgewatch 190), Kosten = (2 x 80 + 190) / 1,58 + Gebuehr",
+      besteEk.zutatenPreise[0].stadt === "Martlock" && besteEk.zutatenPreise[0].preis === 80 &&
+        besteEk.zutatenPreise[1].stadt === "Bridgewatch" && besteEk.zutatenPreise[1].preis === 190 &&
+        Math.abs(besteEk.silber - ((2 * 80 + 190) / 1.58 + gebuehr)) < 1e-9,
+      JSON.stringify(besteEk.zutatenPreise.map((x) => x.stadt + ":" + x.preis)) + " / " + besteEk.silber
+    );
+    const besteEkOrder = rechne({ einkaufStaedte: alleDrei, verkaufStaedte: ["Lymhurst"], kaufweg: "order", verkaufsweg: "sofort" }, dreiDaten)[0];
+    pruefe(
+      "Einkauf per Kauforder: Vergleich auf der Kauforder-Seite (Faser Bridgewatch 70, Vorstufe Martlock 170), plus 2,5 %",
+      besteEkOrder.zutatenPreise[0].stadt === "Bridgewatch" && besteEkOrder.zutatenPreise[1].stadt === "Martlock" &&
+        Math.abs(besteEkOrder.zutatenPreise[0].preis - 70 * 1.025) < 1e-9,
+      JSON.stringify(besteEkOrder.zutatenPreise.map((x) => x.stadt + ":" + x.preis))
+    );
+    // Der Rechenkern prueft das Alter gegen Date.now(), deshalb relative Zeitstempel.
+    const jetztT = Date.now();
+    const vorMin = (m) => new Date(jetztT - m * 60000).toISOString().slice(0, 19);
+    const mitDatum = (p, datum) => ({ sell: { preis: p, kein: false, datum }, buy: { kein: true } });
+    const altDaten = mehr(
+      { T4_FIBER: mitDatum(100, vorMin(30)), T3_CLOTH: mitDatum(200, vorMin(30)), T4_CLOTH: roh(320, 300) },
+      { T4_FIBER: mitDatum(50, vorMin(120)), T3_CLOTH: mitDatum(250, vorMin(30)), T4_CLOTH: roh(330, 350) },
+      {}
+    );
+    const altZ = zeilenRechnen(
+      k4,
+      altDaten,
+      einstellungenBereinigen({ einkaufStaedte: ["Lymhurst", "Martlock"], kaufweg: "sofort", verkaufsweg: "sofort" }),
+      Object.assign({}, einst, { maxPreisAlterMin: 60 }),
+      jetztT
+    )[0];
+    pruefe(
+      "Einkauf: ein zu alter Preis zaehlt nicht, Faser Martlock 50 ist 120 Min. alt, gekauft wird in Lymhurst zu 100",
+      altZ.zutatenPreise[0].stadt === "Lymhurst" && altZ.zutatenPreise[0].preis === 100,
+      JSON.stringify(altZ.zutatenPreise.map((x) => x.stadt + ":" + x.preis))
+    );
+    const besteVk = rechne({ einkaufStaedte: ["Lymhurst"], verkaufStaedte: alleDrei, kaufweg: "sofort", verkaufsweg: "sofort" }, dreiDaten)[0];
+    pruefe(
+      "Verkauf: die Stadt mit dem hoechsten Netto-Erloes (Sofortverkauf Martlock 350 x 0,96 = 336), Bridgewatch ohne Kauforder zaehlt nicht",
+      besteVk.vkStadt === "Martlock" && Math.abs(besteVk.erloes - 336) < 1e-9 && besteVk.produktPreis === 350,
+      besteVk.vkStadt + " / " + besteVk.erloes
+    );
+    pruefe(
+      "Verkauf: verkauft/Tag kommt aus der gewaehlten Verkaufsstadt (Martlock 42)",
+      besteVk.stueckJeTag === 42 && rechne({ verkaufStaedte: ["Lymhurst"] }, dreiDaten)[0].stueckJeTag === null,
+      besteVk.stueckJeTag
+    );
+    const besteVkOrder = rechne({ einkaufStaedte: ["Lymhurst"], verkaufStaedte: alleDrei, kaufweg: "sofort", verkaufsweg: "order" }, dreiDaten)[0];
+    pruefe(
+      "Verkauf per Verkaufsorder: Vergleich auf der Verkaufsorder-Seite (Martlock 330)",
+      besteVkOrder.vkStadt === "Martlock" && besteVkOrder.produktPreis === 330,
+      besteVkOrder.vkStadt + " / " + besteVkOrder.produktPreis
+    );
+    const ohneVk = rechne({ verkaufStaedte: [] }, dreiDaten)[0];
+    pruefe("Verkauf: ohne angehakte Verkaufsstadt kein Gewinn", ohneVk.gewinn === null && ohneVk.vkStadt === null, ohneVk.grund);
+    const fLym = rechne({ einkaufStaedte: ["Martlock"], verkaufStaedte: ["Martlock"], fertigungsstadt: "Lymhurst" }, dreiDaten)[0];
+    const fMar = rechne({ einkaufStaedte: ["Martlock"], verkaufStaedte: ["Martlock"], fertigungsstadt: "Martlock" }, dreiDaten)[0];
+    pruefe(
+      "Fertigungsstadt bestimmt den Bonus: Faser in Lymhurst B = 0,58 (36,7 %), in Martlock B = 0,18, auch bei Einkauf und Verkauf in Martlock",
+      Math.abs(fLym.rrr - 0.58 / 1.58) < 1e-9 && Math.abs(fMar.rrr - 0.18 / 1.18) < 1e-9 && fLym.stadt === "Lymhurst" && fLym.stadtbonus && !fMar.stadtbonus,
+      fLym.rrr + " / " + fMar.rrr
+    );
+    const eigenWahl = rechne(
+      { einkaufStaedte: ["Lymhurst", "Martlock"], preisUeberschreibungen: { Lymhurst: { T4_FIBER: 70 } } },
+      dreiDaten
+    )[0];
+    pruefe(
+      "Eigener Preis fliesst in die Stadtwahl ein: Lymhurst eigen 70 schlaegt Martlock 80, Zutat als eigen markiert",
+      eigenWahl.zutatenPreise[0].stadt === "Lymhurst" && eigenWahl.zutatenPreise[0].preis === 70 && eigenWahl.zutatenPreise[0].uebersteuert,
+      JSON.stringify(eigenWahl.zutatenPreise[0])
+    );
+    // Andere Staedte teuer, damit Bridgewatch auch beim Hoechstpreis die guenstigste bleibt.
+    const hpDaten = mehr(
+      { T4_FIBER: roh(100, 90), T3_CLOTH: roh(1000, 900), T4_CLOTH: roh(320, 300) },
+      { T4_FIBER: roh(80, 95), T3_CLOTH: roh(1000, 900), T4_CLOTH: roh(330, 350) },
+      { T4_FIBER: roh(90, 70), T3_CLOTH: roh(190, 175), T4_CLOTH: roh(310, null) }
+    );
+    const hpAus = { einkaufStaedte: alleDrei, verkaufStaedte: ["Lymhurst"], kaufweg: "sofort", verkaufsweg: "sofort" };
+    const hp = rechne(hpAus, hpDaten)[0].zutatenPreise[1];
+    const hpUeb = {};
+    hpUeb[hp.stadt] = { T3_CLOTH: hp.hoechstpreis };
+    const hpZ2 = rechne(Object.assign({}, hpAus, { preisUeberschreibungen: hpUeb }), hpDaten)[0];
+    pruefe(
+      "Hoechstpreis bezieht sich auf die gewaehlte Einkaufsstadt (Vorstufe Bridgewatch): dort eingesetzt ergibt Gewinn 0",
+      hp.stadt === "Bridgewatch" && hpZ2.zutatenPreise[1].stadt === "Bridgewatch" && Math.abs(hpZ2.gewinn) < 1e-6,
+      hp.hoechstpreis + " / " + hpZ2.gewinn
+    );
+    // Gegenprobe der dokumentierten Grenze: liegt der Hoechstpreis ueber dem
+    // Preis einer anderen angehakten Stadt, wird dort gekauft und es bleibt Gewinn.
+    const hpWeit = rechne(hpAus, dreiDaten)[0].zutatenPreise[1];
+    const weitUeb = {};
+    weitUeb[hpWeit.stadt] = { T3_CLOTH: hpWeit.hoechstpreis };
+    const weitZ = rechne(Object.assign({}, hpAus, { preisUeberschreibungen: weitUeb }), dreiDaten)[0];
+    pruefe(
+      "Hoechstpreis ueber dem Preis einer anderen Stadt: die Wahl wechselt (Lymhurst 200), der Gewinn bleibt positiv",
+      hpWeit.hoechstpreis > 200 && weitZ.zutatenPreise[1].stadt === "Lymhurst" && weitZ.gewinn > 0,
+      hpWeit.hoechstpreis + " / " + weitZ.zutatenPreise[1].stadt + " / " + weitZ.gewinn
+    );
+    pruefe(
+      "Migration: alte Liste staedte wird Einkauf = Verkauf, Fertigung Lymhurst wenn angehakt, sonst die erste",
+      (function () {
+        const a = einstellungenBereinigen({ staedte: ["Martlock", "Lymhurst"] });
+        const b = einstellungenBereinigen({ staedte: ["Thetford", "Martlock"] });
+        const c = einstellungenBereinigen({ staedte: [] });
+        const d = einstellungenBereinigen({ staedte: ["Martlock"], einkaufStaedte: ["Caerleon"], fertigungsstadt: "Thetford" });
+        return a.einkaufStaedte.join() === "Lymhurst,Martlock" && a.verkaufStaedte.join() === "Lymhurst,Martlock" && a.fertigungsstadt === "Lymhurst" &&
+          b.fertigungsstadt === "Martlock" && b.einkaufStaedte.join() === "Martlock,Thetford" &&
+          c.einkaufStaedte.join() === "Lymhurst" && c.fertigungsstadt === "Lymhurst" &&
+          d.einkaufStaedte.join() === "Caerleon" && d.verkaufStaedte.join() === "Martlock" && d.fertigungsstadt === "Thetford" &&
+          !("staedte" in a);
+      })(),
+      JSON.stringify(einstellungenBereinigen({ staedte: ["Martlock", "Lymhurst"] }))
+    );
+    const std = standardEinstellungen();
+    pruefe(
+      "Vorgabe: Einkauf, Verkauf und Fertigung Lymhurst",
+      std.einkaufStaedte.join() === "Lymhurst" && std.verkaufStaedte.join() === "Lymhurst" && std.fertigungsstadt === "Lymhurst",
+      JSON.stringify([std.einkaufStaedte, std.verkaufStaedte, std.fertigungsstadt])
+    );
+    pruefe(
+      "Stadtschilder nur bei mehr als einer angehakten Stadt",
+      !schilderZeigen([]) && !schilderZeigen(["Lymhurst"]) && schilderZeigen(["Lymhurst", "Martlock"]) && !schilderZeigen(null),
+      ""
+    );
+    const sz = [
+      { silber: 300, gewinn: 5, marge: 0.3, gewinnGesamt: 5000, einstufung: "gewinn" },
+      { silber: 100, gewinn: 20, marge: 0.05, gewinnGesamt: 20000, einstufung: "gewinn" },
+      { silber: 200, gewinn: -1, marge: -0.005, gewinnGesamt: -1000, einstufung: "null" },
+    ];
+    pruefe(
+      "Sortierung: Kosten aufsteigend, Gewinn/Stueck, Marge und Gewinn gesamt absteigend",
+      sortiere(sz, "kosten").map((z) => z.silber).join() === "100,200,300" &&
+        sortiere(sz, "stueck").map((z) => z.gewinn).join() === "20,5,-1" &&
+        sortiere(sz, "marge").map((z) => z.marge).join() === "0.3,0.05,-0.005" &&
+        sortiere(sz, "gesamt").map((z) => z.gewinnGesamt).join() === "20000,5000,-1000" &&
+        filtereUndSortiere(sz, { sortierung: "kosten" })[0].silber === 100 && filtereUndSortiere(sz, {})[0].marge === 0.3,
+      sortiere(sz, "kosten").map((z) => z.silber).join()
+    );
+    pruefe(
+      "Fertigungsstadt: Veredelungsbonus-Hinweis und Rueckgewinnung je Rohstoff (Lymhurst Faser 36,7 %, Holz 15,3 %)",
+      (function () {
+        const r = rueckgewinnungJeRohstoff({ fertigungsstadt: "Lymhurst", rohstoffe: ["fiber", "wood"], mitFokus: false, zusatzbonusProzent: 0 }, {});
+        return veredelBonusVon("Lymhurst").cc === "fiber" && veredelBonusVon("Fort Sterling").cc === "wood" && veredelBonusVon("Caerleon") === null &&
+          r.length === 2 && Math.abs(r[0].rrr - 0.58 / 1.58) < 1e-12 && Math.abs(r[1].rrr - 0.18 / 1.18) < 1e-12;
+      })(),
+      JSON.stringify(rueckgewinnungJeRohstoff({ fertigungsstadt: "Lymhurst", rohstoffe: ["fiber", "wood"] }, {}))
+    );
+    pruefe(
+      "iconUrl: offizieller Bildserver, Item-ID mit _LEVELn, doppelte Pixelzahl",
+      iconUrl("T4_FIBER_LEVEL2", 30) === "https://render.albiononline.com/v1/item/T4_FIBER_LEVEL2.png?size=60",
+      iconUrl("T4_FIBER_LEVEL2", 30)
+    );
+
     return ergebnisse;
   }
 
@@ -739,18 +1071,20 @@ const VEREDELN = (function () {
     const wurzel = document.getElementById("tab-veredeln");
     if (!wurzel) return; // z.B. tests/test.html
     const el = (id) => document.getElementById(id);
-    const staedteEl = el("vdStaedte");
     const rohstoffeEl = el("vdRohstoffe");
     const tiersEl = el("vdTiers");
     const stufenEl = el("vdStufen");
-    const kaufwegEl = el("vdKaufweg");
-    const verkaufswegEl = el("vdVerkaufsweg");
-    const fokusEl = el("vdFokus");
+    const einkaufEl = el("vdEinkauf");
+    const verkaufEl = el("vdVerkauf");
+    const fertigungEl = el("vdFertigung");
+    const bonusEl = el("vdBonus");
+    const rrrEl = el("vdRrr");
     const toleranzEl = el("vdToleranz");
     const mengeEl = el("vdMenge");
     const verlusteEl = el("vdVerluste");
     const tagesbonusEl = el("vdTagesbonus");
     const zusatzbonusEl = el("vdZusatzbonus");
+    const mehrTextEl = el("vdMehrText");
     const startEl = el("vdStart");
     const statusEl = el("vdStatus");
     const ausgabeEl = el("vdAusgabe");
@@ -759,7 +1093,9 @@ const VEREDELN = (function () {
 
     let auswahl = standardEinstellungen();
     let letzteZeilen = null;
-    let daten = null; // { kand, stadtDaten: [{stadt, preiseRoh, absatz}] } der letzten Suche, fuer Nachrechnen ohne Abruf
+    // Daten der letzten Suche, fuer Nachrechnen ohne Abruf:
+    // { stadtDaten: [{stadt, preiseRoh, absatz}], ids: Set, einkauf: Set, verkauf: Set, zeit }
+    let daten = null;
     let laeuft = false;
 
     let altTagesbonus = null;
@@ -792,23 +1128,64 @@ const VEREDELN = (function () {
     const fmtFokus = (n) => (typeof UI !== "undefined" && UI.formatFokus ? UI.formatFokus(n) : String(Math.round(n)));
     const prozent = (a) => (a * 100).toFixed(1).replace(".", ",") + " %";
     const stueck = (n) => (n == null ? "k. A." : n >= 10 ? String(Math.round(n)) : n.toFixed(1).replace(".", ","));
+    const TRANSPORT = "Transportkosten, Gewicht und Reiserisiko sind nicht eingerechnet.";
 
-    function checkboxGruppe(container, titel, werte, label, gewaehlt, schluessel, tooltip) {
-      const alle = gewaehlt.length === werte.length;
-      container.title = tooltip || "";
-      container.innerHTML =
-        `<div class="t">${titel}<button type="button" class="mini" data-alle="${schluessel}">${alle ? "Alle abwählen" : "Alle auswählen"}</button></div>` +
-        werte
-          .map((w) => `<label><input type="checkbox" data-gruppe="${schluessel}" value="${w}"${gewaehlt.indexOf(w) !== -1 ? " checked" : ""}>${label(w)}</label>`)
-          .join("");
+    /** Icon mit festem Platz; schlaegt das Laden fehl, bleibt nur das leere Feld (kein Layout-Springen). */
+    function icon(itemId, px, alt) {
+      return (
+        "<span class='vd-ic' style='width:" + px + "px;height:" + px + "px'>" +
+        "<img src='" + esc(iconUrl(itemId, px)) + "' width='" + px + "' height='" + px + "' alt='" + esc(alt || "") + "' loading='lazy' decoding='async' onerror='this.remove()'></span>"
+      );
     }
 
+    // ---- Auswahl-Chips (Rohstoff, Tier, Verzauberung, Einkauf, Verkauf) ----
     const GRUPPEN = {
-      staedte: { el: staedteEl, titel: "Städte", werte: STAEDTE, label: (s) => s, parse: (v) => v, tooltip: "In jeder angehakten Stadt wird eingekauft, veredelt und wieder verkauft. Eine Stadt mit Veredelungsbonus erscheint in der Tabelle mit +40 %." },
-      rohstoffe: { el: rohstoffeEl, titel: "Rohstoffe", werte: ROHSTOFFE.map((r) => r.cc), label: (cc) => ROHSTOFFE.find((r) => r.cc === cc).label, parse: (v) => v },
-      tiers: { el: tiersEl, titel: "Tier", werte: TIERS, label: (t) => "T" + t, parse: Number, tooltip: "Tier des veredelten Produkts. T2 ist gebührenfrei." },
-      stufen: { el: stufenEl, titel: "Verzauberung", werte: STUFEN, label: (s) => "." + s, parse: Number, tooltip: "Beim Stein zählt die Verzauberung des eingesetzten Steins; verzauberter Stein ergibt 2, 4 oder 8 normale Blöcke." },
+      rohstoffe: { el: rohstoffeEl, werte: ROHSTOFFE.map((r) => r.cc), parse: (v) => v },
+      tiers: { el: tiersEl, werte: TIERS, parse: Number },
+      stufen: { el: stufenEl, werte: STUFEN, parse: Number },
+      einkaufStaedte: { el: einkaufEl, werte: STAEDTE, parse: (v) => v },
+      verkaufStaedte: { el: verkaufEl, werte: STAEDTE, parse: (v) => v },
     };
+
+    function chip(gruppe, wert, inhalt, an, klasse, titel) {
+      return (
+        "<label class='vd-chip" + (klasse ? " " + klasse : "") + (an ? " an" : "") + "'" + (titel ? " title='" + esc(titel) + "'" : "") + ">" +
+        "<input type='checkbox' data-gruppe='" + gruppe + "' value='" + esc(wert) + "'" + (an ? " checked" : "") + ">" + inhalt + "</label>"
+      );
+    }
+
+    function gruppenAufbauen() {
+      rohstoffeEl.innerHTML = ROHSTOFFE.map((r) =>
+        chip("rohstoffe", r.cc, icon(r.icon, 44, r.name) + "<span>" + r.name + "</span>", auswahl.rohstoffe.indexOf(r.cc) !== -1, "vd-roh", r.label)
+      ).join("");
+      tiersEl.innerHTML = TIERS.map((t) =>
+        chip("tiers", t, "T" + t, auswahl.tiers.indexOf(t) !== -1, "", t === 2 ? "T2 ist gebührenfrei." : "")
+      ).join("");
+      stufenEl.innerHTML = STUFEN.map((s) =>
+        chip("stufen", s, "." + s, auswahl.stufen.indexOf(s) !== -1, "", "Beim Stein zählt die Verzauberung des eingesetzten Steins; verzauberter Stein ergibt 2, 4 oder 8 normale Blöcke.")
+      ).join("");
+      einkaufEl.innerHTML = STAEDTE.map((s) => chip("einkaufStaedte", s, s, auswahl.einkaufStaedte.indexOf(s) !== -1)).join("");
+      verkaufEl.innerHTML = STAEDTE.map((s) => chip("verkaufStaedte", s, s, auswahl.verkaufStaedte.indexOf(s) !== -1)).join("");
+    }
+
+    // ---- Schalter (Einkauf, Verkauf, Fokus, Premium) ----
+    const SCHALTER = {
+      kaufweg: { an: "Eigene Kauforder", aus: "Sofortkauf", lesen: () => auswahl.kaufweg === "order", setzen: (an) => (auswahl.kaufweg = an ? "order" : "sofort") },
+      verkaufsweg: { an: "Eigene Verkaufsorder", aus: "Sofortverkauf", lesen: () => auswahl.verkaufsweg === "order", setzen: (an) => (auswahl.verkaufsweg = an ? "order" : "sofort") },
+      fokus: { an: "Mit Fokus", aus: "Ohne Fokus", lesen: () => auswahl.mitFokus, setzen: (an) => (auswahl.mitFokus = an) },
+      // Premium ist dieselbe Einstellung wie im Kostenrechner (v3.10.0).
+      premium: { an: "Mit Premium (4 % Steuer)", aus: "Ohne Premium (8 % Steuer)", lesen: () => UI.einstellungenLesen().premium !== false, setzen: (an) => UI.premiumSetzen(an, "veredeln") },
+    };
+
+    function schalterSetzen() {
+      Object.keys(SCHALTER).forEach((k) => {
+        const btn = wurzel.querySelector("[data-vd-schalter='" + k + "']");
+        if (!btn) return;
+        const an = !!SCHALTER[k].lesen();
+        btn.setAttribute("aria-checked", an ? "true" : "false");
+        btn.querySelector(".vd-tgl-text").textContent = an ? SCHALTER[k].an : SCHALTER[k].aus;
+      });
+    }
 
     /** Eine Zeile, ein Schalter je Rohstoff; dieselbe Einstellung wie im Kostenrechner (v3.9.1). */
     function tagesbonusAufbauen() {
@@ -816,44 +1193,66 @@ const VEREDELN = (function () {
       tagesbonusEl.innerHTML = ROHSTOFFE.map((r) => {
         const w = tb[r.cc] || "aus";
         const opt = (wert, text) => `<option value="${wert}"${w === wert ? " selected" : ""}>${text}</option>`;
-        const name = r.label.split(" ")[0];
-        return `<label>${name}<select class="vd-tag" data-tag-cc="${r.cc}" aria-label="Tagesbonus ${name}">${opt("aus", "aus")}${opt("silber", "10 %")}${opt("gold", "20 %")}</select></label>`;
+        return (
+          "<div class='vd-tag-feld' title='" + esc(r.label) + "'>" + icon(r.icon, 30, r.name) +
+          `<select class="vd-tag" data-tag-cc="${r.cc}" aria-label="Tagesbonus ${r.name}">${opt("aus", "aus")}${opt("silber", "10 %")}${opt("gold", "20 %")}</select></div>`
+        );
       }).join("");
     }
 
     // v3.9.1: alter Tagesbonus je Stadt aus dem Reiter-Speicher einmalig in
     // die gemeinsame Einstellung uebernehmen (je Rohstoff der hoechste Wert,
-    // s. tagesbonusAusAltstand). Der Altstand hat Vorrang vor einem Wert, der
-    // im Kostenrechner fuer dieselbe Kategorie steht: seit v3.6.0 wurde der
-    // Tagesbonus fuer genau diese fuenf Rohstoffe hier gepflegt, der
-    // Kostenrechner-Wert wurde vom Reiter ignoriert. Rohstoffe ohne Altstand
-    // behalten den Kostenrechner-Wert. Danach den Reiter-Speicher ohne das
-    // alte Feld zurueckschreiben, damit die Migration nur einmal laeuft.
+    // s. tagesbonusAusAltstand). Danach den Reiter-Speicher ohne das alte
+    // Feld zurueckschreiben, damit die Migration nur einmal laeuft. Seit
+    // v3.10.0 schreibt das zugleich die neuen Staedtefelder (Migration der
+    // alten Liste `staedte`, s. einstellungenBereinigen).
     if (altTagesbonus && typeof altTagesbonus === "object") {
       const migriert = tagesbonusAusAltstand(altTagesbonus);
       Object.keys(migriert).forEach((cc) => UI.tagesbonusSetzen(cc, migriert[cc], "veredeln"));
-      speichern();
     }
+    speichern();
 
     const STATION_LABEL = { Saegewerk: "Sägewerk" };
 
     /** Stationssatz je Gebaeude der angehakten Rohstoffe, dieselbe Einstellung wie im Kostenrechner. */
     function stationenAufbauen() {
       const stationen = stationenFuer(auswahl.rohstoffe);
-      const titel = "<div class='t'>Stationssatz je 100 Nahrung (dieselben Werte wie im Kostenrechner)</div>";
       if (!stationen.length) {
-        stationenEl.innerHTML = titel + "<div class='hint'>Erst einen Rohstoff anhaken.</div>";
+        stationenEl.innerHTML = "";
         return;
       }
       const saetze = UI.einstellungenLesen().stationssaetze || {};
-      stationenEl.innerHTML =
-        titel +
-        stationen
-          .map(
-            (g) =>
-              `<label>${STATION_LABEL[g] || g}<input type="number" class="vd-satz" min="0" step="10" data-vd-station="${g}" value="${saetze[g] != null ? saetze[g] : ""}" placeholder="nicht gepflegt" aria-label="Stationssatz ${STATION_LABEL[g] || g}"></label>`
-          )
-          .join("");
+      stationenEl.innerHTML = stationen
+        .map((g) => {
+          const name = STATION_LABEL[g] || g;
+          return (
+            "<label class='vd-satz-zeile'><span>" + name + ", Satz je 100 Nahrung</span>" +
+            `<input type="number" class="vd-satz" min="0" step="10" data-vd-station="${g}" value="${saetze[g] != null ? saetze[g] : ""}" placeholder="nicht gepflegt" aria-label="Stationssatz ${name}"></label>`
+          );
+        })
+        .join("");
+    }
+
+    function fertigungAufbauen() {
+      fertigungEl.innerHTML = STAEDTE.map((s) => `<option value="${esc(s)}"${s === auswahl.fertigungsstadt ? " selected" : ""}>${s}</option>`).join("");
+    }
+
+    /** Veredelungsbonus und Rueckgewinnung der Fertigungsstadt. */
+    function fertigungInfo() {
+      const b = veredelBonusVon(auswahl.fertigungsstadt);
+      bonusEl.textContent = b ? "+40 % auf " + b.bonusText : "kein Veredelungsbonus";
+      bonusEl.classList.toggle("ohne", !b);
+      bonusEl.title = b
+        ? "Veredelungsbonus der Stadt: +0,40 Produktionsbonus auf " + b.bonusText + ", gilt nur für diese Warengruppe."
+        : "Diese Stadt hat für keinen der fünf Rohstoffe einen Veredelungsbonus.";
+      const r = rueckgewinnungJeRohstoff(auswahl, UI.einstellungenLesen());
+      if (!r.length) {
+        rrrEl.textContent = "";
+        return;
+      }
+      const gleich = r.every((x) => Math.abs(x.rrr - r[0].rrr) < 1e-12);
+      rrrEl.textContent = "Rückgewinnung " + (gleich ? prozent(r[0].rrr) : r.map((x) => x.name + " " + prozent(x.rrr)).join(", "));
+      rrrEl.title = "Rückgewinnung in " + auswahl.fertigungsstadt + " aus Grundproduktion, Stadtbonus" + (auswahl.mitFokus ? ", Fokus" : "") + ", Tagesbonus und Zusatzbonus.";
     }
 
     function preiseResetAktualisieren() {
@@ -862,36 +1261,31 @@ const VEREDELN = (function () {
       preiseResetEl.textContent = "Eigene Preise zurücksetzen (" + n + ")";
     }
 
-    function gruppenAufbauen() {
-      Object.keys(GRUPPEN).forEach((k) => {
-        const g = GRUPPEN[k];
-        checkboxGruppe(g.el, g.titel, g.werte, g.label, auswahl[k], k, g.tooltip);
-      });
+    function mehrTextSetzen() {
+      mehrTextEl.textContent = "(Etwa-Null-Grenze " + String(auswahl.toleranzProzent).replace(".", ",") + " %, Zusatzbonus " + String(auswahl.zusatzbonusProzent).replace(".", ",") + " %)";
     }
 
     function felderSetzen() {
-      kaufwegEl.value = auswahl.kaufweg;
-      verkaufswegEl.value = auswahl.verkaufsweg;
-      fokusEl.value = auswahl.mitFokus ? "mit" : "ohne";
       toleranzEl.value = auswahl.toleranzProzent;
       mengeEl.value = auswahl.menge;
       verlusteEl.checked = auswahl.verlusteZeigen;
       zusatzbonusEl.value = auswahl.zusatzbonusProzent;
+      schalterSetzen();
+      mehrTextSetzen();
     }
 
     function felderLesen() {
       auswahl = einstellungenBereinigen(
         Object.assign({}, auswahl, {
-          kaufweg: kaufwegEl.value,
-          verkaufsweg: verkaufswegEl.value,
-          mitFokus: fokusEl.value === "mit",
           toleranzProzent: toleranzEl.value,
           menge: mengeEl.value,
           verlusteZeigen: verlusteEl.checked,
           zusatzbonusProzent: zusatzbonusEl.value,
+          fertigungsstadt: fertigungEl.value,
         })
       );
       speichern();
+      mehrTextSetzen();
     }
 
     function eigenenPreisSetzen(stadt, marktId, wert) {
@@ -909,11 +1303,32 @@ const VEREDELN = (function () {
       rechnen();
     }
 
+    /** Reichen die geladenen Daten fuer die aktuelle Auswahl? Dann ohne Abruf neu rechnen. */
+    function datenReichen() {
+      if (!daten) return false;
+      if (auswahl.einkaufStaedte.some((s) => !daten.einkauf.has(s))) return false;
+      if (auswahl.verkaufStaedte.some((s) => !daten.verkauf.has(s))) return false;
+      return benoetigteMarktIds(kandidaten(auswahl)).every((id) => daten.ids.has(id));
+    }
+
+    function auswahlGeaendert() {
+      if (datenReichen()) rechnen();
+      else if (daten) {
+        statusEl.className = "";
+        statusEl.textContent = "Auswahl geändert: „Gelegenheiten suchen“ ruft die fehlenden Preise ab.";
+      }
+    }
+
     wurzel.addEventListener("change", (ev) => {
       // v3.9.0: eigener Einkaufspreis je Zutat. Leer oder <= 0 setzt zurueck.
       const preisEl = ev.target.closest("input[data-vd-markt]");
       if (preisEl) {
-        eigenenPreisSetzen(preisEl.dataset.vdStadt, preisEl.dataset.vdMarkt, preisEl.value.trim());
+        // Neu zeichnen erst nach dem Ereignis: das Feld kann gerade den Fokus
+        // verlieren, und innerHTML mitten im Fokuswechsel wirft in Chromium.
+        const stadt = preisEl.dataset.vdStadt;
+        const markt = preisEl.dataset.vdMarkt;
+        const wert = preisEl.value.trim();
+        setTimeout(() => eigenenPreisSetzen(stadt, markt, wert), 0);
         return;
       }
       // v3.9.0: Stationssatz, geteilt mit dem Kostenrechner. Leer oder
@@ -931,29 +1346,56 @@ const VEREDELN = (function () {
       }
       const box = ev.target.closest("input[data-gruppe]");
       if (box) {
-        const g = GRUPPEN[box.dataset.gruppe];
+        const k = box.dataset.gruppe;
+        const g = GRUPPEN[k];
+        box.closest(".vd-chip").classList.toggle("an", box.checked);
         const an = Array.from(g.el.querySelectorAll("input:checked")).map((x) => g.parse(x.value));
-        auswahl[box.dataset.gruppe] = g.werte.filter((w) => an.indexOf(w) !== -1);
+        auswahl[k] = g.werte.filter((w) => an.indexOf(w) !== -1);
         speichern();
-        checkboxGruppe(g.el, g.titel, g.werte, g.label, auswahl[box.dataset.gruppe], box.dataset.gruppe, g.tooltip);
-        if (box.dataset.gruppe === "rohstoffe") stationenAufbauen();
+        if (k === "rohstoffe") {
+          stationenAufbauen();
+          fertigungInfo();
+        }
+        auswahlGeaendert();
         return;
       }
       // v3.9.1: Tagesbonus je Rohstoff, gilt in allen Staedten, geteilt mit dem Kostenrechner.
       const tagSel = ev.target.closest("select[data-tag-cc]");
       if (tagSel) {
         UI.tagesbonusSetzen(tagSel.dataset.tagCc, tagSel.value, "veredeln");
+        fertigungInfo();
         rechnen();
         return;
       }
       felderLesen();
       // Toleranz, Menge und Verluste-Schalter brauchen nur eine neue
-      // Bewertung; Einkauf, Verkauf, Fokus und Zusatzbonus rechnen mit den
-      // schon abgerufenen Preisen neu (beide Preisseiten liegen vor).
+      // Bewertung; Fertigungsstadt und Zusatzbonus rechnen mit den schon
+      // abgerufenen Preisen neu.
       if ([toleranzEl, mengeEl, verlusteEl].indexOf(ev.target) !== -1) neuBewerten();
-      else if ([kaufwegEl, verkaufswegEl, fokusEl, zusatzbonusEl].indexOf(ev.target) !== -1) rechnen();
+      else if ([fertigungEl, zusatzbonusEl].indexOf(ev.target) !== -1) {
+        fertigungInfo();
+        rechnen();
+      }
     });
+
     wurzel.addEventListener("click", (ev) => {
+      const schalter = ev.target.closest("[data-vd-schalter]");
+      if (schalter) {
+        const s = SCHALTER[schalter.dataset.vdSchalter];
+        s.setzen(!s.lesen());
+        speichern();
+        schalterSetzen();
+        fertigungInfo();
+        rechnen();
+        return;
+      }
+      const sortKnopf = ev.target.closest("[data-vd-sort]");
+      if (sortKnopf) {
+        auswahl.sortierung = sortKnopf.dataset.vdSort;
+        speichern();
+        neuBewerten();
+        return;
+      }
       const reset = ev.target.closest("button[data-vd-reset]");
       if (reset) {
         eigenenPreisSetzen(reset.dataset.vdStadt, reset.dataset.vdReset, "");
@@ -964,21 +1406,14 @@ const VEREDELN = (function () {
         speichern();
         preiseResetAktualisieren();
         rechnen();
-        return;
       }
-      const knopf = ev.target.closest("button[data-alle]");
-      if (!knopf) return;
-      const k = knopf.dataset.alle;
-      const g = GRUPPEN[k];
-      auswahl[k] = auswahl[k].length === g.werte.length ? [] : g.werte.slice();
-      speichern();
-      checkboxGruppe(g.el, g.titel, g.werte, g.label, auswahl[k], k, g.tooltip);
-      if (k === "rohstoffe") stationenAufbauen();
     });
+
     // Tagesbonus im Kostenrechner geaendert: Zeile nachziehen, neu rechnen.
     document.addEventListener(UI.TAGESBONUS_EVENT, (ev) => {
       if (ev.detail && ev.detail.quelle === "veredeln") return;
       tagesbonusAufbauen();
+      fertigungInfo();
       rechnen();
     });
     // Stationssatz im Kostenrechner geaendert: Felder nachziehen, neu rechnen.
@@ -987,54 +1422,62 @@ const VEREDELN = (function () {
       stationenAufbauen();
       rechnen();
     });
+    // Premium im Kostenrechner geaendert (v3.10.0).
+    document.addEventListener(UI.PREMIUM_EVENT, (ev) => {
+      if (ev.detail && ev.detail.quelle === "veredeln") return;
+      schalterSetzen();
+      rechnen();
+    });
 
     function alterText(min) {
       if (min == null || !isFinite(min)) return "";
       return min < 90 ? Math.round(min) + " Min." : min < 2880 ? Math.round(min / 60) + " Std." : Math.round(min / 1440) + " Tage";
     }
 
-    function zutatAlter(marktId, kontext) {
-      const e = kontext.preiseRoh && kontext.preiseRoh[marktId];
-      const seite = e ? (kontext.kaufweg === "order" ? e.buy : e.sell) : null;
-      if (!seite || !seite.datum) return null;
-      const t = REGELN.parseApiDatumUtc(seite.datum);
-      return isFinite(t) ? (Date.now() - t) / 60000 : null;
+    /** Marktpreis (ohne eigenen Preis) und Alter einer Zutat in ihrer Einkaufsstadt. */
+    function marktSeite(x, kaufweg) {
+      const seite = x.roh ? (kaufweg === "order" ? x.roh.buy : x.roh.sell) : null;
+      const preis = seite && !seite.kein && seite.preis > 0 ? seite.preis : null;
+      let alter = null;
+      if (seite && seite.datum) {
+        const t = REGELN.parseApiDatumUtc(seite.datum);
+        if (isFinite(t)) alter = (Date.now() - t) / 60000;
+      }
+      return { preis, alter };
     }
 
-    function marktBasisPreis(marktId, preiseRoh, kaufweg) {
-      const e = preiseRoh && preiseRoh[marktId];
-      const seite = e ? (kaufweg === "order" ? e.buy : e.sell) : null;
-      return seite && !seite.kein && seite.preis > 0 ? seite.preis : null;
+    function stadtSchild(stadt, titel) {
+      return stadt ? "<span class='vd-stadt' title='" + esc(titel) + "'>" + esc(stadt) + "</span>" : "<span></span>";
     }
 
-    // v3.9.0: Einkaufspreis als Eingabefeld (ohne Einstellgebuehr, so wie im
-    // Marktfenster), darunter der Hoechstpreis fuer Gewinn 0.
-    function rezeptText(z, kontext) {
+    // Zutaten in festen Spalten: Icon, Menge und Name, Preisfeld, Stadtschild
+    // (nur bei mehreren Einkaufsstaedten), Hoechstpreis.
+    function zutatenHtml(z, kontext) {
       const order = kontext.kaufweg === "order";
       return z.zutatenPreise
         .map((x) => {
           const name = nameVon(x.n, x.stufe);
-          const alter = alterText(zutatAlter(x.marktId, { preiseRoh: z.preiseRoh, kaufweg: kontext.kaufweg }));
-          const markt = marktBasisPreis(x.marktId, z.preiseRoh, kontext.kaufweg);
+          const m = marktSeite(x, kontext.kaufweg);
+          const alter = alterText(m.alter);
           const herkunft = x.uebersteuert
-            ? "Eigener Preis für " + z.stadt + (markt != null ? ", Markt: " + fmt(markt) + (alter ? " (" + alter + " alt)" : "") : ", kein Marktpreis")
-            : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + (alter ? ", " + alter + " alt" : "");
+            ? "Eigener Preis für " + x.stadt + (m.preis != null ? ", Markt: " + fmt(m.preis) + (alter ? " (" + alter + " alt)" : "") : ", kein Marktpreis")
+            : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + " in " + x.stadt + (alter ? ", " + alter + " alt" : "");
           const titel =
             herkunft + ". " +
             (order ? "Eingabe ist der Orderpreis; gerechnet wird mit 2,5 % Einstellgebühr obendrauf (" + fmt(x.preis) + "). " : "") +
-            "Ein eigener Preis gilt für diese Zutat in " + z.stadt + " in allen Zeilen und bleibt gespeichert, auch über „Preise aktualisieren“. Leer setzt zurück.";
+            "Klicken zum Überschreiben: ein eigener Preis gilt für diese Zutat in " + x.stadt + " in allen Zeilen, bleibt gespeichert und zählt bei der Wahl der günstigsten Stadt mit. Leer setzt zurück.";
           const wert = Math.round(x.basisPreis * 100) / 100;
           const feld =
             "<input type='number' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' min='1' step='1' value='" + wert + "'" +
-            " data-vd-stadt='" + esc(z.stadt) + "' data-vd-markt='" + esc(x.marktId) + "'" +
-            " aria-label='Einkaufspreis " + esc(name) + " in " + esc(z.stadt) + "' title='" + esc(titel) + "'>";
+            " data-vd-stadt='" + esc(x.stadt) + "' data-vd-markt='" + esc(x.marktId) + "'" +
+            " aria-label='Einkaufspreis " + esc(name) + " in " + esc(x.stadt) + "' title='" + esc(titel) + "'>";
           const reset = x.uebersteuert
-            ? "<button type='button' class='vd-reset' data-vd-stadt='" + esc(z.stadt) + "' data-vd-reset='" + esc(x.marktId) + "' title='Eigenen Preis entfernen, zurück zum Marktpreis' aria-label='Eigenen Preis für " + esc(name) + " entfernen'>✕</button>"
+            ? "<button type='button' class='vd-reset' data-vd-stadt='" + esc(x.stadt) + "' data-vd-reset='" + esc(x.marktId) + "' title='Marktpreis wiederherstellen' aria-label='Eigenen Preis für " + esc(name) + " entfernen'>×</button>"
             : "";
-          let max = "";
+          let max = "<span></span>";
           if (x.hoechstpreis != null) {
             const titelMax =
-              "Höchstpreis: bis zu diesem " + (order ? "Orderpreis" : "Einkaufspreis") + " bleibt der Gewinn dieser Zeile bei 0 oder darüber, alle anderen Preise fest. " +
+              "Höchstpreis in " + x.stadt + ": bis zu diesem " + (order ? "Orderpreis" : "Einkaufspreis") + " bleibt der Gewinn dieser Zeile bei 0 oder darüber, alle anderen Preise fest. " +
               "Mit Rückgewinnung " + prozent(z.rrr) + ", Stationsgebühr" + (order ? " und 2,5 % Einstellgebühr" : "") + "." +
               (z.gewinn < 0 ? " Der Gewinn ist schon beim aktuellen Preis negativ." : "");
             max =
@@ -1043,89 +1486,98 @@ const VEREDELN = (function () {
                 : "<span class='vd-max" + (z.gewinn < 0 ? " vd-verlust" : "") + "' title='" + esc(titelMax) + "'>max. " + fmt(Math.floor(x.hoechstpreis)) + "</span>";
           }
           return (
-            "<div class='vd-zutat'><span>" + (Math.round(x.menge * 100) / 100) + "× " + name + " à</span> " +
-            "<span class='vd-preisfeld'>" + feld + reset + "</span>" + max + "</div>"
+            "<div class='vd-zutat'>" + icon(x.n, 30, name) +
+            "<span class='vd-zname'>" + (Math.round(x.menge * 100) / 100) + "× " + esc(name) + "</span>" +
+            "<span class='vd-preisfeld'>" + feld + reset + "</span>" +
+            (kontext.mehrEk ? stadtSchild(x.stadt, "Günstigste angehakte Einkaufsstadt für diese Zutat. " + TRANSPORT) : "") +
+            max + "</div>"
           );
         })
         .join("");
+    }
+
+    function kopfHtml(kontext) {
+      const sortTh = (id, text, titel) => {
+        const an = kontext.sortierung === id;
+        const pfeil = an ? (id === "kosten" ? " ▲" : " ▼") : "";
+        return (
+          "<th class='num'" + (an ? " aria-sort='" + (id === "kosten" ? "ascending" : "descending") + "'" : "") + ">" +
+          "<button type='button' class='vd-sortk" + (an ? " an" : "") + "' data-vd-sort='" + id + "' title='" + esc(titel) + "'>" + text + pfeil + "</button></th>"
+        );
+      };
+      return (
+        "<thead><tr><th>Produkt</th><th>Einkauf je Vorgang</th><th>Verkauf</th>" +
+        sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
+        sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
+        sortTh("marge", "Marge", "Gewinn bezogen auf die eigenen Kosten. Klicken sortiert absteigend.") +
+        sortTh("gesamt", "Gewinn gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
+        "</tr></thead>"
+      );
     }
 
     function render(zeilen, gesamt, kontext) {
       if (!zeilen.length) {
         ausgabeEl.innerHTML =
-          "<div class='ch-hinweis'>Von " + gesamt + " geprüften Vorgängen bringt keiner Gewinn oder liegt innerhalb der Toleranz. Toleranz erhöhen, „Verluste zeigen“ anhaken oder andere Städte wählen.</div>";
+          "<div class='vd-leer'>Von " + gesamt + " geprüften Vorgängen bringt keiner Gewinn oder liegt innerhalb der Toleranz. Toleranz erhöhen, „Verluste zeigen“ anhaken oder andere Städte wählen.</div>";
         return;
       }
-      const kopf =
-        "<tr><th>Stadt</th><th>Produkt</th><th title='Einsatz vor Rückgewinnung mit dem Einkaufspreis je Stück in dieser Stadt (ohne Einstellgebühr). Der Preis ist überschreibbar, die Zeile rechnet sofort neu. max. = Höchstpreis, bei dem der Gewinn auf 0 fällt.'>Einsatz je Vorgang, Einkaufspreis</th><th class='num' title='Rückgewinnungsquote laut Stadtbonus, Fokus und Tagesbonus'>Rückgew.</th>" +
-        "<th class='num' title='Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt'>Kosten/Stück</th>" +
-        "<th class='num' title='Verkaufspreis nach Steuer (und Einstellgebühr bei eigener Verkaufsorder)'>Erlös/Stück</th>" +
-        "<th class='num'>Gewinn/Stück</th><th class='num' title='Gewinn bezogen auf die eigenen Kosten'>Marge</th>" +
-        "<th class='num' title='Ein Veredelungsvorgang; beim Stein aus verzaubertem Stein entstehen 2, 4 oder 8 Blöcke'>Gewinn/Vorgang</th>" +
-        "<th class='num' title='Gewinn je Stück mal der eingestellten Menge'>Gewinn gesamt</th>" +
-        "<th class='num' title='Erfasster Handel des Produkts in dieser Stadt, Mittel der letzten " + TAGE_FENSTER + " Tage. Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.'>verkauft/Tag</th><th>Ergebnis</th></tr>";
+      const vkTitel = (kontext.verkaufsweg === "order" ? "günstigste Verkaufsorder" : "höchste Kauforder");
       const body = zeilen
         .map((z) => {
           const klasse = z.einstufung === "gewinn" ? "vd-gewinn" : z.einstufung === "null" ? "vd-null" : "vd-verlust";
-          const text = z.einstufung === "gewinn" ? "Gewinn" : z.einstufung === "null" ? "etwa Null" : "Verlust";
-          const bonus = z.stadtbonus ? " <span class='vd-bonus' title='Veredelungsbonus dieser Stadt, +0,40 Produktionsbonus'>+40 %</span>" : "";
-          const fokus = z.fokusJeVorgang > 0 ? "<br><span class='ch-klein'>" + fmtFokus(z.fokusJeVorgang) + " Fokus/Vorgang</span>" : "";
-          const ausbeute = z.ausbeute > 1 ? " <span class='ch-klein'>(" + z.ausbeute + " Stück)</span>" : "";
+          const einstufung = z.einstufung === "gewinn" ? "Gewinn" : z.einstufung === "null" ? "etwa Null (innerhalb der Toleranz)" : "Verlust";
+          const name = nameVon(z.item, z.stufe);
+          const tierTitel = z.ausbeute > 1 ? "Ein Vorgang ergibt " + z.ausbeute + " Stück." : "";
+          const fokus = z.fokusJeVorgang > 0 ? "<div class='vd-klein'>" + fmtFokus(z.fokusJeVorgang) + " Fokus/Vorgang</div>" : "";
+          const preisTitel = vkTitel + (z.vkStadt ? " in " + z.vkStadt : "") + (z.produktAlterMin != null ? ", " + alterText(z.produktAlterMin) + " alt" : "");
+          const handel =
+            "<div class='vd-klein' title='Erfasster Handel des Produkts in " + esc(z.vkStadt || "") + ", Mittel der letzten " + TAGE_FENSTER +
+            " Tage. Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.'>verkauft/Tag " + stueck(z.stueckJeTag) + "</div>";
           return (
-            "<tr>" +
-            "<td>" + z.stadt + bonus + "</td>" +
-            "<td>" + nameVon(z.item, z.stufe) + " <span class='ch-klein'>T" + z.tier + "." + z.vorgangsStufe + "</span>" + ausbeute + "</td>" +
-            "<td class='ch-klein'>" + rezeptText(z, kontext) + "</td>" +
-            "<td class='num'>" + prozent(z.rrr) + fokus + "</td>" +
-            "<td class='num'>" + fmt(z.silber) + "</td>" +
-            "<td class='num'>" + fmt(z.erloes) +
-            "<br><span class='ch-klein' title='" + (kontext.verkaufsweg === "order" ? "günstigste Verkaufsorder" : "höchste Kauforder") +
-            (z.produktAlterMin != null ? ", " + alterText(z.produktAlterMin) + " alt" : "") + "'>Preis " + fmt(z.produktPreis) + "</span></td>" +
-            "<td class='num'>" + fmt(z.gewinn) + "</td>" +
-            "<td class='num'>" + prozent(z.marge) + "</td>" +
-            "<td class='num'>" + fmt(z.gewinnJeVorgang) + "</td>" +
-            "<td class='num'>" + fmt(z.gewinnGesamt) + "</td>" +
-            "<td class='num'>" + stueck(z.stueckJeTag) + "</td>" +
-            "<td class='" + klasse + "'>" + text + "</td>" +
+            "<tr class='" + klasse + "'>" +
+            "<td><div class='vd-produkt'>" + icon(z.item, 48, name) + "<div><div class='vd-pname'>" + esc(name) + "</div>" +
+            "<div class='vd-klein'" + (tierTitel ? " title='" + esc(tierTitel) + "'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + "</div></div></div></td>" +
+            "<td><div class='vd-zutaten" + (kontext.mehrEk ? "" : " ohne-stadt") + "'>" + zutatenHtml(z, kontext) + "</div></td>" +
+            "<td><div class='vd-erloes' title='Erlös je Stück nach Steuer" + (kontext.verkaufsweg === "order" ? " und 2,5 % Einstellgebühr" : "") + "'>" + fmt(z.erloes) + "</div>" +
+            "<div class='vd-klein' title='" + esc(preisTitel) + "'>Preis " + fmt(z.produktPreis) + "</div>" +
+            (kontext.mehrVk ? "<div>" + stadtSchild(z.vkStadt, "Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "</div>" : "") +
+            handel + "</td>" +
+            "<td class='num'>" + fmt(z.silber) + fokus + "</td>" +
+            "<td class='num vd-wert' title='" + einstufung + "'>" + fmt(z.gewinn) + "</td>" +
+            "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
+            "<td class='num vd-wert'>" + fmt(z.gewinnGesamt) + "</td>" +
             "</tr>"
           );
         })
         .join("");
-      ausgabeEl.innerHTML =
-        "<table class='ch-tabelle vd-tabelle'>" + kopf + body + "</table>" +
-        "<div class='ch-hinweis' style='margin-top:10px'>" +
-        zeilen.length + " von " + gesamt + " geprüften Vorgängen. Einkauf " +
-        (kontext.kaufweg === "order" ? "über eigene Kauforder (+2,5 % Einstellgebühr)" : "per Sofortkauf aus den Verkaufsorders") +
-        ", Verkauf " + (kontext.verkaufsweg === "order" ? "über eigene Verkaufsorder" : "per Sofortverkauf in die Kauforders") +
-        ", Steuer " + (kontext.premium ? "4 % (Premium)" : "8 % (ohne Premium)") +
-        ", " + (kontext.mitFokus ? "mit Fokus (FCE aus dem Kostenrechner)" : "ohne Fokus") +
-        (kontext.zusatzbonusProzent ? ", Zusatzbonus +" + kontext.zusatzbonusProzent + " Prozentpunkte" : "") +
-        ". Rohstoff und Vorstufe werden gekauft." +
-        (kontext.eigenePreise ? " " + kontext.eigenePreise + " eigene Einkaufspreise aktiv (gold umrandet)." : "") +
-        (kontext.fehlendeSaetze && kontext.fehlendeSaetze.length ? " Stationssatz fehlt für " + kontext.fehlendeSaetze.join(", ") + ", mit 0 gerechnet." : "") +
-        " Höchstalter der Preise aus den Einstellungen des Kostenrechners. Craft-Fame ist nicht eingerechnet." +
-        "</div>";
+      ausgabeEl.innerHTML = "<div class='vd-tabrahmen'><table class='vd-tabelle'>" + kopfHtml(kontext) + "<tbody>" + body + "</tbody></table></div>";
     }
 
     /** Zeilen aus den Daten der letzten Suche neu rechnen, ohne Abruf. */
     function rechnen() {
-      if (!daten || laeuft) return null;
+      if (!daten || laeuft || !datenReichen()) return null;
       const einstellungen = UI.einstellungenLesen();
-      const zeilen = zeilenRechnen(daten.kand, daten.stadtDaten, auswahl, einstellungen);
+      const kand = kandidaten(auswahl);
+      const zeilen = zeilenRechnen(kand, daten.stadtDaten, auswahl, einstellungen);
       const saetze = einstellungen.stationssaetze || {};
       letzteZeilen = {
         zeilen,
         kontext: {
           kaufweg: auswahl.kaufweg,
           verkaufsweg: auswahl.verkaufsweg,
-          premium: einstellungen.premium !== false,
-          mitFokus: auswahl.mitFokus,
-          zusatzbonusProzent: auswahl.zusatzbonusProzent,
-          eigenePreise: anzahlUeberschreibungen(auswahl.preisUeberschreibungen),
-          fehlendeSaetze: stationenFuer(Array.from(new Set(daten.kand.map((k) => k.cc)))).filter((g) => saetze[g] == null).map((g) => STATION_LABEL[g] || g),
+          mehrEk: schilderZeigen(auswahl.einkaufStaedte),
+          mehrVk: schilderZeigen(auswahl.verkaufStaedte),
         },
       };
       neuBewerten();
+      const mitErgebnis = zeilen.filter((z) => z.gewinn != null).length;
+      const fehlend = stationenFuer(Array.from(new Set(kand.map((k) => k.cc)))).filter((g) => saetze[g] == null).map((g) => STATION_LABEL[g] || g);
+      statusEl.className = "ok";
+      statusEl.textContent =
+        "Fertig: " + zeilen.filter((z) => z.einstufung === "gewinn").length + " mit Gewinn, " + zeilen.filter((z) => z.einstufung === "null").length + " etwa Null" +
+        (zeilen.length - mitErgebnis ? ", " + (zeilen.length - mitErgebnis) + " von " + zeilen.length + " ohne vollständige Preise" : "") +
+        ". Preise frisch abgerufen um " + daten.zeit + "." +
+        (fehlend.length ? " Stationssatz fehlt für " + fehlend.join(", ") + ", mit 0 gerechnet." : "");
       return zeilen;
     }
 
@@ -1137,70 +1589,79 @@ const VEREDELN = (function () {
         z.gewinnGesamt = z.gewinn * auswahl.menge;
         z.einstufung = einstufen(z.gewinn, z.silber, toleranz);
       });
-      const gefiltert = filtereUndSortiere(letzteZeilen.zeilen, { verlusteZeigen: auswahl.verlusteZeigen });
-      render(gefiltert, letzteZeilen.zeilen.length, letzteZeilen.kontext);
+      const gefiltert = filtereUndSortiere(letzteZeilen.zeilen, { verlusteZeigen: auswahl.verlusteZeigen, sortierung: auswahl.sortierung });
+      render(gefiltert, letzteZeilen.zeilen.length, Object.assign({}, letzteZeilen.kontext, { sortierung: auswahl.sortierung }));
     }
 
-    async function suchen(erzwingen) {
+    // Ein Knopf (v3.10.0): ruft immer frische Preise der Auswahl ab
+    // (Zwischenspeicher umgangen), Staedte nacheinander wie bisher, damit
+    // die API-Drosselung greift (PREISE wartet zwischen den Bloecken).
+    async function suchen() {
       if (laeuft) return;
       felderLesen();
-      if (!auswahl.staedte.length || !auswahl.rohstoffe.length || !auswahl.tiers.length || !auswahl.stufen.length) {
-        statusEl.textContent = "Mindestens eine Stadt, einen Rohstoff, ein Tier und eine Verzauberung anhaken.";
+      if (!auswahl.einkaufStaedte.length || !auswahl.verkaufStaedte.length || !auswahl.rohstoffe.length || !auswahl.tiers.length || !auswahl.stufen.length) {
+        statusEl.className = "err";
+        statusEl.textContent = "Mindestens je eine Einkaufs- und Verkaufsstadt, einen Rohstoff, ein Tier und eine Verzauberung anhaken.";
         return;
       }
       laeuft = true;
       startEl.disabled = true;
-      el("vdRefresh").disabled = true;
+      statusEl.className = "";
       ausgabeEl.innerHTML = "";
       try {
         const kand = kandidaten(auswahl);
-        const ids = benoetigteMarktIds(kand);
         const produktIds = Array.from(new Set(kand.map((k) => k.marktId)));
+        const zutatIds = Array.from(new Set([].concat(...kand.map((k) => k.zutaten.map((zt) => marktIdVon(zt.n, zt.stufe))))));
+        const staedte = STAEDTE.filter((s) => auswahl.einkaufStaedte.indexOf(s) !== -1 || auswahl.verkaufStaedte.indexOf(s) !== -1);
         const stadtDaten = [];
-        for (let i = 0; i < auswahl.staedte.length; i++) {
-          const stadt = auswahl.staedte[i];
-          const vorsatz = stadt + " (" + (i + 1) + "/" + auswahl.staedte.length + "): ";
+        for (let i = 0; i < staedte.length; i++) {
+          const stadt = staedte[i];
+          const ek = auswahl.einkaufStaedte.indexOf(stadt) !== -1;
+          const vk = auswahl.verkaufStaedte.indexOf(stadt) !== -1;
+          const ids = Array.from(new Set([].concat(ek ? zutatIds : [], vk ? produktIds : [])));
+          const vorsatz = stadt + " (" + (i + 1) + "/" + staedte.length + "): ";
           const preiseRoh = await PREISE.preiseAbrufen(ids, {
             stadt,
-            erzwingen: !!erzwingen,
+            erzwingen: true,
             qualitaet: 1,
             aufFortschritt: (f, g) => {
               statusEl.textContent = vorsatz + "Preise " + f + "/" + g + " ...";
             },
           });
-          statusEl.textContent = vorsatz + "Handelsvolumen ...";
-          const absatz = await PREISE.absatzAbrufen(produktIds, { stadt, tageFenster: TAGE_FENSTER });
+          let absatz = {};
+          if (vk) {
+            statusEl.textContent = vorsatz + "Handelsvolumen ...";
+            absatz = await PREISE.absatzAbrufen(produktIds, { stadt, tageFenster: TAGE_FENSTER });
+          }
           stadtDaten.push({ stadt, preiseRoh, absatz });
         }
-        daten = { kand, stadtDaten };
+        daten = {
+          stadtDaten,
+          ids: new Set(zutatIds.concat(produktIds)),
+          einkauf: new Set(auswahl.einkaufStaedte),
+          verkauf: new Set(auswahl.verkaufStaedte),
+          zeit: new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+        };
         laeuft = false;
-        const zeilen = rechnen();
-        const mitErgebnis = zeilen.filter((z) => z.gewinn != null).length;
-        const gewinne = zeilen.filter((z) => z.einstufung === "gewinn").length;
-        const stand = new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-        statusEl.textContent =
-          "Fertig: " + gewinne + " mit Gewinn, " + zeilen.filter((z) => z.einstufung === "null").length + " etwa Null. " +
-          (zeilen.length - mitErgebnis) + " von " + zeilen.length + " Vorgängen ohne vollständige Preise. " +
-          (erzwingen ? "Preise neu abgerufen um " + stand + "." : "Gerechnet um " + stand + ", Preise aus dem Zwischenspeicher, sofern jünger als 30 Min.");
+        rechnen();
       } catch (e) {
+        statusEl.className = "err";
         statusEl.textContent = "Fehler: " + (e && e.message ? e.message : e);
         if (typeof console !== "undefined") console.error(e);
       } finally {
         laeuft = false;
         startEl.disabled = false;
-        el("vdRefresh").disabled = false;
       }
     }
 
     gruppenAufbauen();
+    fertigungAufbauen();
     tagesbonusAufbauen();
     stationenAufbauen();
     preiseResetAktualisieren();
     felderSetzen();
-    startEl.addEventListener("click", () => suchen(false));
-    // "Preise aktualisieren" (Wunsch 08.10.2026): wie in den anderen
-    // Reitern den Preis-Cache umgehen und alles neu abrufen.
-    el("vdRefresh").addEventListener("click", () => suchen(true));
+    fertigungInfo();
+    startEl.addEventListener("click", () => suchen());
   }
 
   if (typeof document !== "undefined") {
@@ -1226,6 +1687,15 @@ const VEREDELN = (function () {
     preiseMitUeberschreibungen,
     hoechstpreis,
     zeilenRechnen,
+    SORTIERUNGEN,
+    iconUrl,
+    schilderZeigen,
+    veredelBonusVon,
+    rueckgewinnungJeRohstoff,
+    sortiere,
+    einkaufsBasisPreis,
+    einkaufWaehlen,
+    verkaufWaehlen,
     selbsttest,
   };
 })();

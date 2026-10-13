@@ -194,6 +194,32 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       } catch (e) { /* ignorieren */ }
     }
   })();
+  // v3.10.0: Premium ist eine gemeinsame Einstellung (Schalter in beiden Reitern).
+  (function () {
+    const KEY = "albion_kostenrechner_einstellungen";
+    let vorher = null;
+    try { vorher = localStorage.getItem(KEY); } catch (e) { /* ignorieren */ }
+    const gemeldet = [];
+    const horcher = (ev) => gemeldet.push(ev.detail);
+    document.addEventListener(UI.PREMIUM_EVENT, horcher);
+    try {
+      const aus = UI.premiumSetzen(false, "veredeln");
+      const nachAus = UI.einstellungenLesen().premium;
+      const an = UI.premiumSetzen(true, "veredeln");
+      pruefe(
+        "veredeln: Premium aus dem Reiter landet in einstellungen.premium und wird per Ereignis gemeldet",
+        aus === false && nachAus === false && an === true && UI.einstellungenLesen().premium === true &&
+          gemeldet.length === 2 && gemeldet[0].wert === false && gemeldet[0].quelle === "veredeln",
+        JSON.stringify(gemeldet)
+      );
+    } finally {
+      document.removeEventListener(UI.PREMIUM_EVENT, horcher);
+      try {
+        if (vorher == null) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, vorher);
+      } catch (e) { /* ignorieren */ }
+    }
+  })();
   pruefe(
     "veredeln: VEREDELN haengt nicht von CHANCEN ab (kein Verweis im Modulcode)",
     !/CHANCEN/.test(Object.values(VEREDELN).filter((f) => typeof f === "function").map(String).join("\n")),
