@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-13 · Version: v3.10.1 · Veredeln leveln: Darstellungsfixes
+Stand: 2026-10-13 · Version: v3.10.2 · Veredeln leveln: Preis je Stadt im Tooltip
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,18 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.10.2 (13.10.2026): Veredeln leveln, Preis je Stadt im Tooltip
+
+Nutzerwunsch: beim Hover über den Einkaufspreis sehen, was die Zutat in jeder
+angehakten Einkaufsstadt kostet ("vielleicht kostet es da, wo ich bin, nur 2
+Silber mehr"), statt des langen Erklärtextes. Gilt nur bei mehr als einer
+angehakten Einkaufsstadt, sortiert vom günstigsten: "Bridgewatch: 88 ✓,
+Martlock: 95 (+7), Lymhurst: 100 (+12), Caerleon: kein Preis". Basis ist der
+Preis ohne Einstellgebühr, eigene Preise zählen mit. Gleiches beim
+Verkaufserlös (bei mehr als einer Verkaufsstadt): Netto-Erlös je Stadt, bester
+zuerst, Abstand zur gewählten. `einkaufWaehlen`/`verkaufWaehlen` liefern dafür
+zusätzlich `alle`. Bei nur einer Stadt bleibt ein kurzer Tooltip. Tests 621/621.
 
 ## Nachtrag v3.10.1 (13.10.2026): Veredeln leveln, Darstellungsfixes
 

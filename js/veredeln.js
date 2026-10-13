@@ -421,6 +421,7 @@ const VEREDELN = (function () {
       return {
         stadt: h ? h.stadt : stadt,
         roh: h ? h.roh : null,
+        alle: h && h.alle ? h.alle : null,
         n: zt.item,
         stufe: zt.stufe,
         menge: zt.menge * kandidat.menge,
@@ -495,9 +496,11 @@ const VEREDELN = (function () {
    */
   function einkaufWaehlen(marktId, einkaufDaten, kaufweg, maxPreisAlterMin, jetzt) {
     let best = null;
+    const alle = [];
     (einkaufDaten || []).forEach((d) => {
       const e = d.preise && d.preise[marktId];
       const basis = einkaufsBasisPreis(e ? (kaufweg === "order" ? e.buy : e.sell) : null, maxPreisAlterMin, jetzt);
+      alle.push({ stadt: d.stadt, basis });
       if (basis != null && (!best || basis < best.basis)) best = { stadt: d.stadt, eintrag: e, basis };
     });
     if (!best) {
@@ -507,6 +510,7 @@ const VEREDELN = (function () {
     }
     const quelle = einkaufDaten.find((x) => x.stadt === best.stadt);
     best.roh = quelle && quelle.preiseRoh ? quelle.preiseRoh[marktId] || null : null;
+    best.alle = alle; // v3.10.2: Preis je angehakter Einkaufsstadt, fuer den Tooltip
     return best;
   }
 
@@ -518,12 +522,16 @@ const VEREDELN = (function () {
   function verkaufWaehlen(eintraege, opts) {
     let best = null;
     let erstes = null;
+    const alle = [];
     (eintraege || []).forEach(({ stadt, eintrag }) => {
       const erloes = REGELN.erloesJeStueck(eintrag, opts);
+      alle.push({ stadt, netto: erloes.netto });
       if (!erstes) erstes = { stadt, erloes };
       if (erloes.netto != null && (!best || erloes.netto > best.erloes.netto)) best = { stadt, erloes };
     });
-    return best || erstes;
+    const w = best || erstes;
+    if (w) w.alle = alle; // v3.10.2: Erloes je angehakter Verkaufsstadt, fuer den Tooltip
+    return w;
   }
 
   /**
@@ -601,6 +609,7 @@ const VEREDELN = (function () {
       const vkDaten = verkaufDaten.find((d) => d.stadt === vk.stadt) || {};
       const zeile = zeileBauen(k, fertigung, craft, vk.erloes, ((vkDaten.absatz || {})[k.marktId] || {})[1], Object.assign({}, auswahl, { herkunft }));
       zeile.vkStadt = vk.stadt;
+      zeile.vkAlle = vk.alle || null;
       return zeile;
     });
   }
@@ -654,6 +663,18 @@ const VEREDELN = (function () {
       })(),
       JSON.stringify(einstellungenBereinigen({ einkaufStaedte: ["Lymhurst", "Atlantis"], tiers: [4, 9] }))
     );
+
+    (function () {
+      const sp = (preis) => ({ X: { sell: { preis, kein: false, datum: "" }, buy: { kein: true } } });
+      const w = einkaufWaehlen("X", [{ stadt: "Lymhurst", preise: sp(102) }, { stadt: "Martlock", preise: sp(100) }, { stadt: "Thetford", preise: {} }], "sofort", null);
+      pruefe(
+        "einkaufWaehlen: liefert fuer den Tooltip den Preis jeder angehakten Stadt (v3.10.2)",
+        w.stadt === "Martlock" && w.alle.map((a) => a.stadt + ":" + a.basis).join() === "Lymhurst:102,Martlock:100,Thetford:null",
+        JSON.stringify(w.alle)
+      );
+      const v = verkaufWaehlen([{ stadt: "Lymhurst", eintrag: null }, { stadt: "Caerleon", eintrag: null }], { verkaufsweg: "sofort", premium: true });
+      pruefe("verkaufWaehlen: liefert alle Verkaufsstaedte fuer den Tooltip (v3.10.2)", v && v.alle && v.alle.length === 2, JSON.stringify(v && v.alle));
+    })();
 
     pruefe(
       "einstufen: Gewinn ab 0, etwa Null bis zur Toleranz, darunter Verlust",
@@ -1446,6 +1467,21 @@ const VEREDELN = (function () {
       return { preis, alter };
     }
 
+    // v3.10.2: Tooltip "Preis je Stadt". werte: [{stadt, wert}], gewaehlt = Stadt
+    // der Zeile; hoeherBesser: Verkauf (hoechster Erloes) statt Einkauf.
+    function staedteListe(werte, gewaehlt, hoeherBesser) {
+      const ref = (werte.find((w) => w.stadt === gewaehlt) || {}).wert;
+      return werte
+        .slice()
+        .sort((a, b) => (a.wert == null) - (b.wert == null) || (hoeherBesser ? b.wert - a.wert : a.wert - b.wert))
+        .map((w) => {
+          if (w.wert == null) return w.stadt + ": kein Preis";
+          const d = ref != null ? Math.round(w.wert - ref) : null;
+          return w.stadt + ": " + fmt(Math.round(w.wert)) + (w.stadt === gewaehlt ? "  ✓" : d ? "  (" + (d > 0 ? "+" : "") + fmt(d) + ")" : "  (gleich)");
+        })
+        .join("\n");
+    }
+
     function stadtSchild(stadt, titel) {
       return stadt ? "<span class='vd-stadt' title='" + esc(titel) + "'>" + esc(stadt) + "</span>" : "<span></span>";
     }
@@ -1462,10 +1498,9 @@ const VEREDELN = (function () {
           const herkunft = x.uebersteuert
             ? "Eigener Preis für " + x.stadt + (m.preis != null ? ", Markt: " + fmt(m.preis) + (alter ? " (" + alter + " alt)" : "") : ", kein Marktpreis")
             : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + " in " + x.stadt + (alter ? ", " + alter + " alt" : "");
-          const titel =
-            herkunft + ". " +
-            (order ? "Eingabe ist der Orderpreis; gerechnet wird mit 2,5 % Einstellgebühr obendrauf (" + fmt(x.preis) + "). " : "") +
-            "Klicken zum Überschreiben: ein eigener Preis gilt für diese Zutat in " + x.stadt + " in allen Zeilen, bleibt gespeichert und zählt bei der Wahl der günstigsten Stadt mit. Leer setzt zurück.";
+          const titel = kontext.mehrEk && x.alle && x.alle.length > 1
+            ? staedteListe(x.alle.map((a) => ({ stadt: a.stadt, wert: a.basis })), x.stadt, false) + "\n\nKlicken zum Überschreiben."
+            : herkunft + ". Klicken zum Überschreiben.";
           const wert = Math.round(x.basisPreis * 100) / 100;
           const feld =
             "<input type='number' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' min='1' step='1' value='" + wert + "'" +
@@ -1538,7 +1573,9 @@ const VEREDELN = (function () {
             "<td><div class='vd-produkt'>" + icon(z.item, 48, name) + "<div><div class='vd-pname'>" + esc(name) + "</div>" +
             "<div class='vd-klein'" + (tierTitel ? " title='" + esc(tierTitel) + "'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + "</div></div></div></td>" +
             "<td><div class='vd-zutaten" + (kontext.mehrEk ? "" : " ohne-stadt") + "'>" + zutatenHtml(z, kontext) + "</div></td>" +
-            "<td><div class='vd-erloes' title='Erlös je Stück nach Steuer" + (kontext.verkaufsweg === "order" ? " und 2,5 % Einstellgebühr" : "") + "'>" + fmt(z.erloes) + "</div>" +
+            "<td><div class='vd-erloes' title='" + esc(kontext.mehrVk && z.vkAlle && z.vkAlle.length > 1
+              ? "Erlös je Stück nach Steuer je Stadt:\n" + staedteListe(z.vkAlle.map((a) => ({ stadt: a.stadt, wert: a.netto })), z.vkStadt, true)
+              : "Erlös je Stück nach Steuer" + (kontext.verkaufsweg === "order" ? " und 2,5 % Einstellgebühr" : "")) + "'>" + fmt(z.erloes) + "</div>" +
             "<div class='vd-klein' title='" + esc(preisTitel) + "'>Preis " + fmt(z.produktPreis) + "</div>" +
             (kontext.mehrVk ? "<div>" + stadtSchild(z.vkStadt, "Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "</div>" : "") +
             handel + "</td>" +
