@@ -58,7 +58,8 @@ const UI = (function () {
       fokuswert: 0, // Silber je Fokuspunkt; 0 ist gueltig, verschiebt aber zu fokusintensiven Wegen
       // Globaler Fokus-Schalter oben im Kostenrechner (29.09.2026): true =
       // Rechnung komplett ohne Fokus (RECHENKERN opts.fokusAus). Gilt auch
-      // fuer "Schnelles Geld", das dieselben Einstellungen liest.
+      // nur fuer den Kostenrechner; "Craften: Gewinn" und "Veredeln leveln"
+      // haben je einen eigenen Fokus-Schalter.
       fokusAus: false,
       // Eigene Preise je Bauplan-Knoten (29.09.2026), "item@stufe[@qN]" ->
       // Silber je Stueck, s. RECHENKERN opts.preisUebersteuerungen. Dauerhaft
@@ -146,7 +147,7 @@ const UI = (function () {
    * gelten zu lassen.
    *
    * Seit 19.09.2026 auf Modulebene und als Parameterfunktion, damit der
-   * Reiter "Schnelles Geld" (js/chancen.js) mit exakt denselben FCE-Werten
+   * Reiter "Craften: Gewinn" (js/craften.js) und "Veredeln leveln" mit exakt denselben FCE-Werten
    * rechnet wie der Kostenrechner, statt die Logik zu kopieren.
    */
   function fceUeberschreibungenAus(einstellungen) {
@@ -198,7 +199,7 @@ const UI = (function () {
   // v3.9.1 (13.10.2026): der Tagesbonus gilt in allen Staedten gleich
   // (Nutzerbeleg, im Spiel beobachtet). Er ist deshalb EINE gemeinsame
   // Einstellung je craftingcategory (einstellungen.tagesbonus) fuer
-  // Kostenrechner, "Schnelles Geld" und "Veredeln leveln"; Abgleich zwischen
+  // Kostenrechner, "Craften: Gewinn" und "Veredeln leveln"; Abgleich zwischen
   // den Reitern wie bei den Stationssaetzen per Ereignis.
   const TAGESBONUS_EVENT = "albion:tagesbonus";
 

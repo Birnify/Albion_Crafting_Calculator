@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-13 · Version: v3.10.2 · Veredeln leveln: Preis je Stadt im Tooltip
+Stand: 2026-10-17 · Version: v3.11.0 · Reiter „Craften: Gewinn“ ersetzt „Schnelles Geld“
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -15,7 +15,7 @@ Stand: 2026-10-13 · Version: v3.10.2 · Veredeln leveln: Preis je Stadt im Tool
 **Seit v3.5.0 eine App mit fünf Bereichen** (v3.2.0 bis v3.4.1 vier, bis v3.1.11 drei) ("Albion Werkzeuge", sichtbarer
 Titel in der Oberfläche, Ordner-/Repo-Name bleibt bewusst `Kostenrechner`, s.
 Nutzer-Entscheidung unten): oben eine Reiterumschaltung
-(Kostenrechner/Eintopf-Rechner/Preisvergleich/Schnelles Geld/Veredeln leveln, `js/tabs.js`). Jeder Bereich
+(Kostenrechner/Eintopf-Rechner/Preisvergleich/Craften: Gewinn/Veredeln leveln, `js/tabs.js`; „Craften: Gewinn“ seit v3.11.0, vorher „Schnelles Geld“). Jeder Bereich
 bleibt fachlich eigenständig (eigener Rechenkern/eigener Zustand), das ist
 Architektur-Zusammenführung, keine inhaltliche Vermischung.
 
@@ -72,6 +72,44 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.11.0 (17.10.2026): Reiter „Craften: Gewinn“ ersetzt „Schnelles Geld“
+
+Sörens Urteil: „Schnelles Geld“ (ein Knoten, Einstellungen aus dem
+Kostenrechner, alle Qualitäten als eigene Zeilen) funktionierte nicht wie
+gewünscht. Neu: dieselbe Bedienung wie „Veredeln leveln“, ausgelegt auf
+Crafting. `js/chancen.js` gelöscht, `js/craften.js` neu.
+
+- **Auswahl:** Warengruppen (craftingcategory, nach Gebäude geordnet, ohne
+  Veredeln und Tierhaltung), Tier, Verzauberung, Schalter Artefakt-Items
+  (Artefakt oder Kristallisierter Geist wird dann wie Material gekauft).
+  Anzeige „N Produkte, etwa M Abrufe“, weil die API drosselt.
+- **Flach (Sörens Vorgabe):** direkte Zutaten werden gekauft, auf der Stufe
+  des Produkts; nie Hochverzaubern, nie Zwischenprodukte selbst craften.
+  Mehrere marktfähige Rezepte je Item und Stufe: das billigere zählt.
+  Rezepte mit nicht handelbarer Zutat (`nichtHandelbareKandidaten`) fallen weg.
+- **Rechnung:** Craft-Kandidat aus `RECHENKERN.kosten` mit
+  `nurDirekteEbene`; Stadtwahl je Zutat und Produkt, eigene Preise,
+  Höchstpreis, Zeile und Einstufung kommen unverändert aus `VEREDELN`.
+  Stadtbonus +0,15 über `REGELN.hatCraftBonus`. Tagesbonus, Stationssätze,
+  Premium: gemeinsame Einstellungen mit Kostenrechner und Veredeln-Reiter.
+  Vorgabe Einkauf Sofortkauf, Verkauf Verkaufsorder (Spielerprofil).
+- **Qualität (mein Vorschlag, umgesetzt):** Verkaufsorder = niedrigster
+  `sell_price_min` über alle Qualitäten (Käufer nimmt das billigste gleicher
+  oder besserer Qualität; nie höher als Normal). Sofortverkauf = höchste
+  Kauforder in Normal (eine Kauforder für höhere Qualität kann ein
+  Normal-Stück nicht bedienen; Annahme, nicht im Spiel geprüft). Volumen
+  standardmäßig Summe über alle Qualitäten, per Schalter nur Normal.
+  Bessere gewürfelte Qualität nicht eingerechnet. Neu in `js/preise.js`:
+  `preiseAlleQualitaetenAbrufen` (ein Abruf je 50 IDs mit
+  `qualities=1,2,3,4,5`, je Qualität abgelegt).
+- **Volumenfilter Pflicht:** „Mind. verkauft/Tag“ (Vorgabe 5), Zeilen ohne
+  erfassten Handel fallen heraus; Status nennt die Zahl ausgeblendeter
+  Gewinnzeilen. Spalte verkauft/Tag sortierbar.
+- Selbsttest **630/630** grün (vorher 621: Tests von `chancen.js` entfernt,
+  neue für `craften.js` und `preiseJeQualitaetAusAntwort`). Headless mit
+  synthetischen API-Antworten durchgeklickt (1440 und 390 px). Echter Abruf
+  aus der Cloud nicht möglich, prüft Sören im Browser.
 
 ## Nachtrag v3.10.2 (13.10.2026): Veredeln leveln, Preis je Stadt im Tooltip
 
@@ -350,12 +388,12 @@ Kostenrechner/
                               ITEM_NAMEN.alle, Live-Preise ueber alle Staedte/Qualitaeten,
                               eigener Realm/Retry/localStorage-Schluessel (bewusst kein
                               gemeinsamer Code mit preise.js), PREISVERGLEICH.selbsttest()
-    chancen.js                neu v3.2.0, Reiter "Schnelles Geld": Knotenliste je Gebaeude
-                              (aus REGELN.spezialisierungsGruppen), Kandidaten je Stufe und
-                              Qualitaet, Erloes nach Steuer/Einstellgebuehr, Absatz je Tag
-                              aus PREISE.absatzAbrufen, Filter und Sortierung,
-                              CHANCEN.selbsttest(); rechnet ueber RECHENKERN.kosten mit
-                              opts.nurDirekteEbene und den Einstellungen des Kostenrechners
+    craften.js                neu v3.11.0, Reiter "Craften: Gewinn" (ersetzt chancen.js /
+                              "Schnelles Geld", v3.2.0 bis v3.10.2): Warengruppen je Gebaeude,
+                              Craft-Kandidat je Item und Stufe ueber RECHENKERN.kosten mit
+                              nurDirekteEbene, Stadtwahl/eigene Preise/Hoechstpreis aus VEREDELN,
+                              Preise aller Qualitaeten (PREISE.preiseAlleQualitaetenAbrufen),
+                              Volumenfilter, CRAFTEN.selbsttest()
     eintopf-daten.js          neu v3.1.0, migriert aus eintopf_update.py (STEWS/SAUCE/FISH/
                               ITEM_VALUE, Rindfleischeintopf T8_MEAL_STEW), reine
                               Sprachumstellung Python->JS, keine Werteaenderung

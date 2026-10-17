@@ -89,7 +89,7 @@ const RECHENKERN = (function () {
       // Prozentpunkte), s. REGELN.rrr. 0 = unveraendertes Verhalten.
       zusatzProduktionsbonus: o.zusatzProduktionsbonus > 0 ? o.zusatzProduktionsbonus : 0,
       maxTiefe: o.maxTiefe || STANDARD_MAX_TIEFE,
-      // "Schnelles Geld"-Reiter (js/chancen.js, 19.09.2026): true = Zutaten
+      // Reiter "Craften: Gewinn" (js/craften.js, vorher "Schnelles Geld") und "Veredeln leveln": true = Zutaten
       // werden IMMER gekauft, nur der Wurzelknoten selbst darf gecraftet,
       // verzaubert oder hochgerollt werden. Das ist die Frage "was kostet mich
       // eine Charge, wenn ich das Material auf der direkten Ebene einkaufe" -

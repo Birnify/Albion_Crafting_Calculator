@@ -417,6 +417,51 @@ const PREISE = (function () {
     return ergebnis;
   }
 
+  /**
+   * Reiter "Craften: Gewinn" (v3.11.0): Preise einer Antwort mit
+   * qualities=1,2,3,4,5 nach Markt-ID UND Qualitaet ablegen. prices/ liefert
+   * dann eine Zeile je Qualitaet (CLAUDE.md, API-Abschnitt); preiseAbrufen()
+   * legt nur nach Markt-ID ab und wuerde die Qualitaeten gegenseitig
+   * ueberschreiben. Rein, offline testbar.
+   * @returns {Object<string, Object<number, object>>} id -> qualitaet(1..5) -> Eintrag wie preiseAbrufen()
+   */
+  function preiseJeQualitaetAusAntwort(zeilen) {
+    const out = {};
+    (zeilen || []).forEach((zeile) => {
+      if (!zeile || !zeile.item_id) return;
+      const q = Number(zeile.quality) || 1;
+      if (!out[zeile.item_id]) out[zeile.item_id] = {};
+      out[zeile.item_id][q] = normalisierePreisZeile(zeile);
+    });
+    return out;
+  }
+
+  /**
+   * Preise in allen fuenf Qualitaeten, ein Abruf je 50er-Block (dieselbe
+   * Anzahl Anfragen wie preiseAbrufen, nur groessere Antworten). Immer frisch,
+   * ohne Zwischenspeicher, gleiche Drossel-Disziplin.
+   * @returns {Promise<Object<string, Object<number, object>>>} id -> qualitaet -> Eintrag ({} = nichts geliefert)
+   */
+  async function preiseAlleQualitaetenAbrufen(ids, opts) {
+    opts = opts || {};
+    const stadt = opts.stadt || STADT_DEFAULT;
+    const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
+    const eindeutigeIds = Array.from(new Set(ids));
+    const ergebnis = {};
+    let erledigt = 0;
+    aufFortschritt(erledigt, eindeutigeIds.length);
+    for (const block of bloecke(eindeutigeIds, BLOCKGROESSE)) {
+      const teil = preiseJeQualitaetAusAntwort(await holeBlock(block, stadt, "1,2,3,4,5"));
+      block.forEach((id) => {
+        ergebnis[id] = teil[id] || {};
+      });
+      erledigt += block.length;
+      aufFortschritt(erledigt, eindeutigeIds.length);
+      await warte(PAUSE_MS);
+    }
+    return ergebnis;
+  }
+
   // ---------------------------------------------------------------------
   // Handelsvolumen (history/-Endpunkt) als Zusatzsignal bei gesperrten
   // Kaufen-Knoten (Zyklus "history/-Handelsvolumen als Zusatzsignal bei
@@ -616,7 +661,7 @@ const PREISE = (function () {
   }
 
   // ---------------------------------------------------------------------
-  // Absatz je Qualitaet (Reiter "Schnelles Geld", js/chancen.js, 19.09.2026)
+  // Absatz je Qualitaet (Reiter "Schnelles Geld" 19.09.2026, seit v3.11.0 "Craften: Gewinn", js/craften.js)
   //
   // Unterschied zu volumenAbrufen() oben: dort wird je Markt-ID EIN Wert
   // gefuehrt (7-Tage-Summe), und weil history/ pro Item MEHRERE Zeilen
@@ -1069,6 +1114,8 @@ const PREISE = (function () {
     sammleMarktIds,
     sammleQualitaetsMarktIds,
     preiseAbrufen,
+    preiseJeQualitaetAusAntwort,
+    preiseAlleQualitaetenAbrufen,
     preisCacheLesen,
     preisCacheLeeren,
     eintragAlterMinuten,

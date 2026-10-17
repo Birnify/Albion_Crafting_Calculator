@@ -172,7 +172,7 @@ der Zeit oder gar nicht; Wartezeit und Ausfallrisiko sind nicht modelliert.
 - **`item_count` ist eine Untergrenze, kein amtlicher Absatz.** Gemeldet wird
   nur, was Spieler mit laufendem Data-Client gesehen haben (s. auch "Bekannte
   Grenze" unten). Jede Oberfläche, die die Zahl zeigt, muss das so benennen;
-  der Reiter „Schnelles Geld" schreibt deshalb „verkauft/Tag" und nicht
+  die Reiter „Craften: Gewinn" und „Veredeln leveln" schreiben deshalb „verkauft/Tag" und nicht
   „Absatz".
 - Zeitstempel sind **UTC**. Umrechnung in Ortszeit gehört in den Browser.
 - Die API **drosselt aggressiv** (HTTP 429). Anfragen sequenziell mit ~1,5 s Pause
@@ -845,7 +845,7 @@ dort) - der Git-Commit bleibt dort trotzdem Pflicht.
 | `AUDIT-2026-09-13.md` | Code-Audit gegen das offizielle Wiki, mit Umsetzungsstatus je Befund |
 | `EINTOPF-KONTEXT-ARCHIV.md` | Historische Fachdokumentation des archivierten, eigenständigen Eintopf-Rechners; weiterhin die Quelle für `js/eintopf-*.js` |
 | `Kostenrechner.html`, `js/*.js` | Die App |
-| `js/chancen.js` | Reiter „Schnelles Geld": lohnende Crafts je Schicksalsbrett-Knoten |
+| `js/craften.js` | Reiter „Craften: Gewinn" (seit v3.11.0, ersetzt „Schnelles Geld"): lohnende Crafts aus eingekauftem Material, mit Volumenfilter |
 | `js/veredeln.js` | Reiter „Veredeln leveln": Veredeln mit Gewinn oder etwa Null; Einkaufs- und Verkaufsstädte mehrfach, eine Fertigungsstadt (seit v3.10.0) |
 | `rezepte.js`, `item-namen.js` | Von `build_graph.py` erzeugt, nicht von Hand bearbeiten |
 | `build_graph.py` | Erzeugt `rezepte.js`/`item-namen.js` neu, braucht den Client-Dump |
