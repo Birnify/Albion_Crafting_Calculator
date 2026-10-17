@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-17 · Version: v3.11.0 · Reiter „Craften: Gewinn“ ersetzt „Schnelles Geld“
+Stand: 2026-10-17 · Version: v3.12.0 · Craften: Gewinn mit Einkaufsliste
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,26 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.12.0 (17.10.2026): Craften: Gewinn, Zähler und Einkaufsliste
+
+Wunsch von Sören: am Produkt einen Zähler hochdrücken, darunter eine
+Einkaufsliste der Zutaten für die gewünschte Anzahl, vor Rückgewinnung, mit
+Kopierknopf je Zutatenname.
+
+- Zähler (− Zahl +) je Zeile unter dem Produktnamen; Schritt = Ausbeute je
+  Vorgang (Speisen 10). Gespeichert im Reiter-Speicher als `plan`
+  (Markt-ID → Stück), bleibt über Suchen und Neuladen erhalten.
+- Einkaufsliste unter der Tabelle (`CRAFTEN.einkaufsliste`, rein): Menge =
+  Menge je Vorgang × ganze Vorgänge, ohne Rückgewinnung abzuziehen; gleiche
+  Zutat verschiedener Produkte je Einkaufsstadt zusammengezählt; Preis ohne
+  Einstellgebühr, Kosten mit angesetztem Stückpreis, Summe. Geplante
+  Produkte als Schilder mit ×; Produkte außerhalb der aktuellen Suche werden
+  genannt und lassen sich entfernen.
+- „Kopieren“ je Zutat (Zwischenablage, Rückfall `execCommand`), „Alles
+  kopieren“ (Menge Tab Name je Zeile), „Liste leeren“.
+- Selbsttest **633/633** grün (3 neu). Headless mit synthetischen Preisen
+  geklickt, Zwischenablage geprüft.
 
 ## Nachtrag v3.11.0 (17.10.2026): Reiter „Craften: Gewinn“ ersetzt „Schnelles Geld“
 

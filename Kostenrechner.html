@@ -229,6 +229,24 @@ tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
 #tab-craften .vd-tag-raster{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
 #tab-craften label.cg-tag-feld{display:flex;flex-direction:column;gap:4px;margin:0;font-size:12px;font-weight:600;color:var(--dim);text-transform:none;letter-spacing:0}
 .cg-umfang{font-size:12px;color:var(--dim)}
+.cg-zaehler{display:inline-flex;align-items:center;margin-top:6px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2)}
+.cg-zaehler.an{border-color:var(--gold)}
+#tab-craften button.cg-zb{width:26px;height:26px;padding:0;border:0;border-radius:var(--r);background:transparent;color:var(--gold);font:800 15px/26px "Manrope",sans-serif}
+#tab-craften button.cg-zb:hover{background:var(--accent-soft);filter:none}
+#tab-craften input.cg-zn{width:44px;min-height:26px;padding:0 2px;border:0;background:transparent;color:var(--text);font:700 13px "Manrope",sans-serif;text-align:center;-moz-appearance:textfield;box-shadow:none}
+#tab-craften input.cg-zn::-webkit-inner-spin-button,#tab-craften input.cg-zn::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.cg-einkaufsliste{margin-top:16px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.cg-el-kopf{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px}
+.cg-el-knoepfe{margin-left:auto;display:flex;gap:8px}
+.cg-plan{display:flex;flex-wrap:wrap;gap:8px}
+.cg-plan-produkt{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 14px 4px 6px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2);font-size:13px;font-weight:600}
+#tab-craften button.cg-plan-weg{top:-7px;right:-7px}
+#tab-craften table.cg-el-tabelle{min-width:560px}
+.cg-el-tabelle tfoot td{font-weight:800;border-top:1px solid var(--line);padding:10px 12px}
+.cg-el-name{display:flex;align-items:center;gap:10px}
+.cg-el-name>span{font-weight:600}
+#tab-craften button.cg-kopie{padding:2px 8px;font-size:11px}
+#tab-craften button.cg-kopie.ok{color:var(--good);border-color:var(--good)}
 .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;
       white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
 .pill.good{background:var(--good-bg);color:var(--good)}
@@ -1117,6 +1135,8 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 
 <div class="vd-ergebnis" id="cgAusgabe"><div class="vd-leer">Auswahl treffen und „Gelegenheiten suchen“.</div></div>
 
+<div class="vd-ergebnis cg-einkaufsliste" id="cgEinkaufsliste" hidden></div>
+
 </div><!-- /tab-craften -->
 
 <div id="tab-veredeln" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-veredeln" style="display:none">
@@ -1201,20 +1221,20 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 
 </div>
 
-<script src="rezepte.js?v=3.11.0"></script>
-<script src="item-namen.js?v=3.11.0"></script>
-<script src="js/preise.js?v=3.11.0"></script>
-<script src="js/regeln.js?v=3.11.0"></script>
-<script src="js/rechenkern.js?v=3.11.0"></script>
-<script src="js/ui.js?v=3.11.0"></script>
-<script src="js/eintopf-daten.js?v=3.11.0"></script>
-<script src="js/eintopf-preise.js?v=3.11.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.11.0"></script>
-<script src="js/eintopf-ui.js?v=3.11.0"></script>
-<script src="js/tabs.js?v=3.11.0"></script>
-<script src="js/preisvergleich.js?v=3.11.0"></script>
-<script src="js/veredeln.js?v=3.11.0"></script>
-<script src="js/craften.js?v=3.11.0"></script>
+<script src="rezepte.js?v=3.12.0"></script>
+<script src="item-namen.js?v=3.12.0"></script>
+<script src="js/preise.js?v=3.12.0"></script>
+<script src="js/regeln.js?v=3.12.0"></script>
+<script src="js/rechenkern.js?v=3.12.0"></script>
+<script src="js/ui.js?v=3.12.0"></script>
+<script src="js/eintopf-daten.js?v=3.12.0"></script>
+<script src="js/eintopf-preise.js?v=3.12.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.12.0"></script>
+<script src="js/eintopf-ui.js?v=3.12.0"></script>
+<script src="js/tabs.js?v=3.12.0"></script>
+<script src="js/preisvergleich.js?v=3.12.0"></script>
+<script src="js/veredeln.js?v=3.12.0"></script>
+<script src="js/craften.js?v=3.12.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,
