@@ -156,6 +156,21 @@ const CRAFTEN = (function () {
     return effektiv > 0 ? item + "@" + effektiv : item;
   }
 
+  /**
+   * Suchtext fuer die Marktsuche im Spiel: "Name 4.2" (Tier.Verzauberung),
+   * auch "4.0". Alle Verzauberungsstufen heissen gleich, die Albion-Suche
+   * findet die Variante nur mit der Stufe dahinter (Screenshot Soeren,
+   * 17.10.2026: "Verfluchter Stab des Adepten 4.3"). Ohne Tier-Praefix
+   * bleibt der Name unveraendert.
+   */
+  function suchName(name, item, stufe, graph) {
+    const t = /^T(\d)_/.exec(String(item || ""));
+    if (!t) return name;
+    const g = aktuellerGraph(graph);
+    const node = (g && g.items && g.items[item]) || {};
+    return name + " " + t[1] + "." + (node.el ? node.el : stufe || 0);
+  }
+
   /** Artefakt oder dessen Ersatz (Kristallisierter Geist, ARTEFACT_TOKEN_FAVOR). */
   function istArtefakt(id) {
     return /_ARTEFACT_/.test(id);
@@ -711,6 +726,15 @@ const CRAFTEN = (function () {
           Math.abs(l.summe - (68 * 100 + 24 * 200 + 12 * 50 + 144 * 30)) < 1e-9,
         JSON.stringify(l.posten.map((p) => p.marktId + ":" + p.menge)) + " / " + l.summe
       );
+      const gs = { items: { T5_X_LEVEL2: { el: 2 } } };
+      pruefe(
+        "suchName: Name mit Tier.Verzauberung, auch .0, Eigenstufe des Knotens zaehlt",
+        suchName("Breitschwert", "T5_MAIN_SWORD", 2, gs) === "Breitschwert 5.2" &&
+          suchName("Breitschwert", "T5_MAIN_SWORD", 0, gs) === "Breitschwert 5.0" &&
+          suchName("Planke", "T5_X_LEVEL2", 0, gs) === "Planke 5.2" &&
+          suchName("Ohne", "QUESTITEM_X", 1, gs) === "Ohne",
+        suchName("Breitschwert", "T5_MAIN_SWORD", 2, gs)
+      );
       pruefe(
         "einkaufslisteText: Menge und Name je Zeile, tabgetrennt",
         einkaufslisteText({ posten: [barren] }, (n) => n + "-Name") === "68\tBARREN-Name",
@@ -1077,7 +1101,7 @@ const CRAFTEN = (function () {
         return;
       }
       if (ev.target.closest("button[data-cg-alle-kopieren]")) {
-        kopieren(einkaufslisteText(einkaufsliste(letzteZeilen ? letzteZeilen.zeilen : [], auswahl.plan), nameVon), ev.target.closest("button"));
+        kopieren(einkaufslisteText(einkaufsliste(letzteZeilen ? letzteZeilen.zeilen : [], auswahl.plan), (n, st) => suchName(nameVon(n, st), n, st)), ev.target.closest("button"));
         return;
       }
       const weg = ev.target.closest("button[data-cg-weg]");
@@ -1310,7 +1334,7 @@ const CRAFTEN = (function () {
           const name = nameVon(x.n, x.stufe);
           return (
             "<tr><td><div class='cg-el-name'>" + icon(x.n, 30, name) + "<span>" + esc(name) + "</span>" +
-            "<button type='button' class='mini cg-kopie' data-cg-kopie='" + esc(name) + "' title='Namen kopieren, zum Einfügen in die Marktsuche'>Kopieren</button></div></td>" +
+            "<button type='button' class='mini cg-kopie' data-cg-kopie='" + esc(suchName(name, x.n, x.stufe)) + "' title='„" + esc(suchName(name, x.n, x.stufe)) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button></div></td>" +
             "<td class='num'>" + Math.round(x.menge).toLocaleString("de-DE") + "</td>" +
             (mehrEk ? "<td>" + stadtSchild(x.stadt, "Günstigste angehakte Einkaufsstadt. " + TRANSPORT) + "</td>" : "") +
             "<td class='num'>" + (x.basisPreis != null ? fmt(x.basisPreis) : "k. A.") + "</td>" +
@@ -1326,7 +1350,7 @@ const CRAFTEN = (function () {
       listeEl.innerHTML =
         "<div class='cg-el-kopf'><h2 class='vd-kt'>Einkaufsliste</h2>" +
         "<span class='vd-klein' title='Mengen, die für die geplanten Crafts im Inventar liegen müssen. Die Rückgewinnung gibt einen Teil davon nach dem Craften zurück; die Kosten in der Tabelle oben sind deshalb niedriger.'>vor Rückgewinnung</span>" +
-        "<span class='cg-el-knoepfe'><button type='button' class='mini' data-cg-alle-kopieren='1' title='Alle Zeilen als „Menge Name“ kopieren'>Alles kopieren</button>" +
+        "<span class='cg-el-knoepfe'><button type='button' class='mini' data-cg-alle-kopieren='1' title='Alle Zeilen als „Menge Name 4.1“ kopieren'>Alles kopieren</button>" +
         "<button type='button' class='mini' data-cg-leeren='1'>Liste leeren</button></span></div>" +
         "<div class='cg-plan'>" + produkte + "</div>" + fehlt +
         (liste.posten.length
@@ -1364,7 +1388,8 @@ const CRAFTEN = (function () {
             ". Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.";
           return (
             "<tr class='" + klasse + "'>" +
-            "<td><div class='vd-produkt'>" + icon(marktIdVon(z.item, z.stufe), 48, name) + "<div><div class='vd-pname'>" + esc(name) + "</div>" +
+            "<td><div class='vd-produkt'>" + icon(marktIdVon(z.item, z.stufe), 48, name) + "<div><div class='vd-pname'>" + esc(name) +
+            " <button type='button' class='mini cg-kopie' data-cg-kopie='" + esc(suchName(name, z.item, z.stufe)) + "' title='„" + esc(suchName(name, z.item, z.stufe)) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button></div>" +
             "<div class='vd-klein'" + (tierTitel ? " title='" + esc(tierTitel) + "'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + (z.stadtbonus ? " · Stadtbonus" : "") + "</div>" +
             zaehlerHtml(z, name) + "</div></div></td>" +
             "<td><div class='vd-zutaten" + (kontext.mehrEk ? "" : " ohne-stadt") + "'>" + zutatenHtml(z, kontext) + "</div></td>" +
@@ -1543,6 +1568,7 @@ const CRAFTEN = (function () {
     filtereUndSortiere,
     planBereinigen,
     einkaufsliste,
+    suchName,
     einkaufslisteText,
     selbsttest,
   };

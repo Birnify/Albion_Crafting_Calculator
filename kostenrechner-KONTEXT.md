@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-17 · Version: v3.12.1 · Preisvergleich: Qualität auch bei verzauberten Items
+Stand: 2026-10-17 · Version: v3.12.2 · Craften: Gewinn: Kopierknopf am Produkt, Suchtext mit Stufe
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,16 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.12.2 (17.10.2026): Craften: Gewinn, Kopieren mit Stufe
+
+- Kopierknopf jetzt auch neben jedem Produktnamen in der Tabelle.
+- Alle Kopierknöpfe des Reiters (Produkt, Zutat, „Alles kopieren“) hängen
+  „ Tier.Verzauberung“ an, auch „.0“: `CRAFTEN.suchName()`. Grund: alle
+  Verzauberungsstufen heißen gleich, die Albion-Marktsuche findet die
+  Variante nur mit der Stufe (Screenshot Sören: „Verfluchter Stab des
+  Adepten 4.3“). Ob die Suche „4.0“ ebenso auswertet, ist nicht geprüft.
+- Selbsttest 638/638.
 
 ## Nachtrag v3.12.1 (17.10.2026): Preisvergleich, Qualität bei .1 bis .4
 
