@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-17 · Version: v3.12.0 · Craften: Gewinn mit Einkaufsliste
+Stand: 2026-10-17 · Version: v3.12.1 · Preisvergleich: Qualität auch bei verzauberten Items
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,17 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.12.1 (17.10.2026): Preisvergleich, Qualität bei .1 bis .4
+
+Wunsch von Sören: je hinzugefügtem Item die Qualitätsstufe wählen. Die
+Auswahl gab es seit v3.0.0, sie fehlte aber bei allen verzauberten
+Varianten: `item-namen.js` führt `T4_BAG@1` bis `@4` ohne `q`-Merker, und
+der Rezeptgraph kennt keine @-IDs. `istQualifizierbar()` prüft jetzt die
+Grund-ID ohne `@n`. Zusätzlich zeigt der Reiter die Stufe (z. B. „4.2“)
+hinter dem Namen, in Vorschlägen und Kopf, weil alle Verzauberungsstufen
+im Dump denselben Namen tragen. Qualität bleibt je Eintrag gespeichert,
+Vorgabe Normal. Selbsttest **637/637** grün (4 neu).
 
 ## Nachtrag v3.12.0 (17.10.2026): Craften: Gewinn, Zähler und Einkaufsliste
 

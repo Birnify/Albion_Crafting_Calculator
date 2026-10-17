@@ -69,7 +69,25 @@ const PREISVERGLEICH = (function () {
   // Knotenfeld mq aus rezepte.js, sonst q-Merker aus item-namen.js, beide
   // aus @maxqualitylevel des Dumps). Ohne geladenes regeln.js bleibt der
   // q-Merker allein massgeblich.
-  function istQualifizierbar(id) {
+  // Verzauberte Varianten tragen im Namensdump die Endung @1 bis @4, aber
+  // keinen eigenen q-Merker und keinen Knoten im Rezeptgraphen. Die
+  // Qualitaet haengt nicht an der Verzauberung, deshalb zaehlt die Grund-ID
+  // (Bugfix v3.12.1: vorher fehlte die Auswahl bei .1 bis .4).
+  function basisId(id) {
+    return String(id || "").replace(/@\d+$/, "");
+  }
+
+  // Stufe als "4.1" aus Tier-Praefix und @-Endung, damit gleichnamige
+  // Verzauberungsstufen unterscheidbar sind. Ohne Tier-Praefix: "".
+  function stufeVon(id) {
+    const t = /^T(\d)_/.exec(String(id || ""));
+    if (!t) return "";
+    const v = /@(\d+)$/.exec(id);
+    return t[1] + "." + (v ? v[1] : "0");
+  }
+
+  function istQualifizierbar(idRoh) {
+    const id = basisId(idRoh);
     if (typeof REGELN !== "undefined" && REGELN.istQualifizierbarId) {
       const bekannt =
         (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.items && REZEPTGRAPH.items[id]) ||
@@ -335,7 +353,7 @@ const PREISVERGLEICH = (function () {
         return;
       }
       vorschlaegeEl.innerHTML = treffer.length
-        ? treffer.map((it) => `<div data-id="${it.id}">${it.n}<span class="hint"> · ${it.id}</span></div>`).join("")
+        ? treffer.map((it) => `<div data-id="${it.id}">${it.n}${stufeVon(it.id) ? " " + stufeVon(it.id) : ""}<span class="hint"> · ${it.id}</span></div>`).join("")
         : '<div class="leer">Keine Treffer</div>';
       vorschlaegeEl.style.display = "block";
     }
@@ -397,7 +415,7 @@ const PREISVERGLEICH = (function () {
             .join("");
           return (
             `<div class="pv-item">` +
-            `<div class="pv-item-head"><strong>${name}</strong>${cpBtn(name)}${qualWahl}` +
+            `<div class="pv-item-head"><strong>${name}${stufeVon(a.id) ? " " + stufeVon(a.id) : ""}</strong>${cpBtn(name)}${qualWahl}` +
             `<button type="button" class="mini" data-entf="${a.id}">Entfernen</button></div>` +
             (!sichtbareStaedte.length
               ? '<div class="hint">Keine Stadt ausgewählt. Oben mindestens eine Stadt anhaken.</div>'
@@ -496,6 +514,10 @@ const PREISVERGLEICH = (function () {
     pruefe("istQualifizierbar(T8_FURNITUREITEM_BED) === false (Moebel, maxqualitylevel fehlt)", istQualifizierbar("T8_FURNITUREITEM_BED") === false);
     pruefe("istQualifizierbar(T4_2H_TOOL_PICK) === false (Werkzeug, maxqualitylevel 1)", istQualifizierbar("T4_2H_TOOL_PICK") === false);
     pruefe("istQualifizierbar(T3_MOUNT_HORSE) === true (Reittier, maxqualitylevel 5)", istQualifizierbar("T3_MOUNT_HORSE") === true);
+    pruefe("istQualifizierbar(T4_HEAD_CLOTH_SET1@1) === true (verzauberte Ausruestung, Bugfix v3.12.1)", istQualifizierbar("T4_HEAD_CLOTH_SET1@1") === true);
+    pruefe("istQualifizierbar(T4_BAG@4) === true (verzauberte Tasche)", istQualifizierbar("T4_BAG@4") === true);
+    pruefe("istQualifizierbar(T4_PLANKS_LEVEL1@1) === false, verzauberter Rohstoff bleibt ohne Qualitaet", istQualifizierbar("T4_PLANKS_LEVEL1@1") === false);
+    pruefe("stufeVon(): T4_BAG = 4.0, T4_BAG@3 = 4.3, ohne Tier leer", stufeVon("T4_BAG") === "4.0" && stufeVon("T4_BAG@3") === "4.3" && stufeVon("UNIQUE_X") === "");
     pruefe("istQualifizierbar(UNBEKANNT) === false (unbekannte ID)", istQualifizierbar("GIBT_ES_NICHT_XYZ") === false);
 
     const treffer = sucheTreffer("Kürbis", []);
@@ -585,6 +607,7 @@ const PREISVERGLEICH = (function () {
     selbsttest,
     nameVon,
     istQualifizierbar,
+    stufeVon,
     sucheTreffer,
     baueUrl,
     zeilenVerarbeiten,
