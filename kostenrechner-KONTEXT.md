@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-17 · Version: v3.12.2 · Craften: Gewinn: Kopierknopf am Produkt, Suchtext mit Stufe
+Stand: 2026-10-17 · Version: v3.13.0 · Preisvergleich mit Handelsvolumen je Stadt
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,19 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.13.0 (17.10.2026): Preisvergleich, Handelsvolumen je Stadt
+
+Wunsch von Sören: je Item und Stadt das Handelsvolumen gesamt. Neue Spalte
+„verkauft/Tag“: erfasster Handel aus `history/` (`time-scale=24`, alle
+Städte in einem Abruf je 50 Items), Mittel der letzten 7 Tage, Summe über
+alle Qualitäten (gleiche Lesart wie „Craften: Gewinn“, dort ebenfalls
+Standard). Tooltip der Zahl schlüsselt je Qualität auf. Preise erscheinen
+zuerst, das Volumen folgt im zweiten Durchgang. Eigener Code in
+`preisvergleich.js` (`volumenAusHistorie`, `volumenSumme`,
+`baueHistorieUrl`), weiterhin ohne gemeinsamen Code mit `preise.js`.
+Selbsttest **644/644** grün (6 neu). Headless mit synthetischen Antworten
+geprüft; die echte API ist aus der Cloud nicht erreichbar.
 
 ## Nachtrag v3.12.2 (17.10.2026): Craften: Gewinn, Kopieren mit Stufe
 

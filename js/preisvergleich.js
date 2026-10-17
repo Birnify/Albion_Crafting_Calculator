@@ -51,6 +51,10 @@ const PREISVERGLEICH = (function () {
   let auswahl = []; // [{id, q}], q = gewaehlte Qualitaet 1..5
   let daten = {}; // daten[itemId][stadt][qualitaet] = {sell,sellDate,buy,buyDate}
   let sichtbareStaedte = STAEDTE.slice(); // Anzeige-Filter; abgerufen werden immer alle
+  // v3.13.0: erfasster Handel je Tag, volumen[itemId][stadt][qualitaet] =
+  // Stueck je Tag (Mittel der letzten TAGE_FENSTER Tage, history/-Endpunkt).
+  let volumen = {};
+  const TAGE_FENSTER = 7; // wie "Craften: Gewinn" und "Veredeln leveln"
 
   // -----------------------------------------------------------------------
   // Reine Hilfsfunktionen (ohne DOM), einzeln testbar - s. tests/test.html
@@ -132,11 +136,20 @@ const PREISVERGLEICH = (function () {
    * Baut die Tabellenzeilen eines Items fuer die sichtbaren Staedte und
    * markiert die guenstigste Verkaufsorder NUR unter diesen Staedten.
    */
-  function tabellenZeilen(jeStadt, qualitaet, staedte) {
+  function tabellenZeilen(jeStadt, qualitaet, staedte, volJeStadt) {
     const je = jeStadt || {};
+    const vol = volJeStadt || {};
     const zeilen = (staedte || []).map((stadt) => {
       const e = (je[stadt] || {})[qualitaet] || null;
-      return { stadt, sell: (e && e.sell) || 0, sellDate: (e && e.sellDate) || "", buy: (e && e.buy) || 0, buyDate: (e && e.buyDate) || "" };
+      return {
+        stadt,
+        sell: (e && e.sell) || 0,
+        sellDate: (e && e.sellDate) || "",
+        buy: (e && e.buy) || 0,
+        buyDate: (e && e.buyDate) || "",
+        vol: volumenSumme(vol[stadt]),
+        volJeQ: vol[stadt] || null,
+      };
     });
     const sells = zeilen.filter((z) => z.sell).map((z) => z.sell);
     const minSell = sells.length ? Math.min(...sells) : null;
@@ -144,6 +157,48 @@ const PREISVERGLEICH = (function () {
       z.best = !!z.sell && z.sell === minSell;
     });
     return zeilen;
+  }
+
+  // Datum der API ohne Zonenangabe ist UTC (s. CLAUDE.md).
+  function parseUtc(datum) {
+    if (!datum) return NaN;
+    const s = String(datum);
+    return Date.parse(/[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z");
+  }
+
+  /**
+   * Wertet rohe history/-Zeilen (item_id, location, quality, data[]) zu
+   * Stueck je Tag aus: Summe von item_count der letzten `tage` Tage, geteilt
+   * durch die volle Fensterbreite (Tage ohne Handel zaehlen als 0), gleiche
+   * Lesart wie PREISE.normalisiereAbsatzZeile fuer "Craften: Gewinn".
+   * history/ liefert je Qualitaet eine eigene Zeile und ignoriert den
+   * Parameter qualities, deshalb nach Qualitaet getrennt abgelegt.
+   * Rein, ohne Netz testbar.
+   */
+  function volumenAusHistorie(rows, tage, jetzt, ziel) {
+    const out = ziel || {};
+    const fenster = tage > 0 ? tage : TAGE_FENSTER;
+    const bis = jetzt == null ? Date.now() : jetzt;
+    const von = bis - fenster * 86400000;
+    (rows || []).forEach((z) => {
+      if (!z || !z.item_id || !z.location) return;
+      const daten = Array.isArray(z.data) ? z.data : [];
+      const summe = daten.reduce((a, x) => {
+        const t = parseUtc(x && x.timestamp);
+        return isFinite(t) && t >= von && t <= bis ? a + (x.item_count || 0) : a;
+      }, 0);
+      out[z.item_id] = out[z.item_id] || {};
+      out[z.item_id][z.location] = out[z.item_id][z.location] || {};
+      out[z.item_id][z.location][z.quality || 1] = summe / fenster;
+    });
+    return out;
+  }
+
+  /** Summe ueber alle Qualitaeten einer Stadt; null = nichts erfasst. */
+  function volumenSumme(jeQ) {
+    if (!jeQ) return null;
+    const werte = Object.values(jeQ).filter((v) => isFinite(v));
+    return werte.length ? werte.reduce((a, v) => a + v, 0) : null;
   }
 
   function bloecke(arr, n) {
@@ -203,8 +258,11 @@ const PREISVERGLEICH = (function () {
   // (s. Kommentar am Dateianfang).
   // -----------------------------------------------------------------------
 
-  async function holeBlockMitRetry(block, staedte) {
-    const url = baueUrl(block, staedte, ALLE_QUALITAETEN);
+  function holeBlockMitRetry(block, staedte) {
+    return holeMitRetry(baueUrl(block, staedte, ALLE_QUALITAETEN));
+  }
+
+  async function holeMitRetry(url) {
     let letzterFehler = null;
     for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
       try {
@@ -223,12 +281,32 @@ const PREISVERGLEICH = (function () {
     throw letzterFehler || new Error("Abruf fehlgeschlagen");
   }
 
-  async function preiseAbrufen(ids, staedte) {
+  function baueHistorieUrl(ids, staedte) {
+    const orte = staedte.join(",").replace(/ /g, "%20");
+    return `${API_BASE}/history/${ids.join(",")}.json?locations=${orte}&time-scale=24`;
+  }
+
+  // Preise und danach Handelsvolumen. renderZwischendurch zeigt die Preise,
+  // bevor der langsamere history/-Abruf fertig ist.
+  async function preiseAbrufen(ids, staedte, renderZwischendurch) {
     let fehlgeschlagen = 0;
     for (const block of bloecke(ids, BLOCKGROESSE)) {
       try {
         const zeilen = await holeBlockMitRetry(block, staedte);
         zeilenVerarbeiten(zeilen, daten);
+      } catch (e) {
+        fehlgeschlagen++;
+      }
+      await warte(PAUSE_MS);
+    }
+    if (renderZwischendurch) renderZwischendurch();
+    for (const block of bloecke(ids, BLOCKGROESSE)) {
+      try {
+        const zeilen = await holeMitRetry(baueHistorieUrl(block, staedte));
+        // Alte Werte der abgerufenen Items verwerfen, sonst bleiben Tage
+        // stehen, die inzwischen aus dem Fenster gefallen sind.
+        block.forEach((id) => (volumen[id] = {}));
+        volumenAusHistorie(zeilen, TAGE_FENSTER, null, volumen);
       } catch (e) {
         fehlgeschlagen++;
       }
@@ -332,6 +410,15 @@ const PREISVERGLEICH = (function () {
       else fallback();
     }
 
+    const nf1 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
+    // Unter 10 Stueck je Tag mit einer Nachkommastelle, sonst ganzzahlig.
+    const stueck = (v) => (v < 10 ? nf1.format(v) : nf.format(Math.round(v)));
+    function volTitel(jeQ) {
+      if (!jeQ) return "";
+      const teile = [1, 2, 3, 4, 5].filter((q) => jeQ[q] > 0).map((q) => `${QUAL_NAMEN[q]}: ${stueck(jeQ[q])}`);
+      return teile.length ? ` title="${teile.join(" · ")}"` : "";
+    }
+
     const cpBtn = (text) => `<button class="cp" type="button" data-cp="${String(text).replace(/"/g, "&quot;")}" title="Namen kopieren">⧉</button>`;
 
     document.addEventListener(
@@ -363,7 +450,7 @@ const PREISVERGLEICH = (function () {
       auswahl.push({ id, q: 1 });
       auswahlSpeichern();
       render();
-      preiseAbrufen([id], STAEDTE).then(render);
+      preiseAbrufen([id], STAEDTE, render).then(render);
     }
 
     function entfernen(id) {
@@ -398,7 +485,8 @@ const PREISVERGLEICH = (function () {
           const je = daten[a.id] || {};
           // Ohne Qualitaetsstufen gilt immer Normal (1), auch wenn aus einer
           // frueheren Version noch eine andere Stufe gespeichert ist.
-          const zeilen = tabellenZeilen(je, qualifizierbar ? a.q : 1, sichtbareStaedte);
+          const zeilen = tabellenZeilen(je, qualifizierbar ? a.q : 1, sichtbareStaedte, volumen[a.id]);
+          const volGeladen = !!volumen[a.id];
           const geladen = Object.keys(je).length > 0;
           const rows = zeilen
             .map(
@@ -410,7 +498,8 @@ const PREISVERGLEICH = (function () {
                 `</td>` +
                 `<td class="num">${z.buy ? fmt(z.buy) : "<span class='miss'>—</span>"}` +
                 (z.buy ? `<div class="hint">${datumZelle(z.buyDate)}</div>` : "") +
-                `</td></tr>`
+                `</td>` +
+                `<td class="num"${volTitel(z.volJeQ)}>${!volGeladen ? "<span class='hint'>…</span>" : z.vol ? stueck(z.vol) : "<span class='miss'>—</span>"}</td></tr>`
             )
             .join("");
           return (
@@ -423,6 +512,7 @@ const PREISVERGLEICH = (function () {
               ? `<div class="tblwrap"><table><thead><tr><th class="l">Stadt</th>` +
                 `<th title="Günstigste Verkaufsorder am Markt, das zahlst du beim Sofortkauf.">Verkaufsorders</th>` +
                 `<th title="Höchste Kauforder am Markt, das bekämst du beim Sofortverkauf.">Kauforders</th>` +
+                `<th title="Erfasster Handel in dieser Stadt, alle Qualitäten zusammen, Mittel der letzten ${TAGE_FENSTER} Tage. Gezählt wird nur, was Spieler mit Data-Client gesehen haben, also eine Untergrenze. Aufschlüsselung je Qualität im Tooltip der Zahl.">verkauft/Tag</th>` +
                 `</tr></thead><tbody>${rows}</tbody></table></div>`
               : '<div class="hint">Preise werden abgerufen …</div>') +
             `</div>`
@@ -436,7 +526,10 @@ const PREISVERGLEICH = (function () {
       statusEl.className = "";
       statusEl.textContent = "Rufe Preise ab …";
       try {
-        const fehlgeschlagen = await preiseAbrufen(ids, STAEDTE);
+        const fehlgeschlagen = await preiseAbrufen(ids, STAEDTE, () => {
+          statusEl.textContent = "Preise da, rufe Handelsvolumen ab …";
+          render();
+        });
         const stand = new Date().toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
         statusEl.className = fehlgeschlagen ? "err" : "ok";
         statusEl.textContent = fehlgeschlagen ? `Abgerufen: ${stand} · ${fehlgeschlagen} Block/Blöcke fehlten` : `Abgerufen: ${stand}`;
@@ -595,6 +688,24 @@ const PREISVERGLEICH = (function () {
       zOhneCaerleon.filter((z) => z.best).map((z) => z.stadt).join() === "Martlock"
     );
     pruefe("tabellenZeilen() nutzt nur die gewaehlte Qualitaet (Thetford Q2 zaehlt bei Q1 nicht)", zOhneCaerleon[2].sell === 0 && !zOhneCaerleon[2].best);
+    const jetzt = Date.parse("2026-10-17T12:00:00Z");
+    const hist = volumenAusHistorie(
+      [
+        { item_id: "T4_BAG", location: "Lymhurst", quality: 1, data: [{ item_count: 70, timestamp: "2026-10-16T00:00:00" }, { item_count: 7, timestamp: "2026-10-15T00:00:00" }, { item_count: 999, timestamp: "2026-10-01T00:00:00" }] },
+        { item_id: "T4_BAG", location: "Lymhurst", quality: 3, data: [{ item_count: 14, timestamp: "2026-10-14T00:00:00" }] },
+        { item_id: "T4_BAG", location: "Caerleon", quality: 1, data: [] },
+        { location: "Lymhurst", quality: 1, data: [] },
+      ],
+      7,
+      jetzt
+    );
+    pruefe("volumenAusHistorie(): 7-Tage-Mittel je Qualitaet, alte Tage fallen raus (77/7 = 11)", hist.T4_BAG.Lymhurst[1] === 11, hist.T4_BAG.Lymhurst[1]);
+    pruefe("volumenAusHistorie(): Qualitaeten getrennt abgelegt (14/7 = 2)", hist.T4_BAG.Lymhurst[3] === 2, hist.T4_BAG.Lymhurst[3]);
+    pruefe("volumenSumme(): Summe ueber alle Qualitaeten (11 + 2 = 13)", volumenSumme(hist.T4_BAG.Lymhurst) === 13);
+    pruefe("volumenSumme(): Stadt ohne Zeile = null, Zeile ohne Handel = 0", volumenSumme(hist.T4_BAG.Martlock) === null && volumenSumme(hist.T4_BAG.Caerleon) === 0);
+    const zVol = tabellenZeilen(tz, 1, ["Lymhurst", "Martlock"], hist.T4_BAG);
+    pruefe("tabellenZeilen() traegt das Volumen je Stadt ein", zVol[0].vol === 13 && zVol[1].vol === null);
+    pruefe("baueHistorieUrl(): history/, alle Staedte, Tageswerte", baueHistorieUrl(["T4_BAG"], ["Fort Sterling"]).endsWith("/history/T4_BAG.json?locations=Fort%20Sterling&time-scale=24"));
     pruefe("tabellenZeilen() ohne Staedte liefert keine Zeilen", tabellenZeilen(tz, 1, []).length === 0);
 
     return ergebnisse;
@@ -614,5 +725,7 @@ const PREISVERGLEICH = (function () {
     alterTage,
     staedteBereinigen,
     tabellenZeilen,
+    volumenAusHistorie,
+    volumenSumme,
   };
 })();
