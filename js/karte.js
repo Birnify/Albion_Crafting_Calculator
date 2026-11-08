@@ -1,11 +1,12 @@
 // js/karte.js
 //
 // Reiter "Ancient Lands" (v3.14.0): interaktive Karte des Gebiets aus dem
-// Dragonfire-Update. Gelände und feste Punkte (Truhen-Spawnpunkte, Schreine,
+// Dragonfire-Update. Gelände und feste Punkte (Truhen-Spawnpunkte, Drachenaltäre,
+// Leytor-Schlüsselsteine, Leytore,
 // Drachen, Teleporter-Verbindungen, Ausgänge, Lore) stammen aus dem
 // Client-Dump und werden von build_karte.py erzeugt (assets/ancient-lands.webp,
-// js/karte-daten.js). Dazu kommen ein Lauf-Tracker (Truhe geöffnet, Schrein
-// benutzt, Verbindung aktiv, Insel erledigt) und eigene Marker.
+// js/karte-daten.js). Dazu kommen ein Lauf-Tracker (Truhe geöffnet, Altar
+// benutzt, Schlüsselstein eingesetzt, Verbindung aktiv, Insel erledigt) und eigene Marker.
 //
 // Ursprung: Entwurf "Albion Map Builder" eines Kollegen (Leaflet, eigene Marker,
 // Export/Import). Übernommen sind Leaflet, eigene Marker mit Dialog, Ziehen,
@@ -20,20 +21,23 @@
 
   const EBENEN = [
     { id: "truhen", label: "Truhen", titel: "Feste Truhen-Spawnpunkte: 8 Camp-Truhen, 8 auf der Zentralinsel, 1 beim Feuerdrachen. Gleiche Lage in Solo, Veteran und Elite." },
-    { id: "schreine", label: "Schreine", titel: "Drachenschreine: Knochen opfern für einen Segen. 12 feste Standorte." },
+    { id: "schluessel", label: "Schlüsselsteine", titel: "Leytor-Schlüsselsteine: erscheinen nach dem Inselquest. 12 feste Spawnpunkte (Zentral- und Pfadinseln); dazu je Camp-Insel einer mit wechselnder Lage. Zum Leytor bringen, um eine Verbindung freizuschalten." },
+    { id: "leytore", label: "Leytore", titel: "Podeste der Teleporter-Verbindungen. Hier wird der Schlüsselstein eingesetzt. Zwei je Verbindung, eins auf jeder Insel." },
+    { id: "schreine", label: "Drachenaltäre", titel: "Drachenaltäre: Ansehen bei den Drachen gegen Belohnungen eintauschen. 12 feste Standorte." },
     { id: "drachen", label: "Drachen", titel: "Vier Drachen-Inseln und der Feuerdrache in der Mitte." },
-    { id: "inseln", label: "Inseln", titel: "Inselnummer am Camp. Jedes Camp hat je Instanz 2 Truhen und einen Schlüsselstein, ihre genaue Lage wechselt." },
+    { id: "inseln", label: "Inseln", titel: "Inselnummer am Camp. Jedes Camp hat je Instanz 2 Truhen und einen Leytor-Schlüsselstein, ihre genaue Lage wechselt." },
     { id: "verbindungen", label: "Verbindungen", titel: "Teleporter zwischen den Inseln. Klick schaltet aktiv/inaktiv." },
     { id: "ausgaenge", label: "Ausgänge", titel: "Ausgangsportale am Rand, dazu einer in der Mitte." },
     { id: "lore", label: "Lore", titel: "Lore-Fragmente, 6 feste Standorte." },
     { id: "angeln", label: "Angeln", titel: "Angelstellen mit Schatzchance." },
     { id: "eigene", label: "Eigene", titel: "Eigene Marker." },
   ];
-  const EBENEN_VORGABE = { truhen: true, schreine: true, drachen: true, inseln: true, verbindungen: true, ausgaenge: true, lore: false, angeln: false, eigene: true };
+  const EBENEN_VORGABE = { truhen: true, schluessel: true, leytore: false, schreine: true, drachen: true, inseln: true, verbindungen: true, ausgaenge: true, lore: false, angeln: false, eigene: true };
 
   const TYPEN = {
     truhe: { label: "Truhe", farbe: "gold" },
-    schrein: { label: "Schrein", farbe: "purple" },
+    schrein: { label: "Altar / Schrein", farbe: "purple" },
+    schluessel: { label: "Schlüsselstein", farbe: "teal" },
     gegner: { label: "Gegner / Boss", farbe: "red" },
     gefahr: { label: "Gefahr / Spieler", farbe: "orange" },
     portal: { label: "Portal", farbe: "teal" },
@@ -46,7 +50,7 @@
   // ------------------------------------------------------------ reine Helfer
 
   function leererLauf() {
-    return { truhen: [], schreine: [], verbindungen: [], inseln: [] };
+    return { truhen: [], schluessel: [], schreine: [], verbindungen: [], inseln: [] };
   }
 
   function nurTexte(arr, erlaubt) {
@@ -62,6 +66,7 @@
     const l = lauf && typeof lauf === "object" ? lauf : {};
     return {
       truhen: nurTexte(l.truhen, ids(d.truhen)),
+      schluessel: nurTexte(l.schluessel, ids(d.schluessel)),
       schreine: nurTexte(l.schreine, ids(d.schreine)),
       verbindungen: nurTexte(l.verbindungen, ids(d.verbindungen)),
       inseln: nurTexte(l.inseln, ids(d.inseln)),
@@ -115,6 +120,7 @@
 
   const SVG = {
     truhe: '<svg viewBox="0 0 24 24"><path d="M4 10h16v9H4z" fill="currentColor" opacity=".35"/><path d="M4 10c0-3 2-5 5-5h6c3 0 5 2 5 5M4 10h16v9H4zM4 13h16M11 12h2v3h-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    schluessel: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="currentColor" opacity=".45"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9.5" cy="9.5" r="2" fill="currentColor"/></svg>',
     schrein: '<svg viewBox="0 0 24 24"><path d="M12 3l5 6-5 12-5-12z" fill="currentColor" opacity=".35"/><path d="M12 3l5 6-5 12-5-12zM7 9h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
     drache: '<svg viewBox="0 0 24 24"><path d="M12 3c1 4 6 5 6 11a6 6 0 0 1-12 0c0-3 2-4 2-7 2 1 3 3 3 5 1-2 1-6 1-9z" fill="currentColor" opacity=".4"/><path d="M12 3c1 4 6 5 6 11a6 6 0 0 1-12 0c0-3 2-4 2-7 2 1 3 3 3 5 1-2 1-6 1-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
     ausgang: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="6" ry="8" fill="currentColor" opacity=".3"/><ellipse cx="12" cy="12" rx="6" ry="8" fill="none" stroke="currentColor" stroke-width="1.8"/><ellipse cx="12" cy="12" rx="2.5" ry="4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
@@ -212,7 +218,7 @@
           keyboard: false,
         });
         m.bindTooltip("<b>Insel " + i.nr + "</b> · " + art + (erledigt ? " · erledigt" : "") +
-          "<br>Camp mit 2 Truhen und Schlüsselstein, Lage je Instanz<br><small>Klick: erledigt umschalten</small>", { className: "ka-tip" });
+          "<br>Camp mit 2 Truhen und Leytor-Schlüsselstein, Lage je Instanz<br><small>Klick: erledigt umschalten</small>", { className: "ka-tip" });
         m.on("click", () => { umschalten("inseln", i.id); festeEbenenBauen(); });
         m.addTo(gruppen.inseln);
       });
@@ -241,9 +247,35 @@
       D.schreine.forEach((s, n) => {
         const benutzt = hat("schreine", s.id);
         L.marker(s.p, { icon: icon("schrein", "schrein" + (benutzt ? " aus" : ""), benutzt ? '<span class="ka-haken">✓</span>' : ""), keyboard: false, zIndexOffset: 200 })
-          .bindTooltip("<b>Drachenschrein " + (n + 1) + "</b>" + (benutzt ? " · benutzt" : "") + "<br>Knochen opfern für einen Segen<br><small>Klick: benutzt umschalten</small>", { className: "ka-tip" })
+          .bindTooltip("<b>Drachenaltar " + (n + 1) + "</b>" + (benutzt ? " · benutzt" : "") + "<br>Ansehen bei den Drachen gegen Belohnungen<br><small>Klick: benutzt umschalten</small>", { className: "ka-tip" })
           .on("click", () => { umschalten("schreine", s.id); festeEbenenBauen(); })
           .addTo(gruppen.schreine);
+      });
+
+      (D.schluessel || []).forEach((k, n) => {
+        const drin = hat("schluessel", k.id);
+        // Der Schlüsselstein erscheint 4 bis 6 m neben einer Truhe (Belohnungsplatz
+        // des Inselquests). Symbol deshalb schräg darüber versetzt, sonst deckt die
+        // Truhe ihn zu.
+        const truheNah = D.truhen.some((t) => Math.hypot(t.p[0] - k.p[0], t.p[1] - k.p[1]) < 10);
+        const ic = L.divIcon({
+          className: "",
+          html: '<div class="ka-pin schluessel' + (truheNah ? " versetzt" : "") + (drin ? " aus" : "") + '">' + SVG.schluessel + (drin ? '<span class="ka-haken">✓</span>' : "") + "</div>",
+          iconSize: [24, 24],
+          iconAnchor: truheNah ? [-6, 30] : [12, 12],
+          tooltipAnchor: truheNah ? [26, -18] : [12, 0],
+        });
+        L.marker(k.p, { icon: ic, keyboard: false, zIndexOffset: 400 })
+          .bindTooltip("<b>Leytor-Schlüsselstein " + (n + 1) + "</b>" + (drin ? " · eingesetzt" : "") +
+            "<br>Erscheint nach dem Inselquest" + (truheNah ? " direkt neben der Truhe" : "") + "; zu einem Leytor der Insel bringen<br><small>Klick: eingesetzt umschalten</small>", { className: "ka-tip" })
+          .on("click", () => { umschalten("schluessel", k.id); festeEbenenBauen(); })
+          .addTo(gruppen.schluessel);
+      });
+      (D.leytore || []).forEach((t) => {
+        const aktiv = hat("verbindungen", t.verbindung);
+        L.marker(t.p, { icon: L.divIcon({ className: "", html: '<div class="ka-leytor' + (aktiv ? " an" : "") + '"></div>', iconSize: [12, 12], iconAnchor: [6, 6] }), keyboard: false })
+          .bindTooltip("<b>Leytor</b> · " + t.insel.replace("ISLAND_", "Insel ") + (aktiv ? " · Verbindung aktiv" : "") + "<br>Hier den Schlüsselstein einsetzen", { className: "ka-tip" })
+          .addTo(gruppen.leytore);
       });
 
       D.ausgaenge.forEach((a) => {
@@ -378,8 +410,8 @@
 
     el("kaNeuerLauf").addEventListener("click", () => {
       const l = zustand.lauf;
-      const n = l.truhen.length + l.schreine.length + l.verbindungen.length + l.inseln.length;
-      if (n && !confirm("Neuen Lauf beginnen? Geöffnete Truhen, benutzte Schreine, aktive Verbindungen und erledigte Inseln werden zurückgesetzt. Eigene Marker bleiben.")) return;
+      const n = l.truhen.length + l.schluessel.length + l.schreine.length + l.verbindungen.length + l.inseln.length;
+      if (n && !confirm("Neuen Lauf beginnen? Geöffnete Truhen, eingesetzte Schlüsselsteine, benutzte Altäre, aktive Verbindungen und erledigte Inseln werden zurückgesetzt. Eigene Marker bleiben.")) return;
       zustand.lauf = leererLauf();
       speichern();
       festeEbenenBauen();
@@ -467,7 +499,8 @@
       const inselnMitCamp = D.inseln.filter((i) => i.art !== "zentrum" && i.art !== "pfad").length;
       const zeilen = [
         ["Truhen geöffnet", l.truhen.length, D.truhen.length],
-        ["Schreine benutzt", l.schreine.length, D.schreine.length],
+        ["Schlüsselsteine eingesetzt", l.schluessel.length, (D.schluessel || []).length],
+        ["Altäre benutzt", l.schreine.length, D.schreine.length],
         ["Inseln erledigt", l.inseln.length, inselnMitCamp],
         ["Verbindungen aktiv", l.verbindungen.length, D.verbindungen.length],
       ];
@@ -534,19 +567,22 @@
     const D = window.KARTE_DATEN;
     t("Kartendaten geladen", !!D, "");
     if (D) {
-      t("37 Inseln, 60 Verbindungen, 12 Schreine, 17 Truhen", D.inseln.length === 37 && D.verbindungen.length === 60 && D.schreine.length === 12 && D.truhen.length === 17,
+      t("37 Inseln, 60 Verbindungen, 12 Altäre, 17 Truhen", D.inseln.length === 37 && D.verbindungen.length === 60 && D.schreine.length === 12 && D.truhen.length === 17,
         [D.inseln.length, D.verbindungen.length, D.schreine.length, D.truhen.length].join("/"));
       t("vier Drachen-Inseln", D.inseln.filter((i) => i.art === "drache").length === 4, "");
       t("Truhenarten 8 Camp, 8 Zentrum, 1 Feuerdrache",
         D.truhen.filter((x) => x.art === "camp").length === 8 && D.truhen.filter((x) => x.art === "zentrum").length === 8 && D.truhen.filter((x) => x.art === "feuerdrache").length === 1, "");
-      const punkte = [].concat(D.truhen.map((x) => x.p), D.schreine.map((x) => x.p), D.ausgaenge.map((x) => x.p), D.lore.map((x) => x.p), D.inseln.map((x) => x.p));
+      const punkte = [].concat(D.truhen.map((x) => x.p), D.schreine.map((x) => x.p), D.schluessel.map((x) => x.p), D.leytore.map((x) => x.p), D.ausgaenge.map((x) => x.p), D.lore.map((x) => x.p), D.inseln.map((x) => x.p));
       t("alle Punkte innerhalb der Raute", punkte.every((p) => Math.abs(p[0]) + Math.abs(p[1]) <= D.ausdehnung), "");
       const inselIds = new Set(D.inseln.map((i) => i.id));
       t("jede Verbindung verbindet zwei bekannte Inseln", D.verbindungen.every((v) => inselIds.has(v.a) && inselIds.has(v.b) && v.a !== v.b), "");
       // Drehung: Dump (x=-1, z=1) (Nordwesten) muss oben liegen.
       t("Feuerdrache nahe der Mitte", D.feuerdrache && Math.hypot(D.feuerdrache[0], D.feuerdrache[1]) < 20, String(D.feuerdrache));
-      const l = laufBereinigen({ truhen: [D.truhen[0].id, D.truhen[0].id, "gibtsnicht", 5], schreine: "kaputt" }, D);
-      t("laufBereinigen: doppelte und unbekannte IDs raus", l.truhen.length === 1 && l.schreine.length === 0 && Array.isArray(l.inseln), JSON.stringify(l));
+      t("12 Leytor-Schlüsselsteine und 120 Leytore", D.schluessel.length === 12 && D.leytore.length === 120, D.schluessel.length + "/" + D.leytore.length);
+      t("4 Schlüsselsteine auf der Zentralinsel", D.schluessel.filter((k) => Math.hypot(k.p[0], k.p[1]) < 150).length === 4, "");
+      t("jedes Leytor gehört zu einer bekannten Verbindung", D.leytore.every((x) => D.verbindungen.some((v) => v.id === x.verbindung)), "");
+      const l = laufBereinigen({ truhen: [D.truhen[0].id, D.truhen[0].id, "gibtsnicht", 5], schreine: "kaputt", schluessel: [D.schluessel[0].id, "x"] }, D);
+      t("laufBereinigen: doppelte und unbekannte IDs raus", l.truhen.length === 1 && l.schreine.length === 0 && l.schluessel.length === 1 && Array.isArray(l.inseln), JSON.stringify(l));
     }
     const m = markerBereinigen([
       { id: "a", name: "Truhe hier", typ: "truhe", lat: 10, lng: 20 },

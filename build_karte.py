@@ -7,7 +7,8 @@ Zwischenspeicher im Temp-Verzeichnis benutzt.
 
 Quelle: https://github.com/ao-data/ao-bin-dumps
   templates/NONE/DRAGON_001.template.xml  Grundgerüst des Gebiets: Inselbausteine,
-                                         Teleporter, Schreine, Truhen-Spawnpunkte,
+                                         Teleporter (Leytore), Drachenaltäre, Truhen- und
+                                         Schlüsselstein-Spawnpunkte,
                                          Ausgänge, Lore-Punkte
   dragonareatemplatemetadata.json        Insel-Slots, in die das Spiel je Instanz
                                          ein Camp einsetzt (DRAKE_ISLAND markiert)
@@ -386,6 +387,19 @@ def daten_bauen(root, slots):
     angeln = [leaflet(*pos(t)) for t in root.find("tiles").iter("tile")
               if t.get("name") == "FishingZone_FRESHWATER_SPOT_TREASURE"]
     camps = [{"p": leaflet(s["x"], s["z"]), "groesse": s["groesse"], "drache": s["drache"]} for s in slots]
+    # Leytor-Schlüsselsteine: erscheinen nach dem Inselquest an einem festen
+    # Belohnungsort (LocalQuestRewardSpawnLocation, deckungsgleich mit
+    # DRAGON_KPR_FANATICS_KEY_MARKER_B). Die Camp-Vorlagen bringen je einen
+    # eigenen mit, dessen Lage je Instanz wechselt.
+    schluessel = []
+    for t in root.find("tiles").iter("tile"):
+        if t.get("name") == "LocalQuestRewardSpawnLocation":
+            schluessel.append({"id": "schluessel_%d" % (len(schluessel) + 1), "p": leaflet(*pos(t))})
+    # Leytore: die Podeste, an denen der Schlüsselstein eine Verbindung freischaltet.
+    leytore = []
+    for _, t in mitglieder("teleporternode"):
+        tn = t.find("teleporternode")
+        leytore.append({"p": leaflet(*pos(t)), "insel": tn.get("groupid"), "verbindung": tn.get("teleporterconnectionid")})
 
     return {
         "quelle": "ao-bin-dumps, templates/NONE/DRAGON_001 und dragonareatemplatemetadata",
@@ -399,6 +413,8 @@ def daten_bauen(root, slots):
         "ausgaenge": list(ausg.values()),
         "lore": lore,
         "angeln": angeln,
+        "schluessel": schluessel,
+        "leytore": leytore,
     }
 
 
@@ -421,7 +437,8 @@ def main():
         json.dump(daten, f, ensure_ascii=False, separators=(",", ":"))
         f.write(";\n")
     print(f"Daten: {ziel_js} ({len(daten['inseln'])} Inseln, {len(daten['verbindungen'])} Verbindungen, "
-          f"{len(daten['schreine'])} Schreine, {len(daten['truhen'])} Truhen, {len(daten['ausgaenge'])} Ausgänge)")
+          f"{len(daten['schreine'])} Altäre, {len(daten['truhen'])} Truhen, {len(daten['schluessel'])} Schlüsselsteine, "
+          f"{len(daten['leytore'])} Leytore, {len(daten['ausgaenge'])} Ausgänge)")
 
     if "--nur-daten" not in sys.argv:
         gelaende_rendern(root, slots, os.path.join(HIER, "assets", "ancient-lands.webp"))

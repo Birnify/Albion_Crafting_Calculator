@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-08 · Version: v3.14.0 · Neuer Reiter „Ancient Lands“: interaktive Karte
+Stand: 2026-11-08 · Version: v3.14.1 · Ancient Lands: Leytor-Schlüsselsteine und Leytore
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -72,6 +72,34 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.14.1 (08.11.2026): Ancient Lands, Schlüsselsteine und Leytore
+
+Nutzer-Hinweis: „die Kugeln zum Aktivieren der Schreine fehlen“. Geklärt über
+die deutschen Spieltexte (`localization.xml`) und `carriables.xml`:
+
+- Die Kugel ist der **Leytor-Schlüsselstein** (`DRAGON_AREA_ISLAND_KEY`,
+  Spieltext: „Bringe diesen Schlüsselstein zu einem Leytor auf deiner Insel“,
+  Farbe im Spiel `99FF00`). Er erscheint nach dem Inselquest
+  (`SPAWN_DRAGON_AREA_ISLAND_KEY` an einem `LocalQuestRewardSpawnLocation`) und
+  schaltet am **Leytor** (Teleporter-Podest) eine Verbindung frei.
+- **12 feste Spawnpunkte** im Grundgerüst (4 Zentralinsel, 8 Pfadinseln),
+  deckungsgleich mit `DRAGON_KPR_FANATICS_KEY_MARKER_B`; jeder liegt 4 bis 6 m
+  neben einer Truhe, das Symbol ist deshalb schräg darüber versetzt. Die
+  Camp-Vorlagen bringen je einen eigenen mit (Lage je Instanz, nur im
+  Insel-Tooltip erwähnt).
+- **120 Leytore** als eigene Ebene (zwei je Verbindung, Raute, gefüllt wenn
+  die Verbindung aktiv ist), standardmäßig aus.
+- **Umbenannt:** die bisherigen „Drachenschreine“ heißen im Spiel
+  **„Drachenaltar“** (`BUILDINGS_DRAGON_REWARD_SHRINE`). Laut `buildings.xml`
+  ist der Altar ein Händler für Ansehen bei den Drachen (Belohnungen gegen
+  `QUESTITEM_STANDING_DRAGONS`), kein Segen gegen Knochen; der alte Tooltip
+  stammte aus einer Sekundärquelle und ist ersetzt. Interne ID `schreine`
+  bleibt wegen des Speicherstands.
+- Lauf-Tracker: „Schlüsselsteine eingesetzt x/12“, Klick auf den Stein.
+- Selbsttest **660/660** grün (3 neue: Anzahl, 4 auf der Zentralinsel,
+  jedes Leytor gehört zu einer Verbindung; Bereiniger um `schluessel`
+  erweitert).
 
 ## Nachtrag v3.14.0 (08.11.2026): Reiter „Ancient Lands“, interaktive Karte
 

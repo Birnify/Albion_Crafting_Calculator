@@ -595,6 +595,12 @@ path.ka-verb.an{stroke:var(--teal);stroke-dasharray:none;stroke-opacity:.95;filt
 .ka-pin svg{width:19px;height:19px}
 .ka-pin.truhe{color:var(--gold)}
 .ka-pin.schrein{color:var(--purple)}
+.ka-pin.schluessel{color:oklch(0.86 0.15 130);box-shadow:0 0 10px oklch(0.86 0.15 130 / .55),0 2px 8px rgba(0,0,0,.6)}
+.ka-pin.schluessel{width:24px;height:24px}
+.ka-pin.schluessel svg{width:16px;height:16px}
+.ka-pin.schluessel.versetzt::after{content:"";position:absolute;left:-7px;bottom:-7px;width:9px;height:1.5px;background:oklch(0.86 0.15 130);transform:rotate(-45deg);transform-origin:right center}
+.ka-leytor{width:12px;height:12px;transform:rotate(45deg);border:1.5px solid var(--teal);background:oklch(0.17 0.02 55 / .9);box-shadow:0 1px 4px rgba(0,0,0,.7)}
+.ka-leytor.an{background:var(--teal)}
 .ka-pin.drache{color:oklch(0.68 0.19 40)}
 .ka-pin.drache.gross{width:40px;height:40px;margin:-5px 0 0 -5px;border-width:2px;box-shadow:0 0 14px oklch(0.68 0.19 40 / .7)}
 .ka-pin.drache.gross svg{width:26px;height:26px}
@@ -1333,7 +1339,7 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 
 <div id="tab-karte" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-karte" style="display:none">
 
-<div class="sub">Karte der Ancient Lands (Dragonfire): feste Truhen, Schreine, Drachen und Teleporter aus den Spieldaten, dazu eigene Marker und ein Lauf-Tracker.</div>
+<div class="sub">Karte der Ancient Lands (Dragonfire): feste Truhen, Leytor-Schlüsselsteine, Drachenaltäre, Drachen und Leytore aus den Spieldaten, dazu eigene Marker und ein Lauf-Tracker.</div>
 
 <div class="ka-layout">
   <div id="kaKarteRahmen" class="ka-karte-box">
@@ -1348,9 +1354,9 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
     </section>
 
     <section class="ka-karte" aria-labelledby="kaK2">
-      <h2 id="kaK2" title="Truhen, Schreine, Inseln und Verbindungen auf der Karte anklicken, um sie abzuhaken. Der Stand bleibt beim Neuladen erhalten.">Lauf</h2>
+      <h2 id="kaK2" title="Truhen, Schlüsselsteine, Altäre, Inseln und Verbindungen auf der Karte anklicken, um sie abzuhaken. Der Stand bleibt beim Neuladen erhalten.">Lauf</h2>
       <div id="kaZaehler"></div>
-      <button type="button" id="kaNeuerLauf" class="mini" title="Setzt geöffnete Truhen, benutzte Schreine, aktive Verbindungen und erledigte Inseln zurück. Eigene Marker bleiben.">Neuer Lauf</button>
+      <button type="button" id="kaNeuerLauf" class="mini" title="Setzt geöffnete Truhen, eingesetzte Schlüsselsteine, benutzte Altäre, aktive Verbindungen und erledigte Inseln zurück. Eigene Marker bleiben.">Neuer Lauf</button>
     </section>
 
     <section class="ka-karte" aria-labelledby="kaK3">
