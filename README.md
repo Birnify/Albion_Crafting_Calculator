@@ -27,6 +27,8 @@ speichert sie zwischen, dafuer braucht sie beim ersten Aufruf Internetzugang.
 | `js/preise.js` | Marktabruf, Zwischenspeicher, Eigenpreise |
 | `rezepte.js` | Erzeugter Rezeptgraph aus dem offiziellen Client-Dump |
 | `build_graph.py` | Erzeugt `rezepte.js` neu, selten noetig |
+| `js/karte.js` | Reiter „Ancient Lands“: interaktive Karte mit Lauf-Tracker und eigenen Markern |
+| `build_karte.py` | Erzeugt Kartenbild und Kartendaten der Ancient Lands aus dem Client-Dump |
 | `tests/test.html` | Testsuite, per Doppelklick |
 
 Die belegten Spielregeln und Formeln, auf denen die Rechnung beruht, stehen

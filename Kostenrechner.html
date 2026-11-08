@@ -517,7 +517,118 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 #etStatus{font-size:12.5px;color:var(--dim)}
 #etStatus.err{color:var(--red);font-weight:700}
 #etStatus.ok{color:var(--green);font-weight:700}
+
+/* Reiter "Ancient Lands" (js/karte.js, v3.14.0). Karte links, Seitenleiste
+   rechts; Karten-Look wie die Veredeln-Karten (--r-card). Leaflet-Grundstile
+   kommen aus vendor/leaflet/leaflet.css, hier nur die Anpassung ans Thema. */
+.ka-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+@media (max-width:980px){.ka-layout{grid-template-columns:minmax(0,1fr)}}
+.ka-karte-box{position:relative;border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden;
+  background:radial-gradient(circle at 50% 50%,oklch(0.2 0.025 58),var(--bg) 75%);height:clamp(460px,calc(100vh - 230px),980px)}
+.ka-karte-box:fullscreen{height:100vh;border-radius:0;border:0}
+#kaKarte{position:absolute;inset:0;background:transparent;font:500 13px/1.4 "Manrope",sans-serif}
+#kaKarte.ka-zielen,#kaKarte.ka-zielen .leaflet-interactive{cursor:crosshair}
+.ka-hinweis{position:absolute;z-index:800;top:12px;left:50%;transform:translateX(-50%);padding:8px 14px;border-radius:var(--r);
+  background:var(--gold);color:oklch(0.2 0.03 60);font-weight:800;font-size:13px;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.5);white-space:nowrap}
+.ka-seite{display:flex;flex-direction:column;gap:16px;min-width:0}
+.ka-karte{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:var(--r-card);
+  padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.ka-karte h2{margin:0;padding:0;border:0;font-size:16px}
+.ka-chips{display:flex;flex-wrap:wrap;gap:6px}
+#tab-karte label.ka-chip{position:relative;display:inline-flex;align-items:center;min-height:32px;padding:0 11px;margin:0;border:1px solid var(--line);border-radius:999px;
+  background:var(--bg-2);color:var(--dim);font-size:12.5px;font-weight:700;letter-spacing:0;text-transform:none;cursor:pointer;user-select:none}
+#tab-karte label.ka-chip input{position:absolute;opacity:0;width:1px;height:1px}
+#tab-karte label.ka-chip:hover{border-color:var(--line-strong)}
+#tab-karte label.ka-chip.an{border-color:var(--gold);background:var(--accent-soft);color:var(--gold)}
+#tab-karte label.ka-chip:has(input:focus-visible){outline:2px solid var(--gold-dim);outline-offset:2px}
+.ka-z{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px;color:var(--dim)}
+.ka-z b{color:var(--text);font-variant-numeric:tabular-nums}
+.ka-z b small{color:var(--dim);font-weight:600}
+.ka-z i{grid-column:1/-1;height:4px;border-radius:2px;background:var(--bg-2);position:relative;overflow:hidden}
+.ka-z i::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--w);background:var(--gold-dim);border-radius:2px}
+.ka-knoepfe{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ka-knoepfe button{min-height:38px;padding:0 10px;border-radius:var(--r);font-size:13px}
+.ka-knoepfe .breit{grid-column:1/-1}
+#kaSetzen{font-weight:800}
+#kaSetzen.an{background:var(--bg-2);color:var(--gold);border-color:var(--gold)}
+#tab-karte .mini{min-height:34px;border-radius:var(--r)}
+#kaListe{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto}
+.ka-leer{color:var(--dim);font-size:13px;padding:6px 0}
+button.ka-eintrag{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--bg-2);color:var(--text);text-align:left;font:inherit;cursor:pointer}
+button.ka-eintrag:hover{border-color:var(--gold-dim);filter:none}
+.ka-eintrag-text{display:flex;flex-direction:column;min-width:0}
+.ka-eintrag-text b{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ka-eintrag-text small{color:var(--dim);font-size:11.5px}
+.ka-punkt{flex:none;width:22px;height:22px;display:grid;place-items:center}
+.ka-punkt svg{width:20px;height:20px}
+#kaStatus{font-size:12.5px;color:var(--dim);min-height:1em}
+#kaStatus.err{color:var(--red);font-weight:700}
+/* Leaflet im Thema */
+#kaKarte .leaflet-bar{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+#kaKarte .leaflet-bar a{background:var(--panel-2);color:var(--gold);border-bottom-color:var(--line);width:34px;height:34px;line-height:32px}
+#kaKarte .leaflet-bar a:hover{background:var(--panel)}
+#kaKarte .leaflet-control-attribution{background:oklch(0.15 0.02 55 / .75);color:var(--dim);font-size:10.5px}
+#kaKarte .leaflet-popup-content-wrapper,#kaKarte .leaflet-popup-tip{background:var(--panel-2);color:var(--text);border:1px solid var(--line);box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#kaKarte .leaflet-popup-content{margin:12px 14px;font:500 13px/1.45 "Manrope",sans-serif}
+#kaKarte a.leaflet-popup-close-button{color:var(--dim)}
+.ka-pop h3{margin:0 0 2px;font-size:15px;color:var(--gold)}
+.ka-pop p{margin:4px 0}
+.ka-pop .ka-pop-typ{color:var(--dim);font-size:12px}
+.ka-pop .mini{margin-top:6px}
+.leaflet-tooltip.ka-tip{background:var(--panel-2);color:var(--text);border:1px solid var(--line-strong);border-radius:var(--r-tag);
+  box-shadow:0 6px 18px rgba(0,0,0,.5);font:500 12.5px/1.4 "Manrope",sans-serif;padding:6px 9px}
+.leaflet-tooltip.ka-tip small{color:var(--dim)}
+.leaflet-tooltip-left.ka-tip::before{border-left-color:var(--line-strong)}
+.leaflet-tooltip-right.ka-tip::before{border-right-color:var(--line-strong)}
+path.ka-rahmen{stroke:var(--gold-dim);stroke-width:1.5;stroke-dasharray:2 6;stroke-linecap:round}
+path.ka-verb{stroke:oklch(0.62 0.04 72);stroke-dasharray:3 7;stroke-linecap:round;stroke-opacity:.75}
+path.ka-verb:hover{stroke:var(--gold);stroke-opacity:1}
+path.ka-verb.an{stroke:var(--teal);stroke-dasharray:none;stroke-opacity:.95;filter:drop-shadow(0 0 4px oklch(0.72 0.12 200 / .8))}
+.ka-rose{width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--gold-dim);border-radius:50%;
+  background:var(--panel);color:var(--gold);font:800 13px/1 "Cinzel",serif}
+.ka-pin{position:relative;width:30px;height:30px;display:grid;place-items:center;border-radius:50%;
+  background:oklch(0.17 0.02 55 / .92);border:1.5px solid currentColor;box-shadow:0 2px 8px rgba(0,0,0,.6);transition:transform .12s}
+.ka-pin:hover{transform:scale(1.15)}
+#kaKarte.ka-klein .ka-pin,#kaKarte.ka-klein .ka-insel{scale:.72}
+#kaKarte.ka-klein .ka-angel{scale:.8}
+.ka-pin svg{width:19px;height:19px}
+.ka-pin.truhe{color:var(--gold)}
+.ka-pin.schrein{color:var(--purple)}
+.ka-pin.drache{color:oklch(0.68 0.19 40)}
+.ka-pin.drache.gross{width:40px;height:40px;margin:-5px 0 0 -5px;border-width:2px;box-shadow:0 0 14px oklch(0.68 0.19 40 / .7)}
+.ka-pin.drache.gross svg{width:26px;height:26px}
+.ka-pin.ausgang{color:var(--teal)}
+.ka-pin.lore{color:oklch(0.8 0.08 95)}
+.ka-pin.aus{opacity:.45;filter:grayscale(.7)}
+.ka-haken{position:absolute;right:-5px;bottom:-5px;width:15px;height:15px;border-radius:50%;background:var(--green);color:oklch(0.2 0.03 60);
+  font:800 10px/15px "Manrope",sans-serif;text-align:center}
+.ka-insel{width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:oklch(0.17 0.02 55 / .85);
+  border:1.5px solid var(--gold-dim);color:var(--text);font:800 11px/1 "Manrope",sans-serif;font-variant-numeric:tabular-nums;
+  box-shadow:0 2px 6px rgba(0,0,0,.55);cursor:pointer}
+.ka-insel:hover{border-color:var(--gold);color:var(--gold)}
+.ka-insel.drache{border-color:oklch(0.68 0.19 40)}
+.ka-insel.fertig{background:var(--green);border-color:var(--green);color:oklch(0.2 0.03 60)}
+.ka-angel{width:18px;height:18px;color:var(--teal);opacity:.85;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8))}
+.ka-angel svg{width:18px;height:18px}
+.f-gold{color:var(--gold)} .f-purple{color:var(--purple)} .f-red{color:var(--red)} .f-orange{color:oklch(0.72 0.16 55)}
+.f-teal{color:var(--teal)} .f-green{color:var(--green)} .f-dim{color:var(--text)}
+.ka-pin.eigen{background:oklch(0.25 0.03 58 / .95);border-radius:50% 50% 50% 4px;transform:rotate(-45deg)}
+.ka-pin.eigen svg{transform:rotate(45deg)}
+.ka-pin.eigen:hover{transform:rotate(-45deg) scale(1.15)}
+dialog.ka-dialog{width:min(440px,calc(100% - 30px));padding:0;color:var(--text);background:linear-gradient(180deg,var(--panel-2),var(--panel));
+  border:1px solid var(--line-strong);border-radius:var(--r-card);box-shadow:0 20px 60px rgba(0,0,0,.6)}
+dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
+.ka-dialog h2{margin:0;padding:16px 18px;border-bottom:1px solid var(--line);font-size:17px}
+.ka-dialog .ka-dlg-inhalt{padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+.ka-dialog label{margin:0 0 5px}
+.ka-dialog textarea{width:100%;min-height:80px;resize:vertical;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg-2);color:var(--text);font:inherit}
+.ka-dialog textarea:focus{outline:none;border-color:var(--gold-dim);box-shadow:0 0 0 3px oklch(0.6 0.1 85 / .18)}
+.ka-dlg-knoepfe{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line)}
+.ka-dlg-knoepfe .links{margin-right:auto}
+#kaLoeschen{background:var(--red);border-color:var(--red);color:#fff}
 </style>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=1.9.4">
 </head>
 <body>
 <div class="wrap">
@@ -536,6 +647,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
   <button type="button" id="tabbtn-preisvergleich" class="tabbtn" data-tab="preisvergleich" role="tab" aria-selected="false" aria-controls="tab-preisvergleich">Preisvergleich</button>
   <button type="button" id="tabbtn-craften" class="tabbtn" data-tab="craften" role="tab" aria-selected="false" aria-controls="tab-craften">Craften: Gewinn</button>
   <button type="button" id="tabbtn-veredeln" class="tabbtn" data-tab="veredeln" role="tab" aria-selected="false" aria-controls="tab-veredeln">Veredeln leveln</button>
+  <button type="button" id="tabbtn-karte" class="tabbtn" data-tab="karte" role="tab" aria-selected="false" aria-controls="tab-karte">Ancient Lands</button>
 </div>
 
 <div id="tab-kostenrechner" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-kostenrechner">
@@ -1219,22 +1331,82 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
 
 </div><!-- /tab-veredeln -->
 
+<div id="tab-karte" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-karte" style="display:none">
+
+<div class="sub">Karte der Ancient Lands (Dragonfire): feste Truhen, Schreine, Drachen und Teleporter aus den Spieldaten, dazu eigene Marker und ein Lauf-Tracker.</div>
+
+<div class="ka-layout">
+  <div id="kaKarteRahmen" class="ka-karte-box">
+    <div id="kaKarte" role="application" aria-label="Karte der Ancient Lands"></div>
+    <div id="kaHinweis" class="ka-hinweis" hidden>Auf die Karte klicken, um den Marker zu setzen. Esc bricht ab.</div>
+  </div>
+
+  <aside class="ka-seite">
+    <section class="ka-karte" aria-labelledby="kaK1">
+      <h2 id="kaK1">Ebenen</h2>
+      <div id="kaEbenen" class="ka-chips"></div>
+    </section>
+
+    <section class="ka-karte" aria-labelledby="kaK2">
+      <h2 id="kaK2" title="Truhen, Schreine, Inseln und Verbindungen auf der Karte anklicken, um sie abzuhaken. Der Stand bleibt beim Neuladen erhalten.">Lauf</h2>
+      <div id="kaZaehler"></div>
+      <button type="button" id="kaNeuerLauf" class="mini" title="Setzt geöffnete Truhen, benutzte Schreine, aktive Verbindungen und erledigte Inseln zurück. Eigene Marker bleiben.">Neuer Lauf</button>
+    </section>
+
+    <section class="ka-karte" aria-labelledby="kaK3">
+      <h2 id="kaK3">Eigene Marker</h2>
+      <div class="ka-knoepfe">
+        <button type="button" id="kaSetzen" class="breit" title="Danach auf die Karte klicken. Marker lassen sich ziehen; Doppelklick bearbeitet.">Marker setzen</button>
+        <button type="button" id="kaExport" class="mini" title="Eigene Marker und Lauf-Stand als JSON-Datei speichern, z. B. zum Teilen.">Export</button>
+        <button type="button" id="kaImport" class="mini" title="Marker aus einer JSON-Datei hinzufügen. Auch Dateien aus dem Albion Map Builder werden gelesen.">Import</button>
+        <button type="button" id="kaVollbild" class="mini" title="Karte im Vollbild zeigen.">Vollbild</button>
+        <button type="button" id="kaAllesLoeschen" class="mini" title="Alle eigenen Marker löschen.">Alle löschen</button>
+      </div>
+      <input type="file" id="kaImportDatei" accept=".json,application/json" hidden>
+      <div id="kaListe"></div>
+      <div id="kaStatus" role="status"></div>
+    </section>
+  </aside>
 </div>
 
-<script src="rezepte.js?v=3.13.0"></script>
-<script src="item-namen.js?v=3.13.0"></script>
-<script src="js/preise.js?v=3.13.0"></script>
-<script src="js/regeln.js?v=3.13.0"></script>
-<script src="js/rechenkern.js?v=3.13.0"></script>
-<script src="js/ui.js?v=3.13.0"></script>
-<script src="js/eintopf-daten.js?v=3.13.0"></script>
-<script src="js/eintopf-preise.js?v=3.13.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.13.0"></script>
-<script src="js/eintopf-ui.js?v=3.13.0"></script>
-<script src="js/tabs.js?v=3.13.0"></script>
-<script src="js/preisvergleich.js?v=3.13.0"></script>
-<script src="js/veredeln.js?v=3.13.0"></script>
-<script src="js/craften.js?v=3.13.0"></script>
+<dialog id="kaDialog" class="ka-dialog">
+  <form id="kaForm">
+    <h2 id="kaDialogTitel">Marker setzen</h2>
+    <div class="ka-dlg-inhalt">
+      <input type="hidden" id="kaId">
+      <div><label for="kaName">Name</label><input id="kaName" maxlength="80" placeholder="z. B. Elite-Truhe am Wasserfall"></div>
+      <div><label for="kaTyp">Typ</label><select id="kaTyp"></select></div>
+      <div><label for="kaNotiz">Notiz</label><textarea id="kaNotiz" maxlength="500" placeholder="Zeit, Gegner, Beute, Gefahren"></textarea></div>
+    </div>
+    <div class="ka-dlg-knoepfe">
+      <button type="button" id="kaLoeschen" class="links" hidden>Löschen</button>
+      <button type="button" id="kaAbbrechen" class="mini">Abbrechen</button>
+      <button type="submit">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+</div><!-- /tab-karte -->
+
+</div>
+
+<script src="rezepte.js?v=3.14.0"></script>
+<script src="item-namen.js?v=3.14.0"></script>
+<script src="js/preise.js?v=3.14.0"></script>
+<script src="js/regeln.js?v=3.14.0"></script>
+<script src="js/rechenkern.js?v=3.14.0"></script>
+<script src="js/ui.js?v=3.14.0"></script>
+<script src="js/eintopf-daten.js?v=3.14.0"></script>
+<script src="js/eintopf-preise.js?v=3.14.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.14.0"></script>
+<script src="js/eintopf-ui.js?v=3.14.0"></script>
+<script src="js/tabs.js?v=3.14.0"></script>
+<script src="js/preisvergleich.js?v=3.14.0"></script>
+<script src="js/veredeln.js?v=3.14.0"></script>
+<script src="js/craften.js?v=3.14.0"></script>
+<script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
+<script src="js/karte-daten.js?v=3.14.0"></script>
+<script src="js/karte.js?v=3.14.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,
@@ -1247,6 +1419,7 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
     ["EINTOPF_DATEN", "js/eintopf-daten.js"], ["EINTOPF_PREISE", "js/eintopf-preise.js"],
     ["EINTOPF_RECHENKERN", "js/eintopf-rechenkern.js"], ["EINTOPF_UI", "js/eintopf-ui.js"],
     ["PREISVERGLEICH", "js/preisvergleich.js"], ["VEREDELN", "js/veredeln.js"], ["CRAFTEN", "js/craften.js"],
+    ["L", "vendor/leaflet/leaflet.js"], ["KARTE_DATEN", "js/karte-daten.js"], ["KARTE", "js/karte.js"],
   ];
   const fehlend = module.filter(function (m) {
     try { return new Function("return typeof " + m[0])() === "undefined"; } catch (e) { return true; }

@@ -72,6 +72,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 <script src="../js/preisvergleich.js"></script>
 <script src="../js/veredeln.js"></script>
 <script src="../js/craften.js"></script>
+<script src="../js/karte-daten.js"></script>
+<script src="../js/karte.js"></script>
 <script src="../js/eintopf-daten.js"></script>
 <script src="../js/eintopf-preise.js"></script>
 <script src="../js/eintopf-rechenkern.js"></script>
@@ -101,6 +103,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   VEREDELN.selbsttest().forEach((e) => pruefe("veredeln: " + e.name, e.ok, e.details));
   // ---- js/craften.js (Reiter "Craften: Gewinn", v3.11.0, ersetzt "Schnelles Geld") ----
   CRAFTEN.selbsttest().forEach((e) => pruefe("craften: " + e.name, e.ok, e.details));
+  KARTE.selbsttest().forEach((e) => pruefe("karte: " + e.name, e.ok, e.details));
   pruefe(
     "craften: Reiter \"Schnelles Geld\" (CHANCEN) ist entfernt",
     typeof CHANCEN === "undefined",

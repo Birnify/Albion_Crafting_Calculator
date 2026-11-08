@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-10-17 · Version: v3.13.0 · Preisvergleich mit Handelsvolumen je Stadt
+Stand: 2026-11-08 · Version: v3.14.0 · Neuer Reiter „Ancient Lands“: interaktive Karte
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -12,10 +12,10 @@ Stand: 2026-10-17 · Version: v3.13.0 · Preisvergleich mit Handelsvolumen je St
 
 ## Was ist das?
 
-**Seit v3.5.0 eine App mit fünf Bereichen** (v3.2.0 bis v3.4.1 vier, bis v3.1.11 drei) ("Albion Werkzeuge", sichtbarer
+**Seit v3.14.0 eine App mit sechs Bereichen** (v3.5.0 bis v3.13.0 fünf, v3.2.0 bis v3.4.1 vier, bis v3.1.11 drei) ("Albion Werkzeuge", sichtbarer
 Titel in der Oberfläche, Ordner-/Repo-Name bleibt bewusst `Kostenrechner`, s.
 Nutzer-Entscheidung unten): oben eine Reiterumschaltung
-(Kostenrechner/Eintopf-Rechner/Preisvergleich/Craften: Gewinn/Veredeln leveln, `js/tabs.js`; „Craften: Gewinn“ seit v3.11.0, vorher „Schnelles Geld“). Jeder Bereich
+(Kostenrechner/Eintopf-Rechner/Preisvergleich/Craften: Gewinn/Veredeln leveln/Ancient Lands, `js/tabs.js`; „Ancient Lands“ seit v3.14.0; „Craften: Gewinn“ seit v3.11.0, vorher „Schnelles Geld“). Jeder Bereich
 bleibt fachlich eigenständig (eigener Rechenkern/eigener Zustand), das ist
 Architektur-Zusammenführung, keine inhaltliche Vermischung.
 
@@ -72,6 +72,62 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.14.0 (08.11.2026): Reiter „Ancient Lands“, interaktive Karte
+
+Auftrag von Sören (autonom umgesetzt, während er weg war; lokal zuerst als v3.11.0 gebaut, beim Push auf v3.11.0 bis v3.13.0 aus einer anderen Sitzung gesetzt und auf v3.14.0 umnummeriert): ein Entwurf eines
+Kollegen („Albion Map Builder“, Leaflet, eigene Marker, Export/Import, Kartenbild
+per Upload) sollte schön in die App, mit besserem Kartenmaterial der Ancient Lands
+(Gebiet aus dem Dragonfire-Update vom 31.08.2026; der Nutzer nannte es
+„Dragonlands“/„Accident Lands“).
+
+- **Kartenmaterial aus dem Client-Dump statt Screenshot.** Im Netz gab es nur
+  Spiel-Screenshots in 1920×1080. Der Dump (`ao-bin-dumps`) enthält dagegen das
+  komplette Grundgerüst `templates/NONE/DRAGON_001.template.xml` und
+  `dragonareatemplatemetadata.json`. Neues Skript **`build_karte.py`** (Muster wie
+  `build_graph.py`, Zwischenspeicher im Temp-Ordner, `--refresh`) rastert daraus
+  die Inseln (Bausteine `_DRAGON_AxB` mit Größe im Namen, Randstücke verkleinert,
+  Slots aufgefüllt, Kanten geglättet), Wasser, Steinplätze, Bäume, Felsen, Glut,
+  und rendert schwebende Inseln mit Klippe und Schatten im App-Farbschema:
+  `assets/ancient-lands.webp`, 4096 px, 226 KB. Daten: `js/karte-daten.js`.
+- **Ausrichtung belegt:** Dump-Koordinaten (x Osten, z Norden) um 45° im
+  Uhrzeigersinn gedreht ergeben die Raute des Spiels mit Norden oben. Gegen einen
+  Spiel-Screenshot (albiononlinegrind.com) geprüft: großer See im Westen,
+  Wasser im Osten, vier Drachen um die Mitte, Ausgänge an den Rändern.
+- **Feste Punkte (aus dem Dump, belegt):** 37 Inseln (28 Camp-Slots, davon 4 mit
+  `DRAKE_ISLAND`, plus Zentralinsel und Pfadinseln), 60 Teleporter-Verbindungen,
+  12 Drachenschreine (`DRAGON_REWARD_SHRINE`), 17 Truhen-Spawnpunkte (8 Camp,
+  8 Zentralinsel, 1 Feuerdrache), Feuerdrache, 9 Ausgänge (8 Rand, 1 Mitte),
+  6 Lore-Punkte, 19 Angelstellen mit Schatz. **Die Truhenpositionen sind in allen
+  sechs Varianten (orange/schwarz × Solo/Veteran/Elite) identisch**, nur der
+  Truhentyp wechselt.
+- **Nicht fest, bewusst nicht als Punkt gezeichnet:** die Camps in den 28 Slots.
+  Das Spiel setzt je Instanz eine Vorlage ein (`M_DR_Mobcamp_01..04`,
+  `S_DR_Mobcamp_01..06`, Drachen-Slots `M_DR_Drake_01`), jede mit 2 Truhen und
+  einem Schlüsselstein-Marker, Lage und Drehung je Instanz unbekannt. Die Karte
+  zeigt deshalb die Inselnummer am Slot mit diesem Hinweis im Tooltip.
+- **Reiter** (`js/karte.js`, Leaflet 1.9.4 lokal unter `vendor/leaflet/`,
+  Prüfsummen gegen die offiziellen SRI-Werte geprüft, BSD-2-Lizenz beiliegend):
+  Ebenen als Chips (Truhen, Schreine, Drachen, Inseln, Verbindungen, Ausgänge,
+  Lore, Angeln, Eigene), **Lauf-Tracker** (Klick auf Truhe = geöffnet, Schrein =
+  benutzt, Insel = erledigt, Verbindung = aktiv, wie die Keystone-Verbindungen im
+  Spiel; Zähler mit Balken; „Neuer Lauf“), **eigene Marker** aus dem Entwurf
+  (sieben Typen, Dialog, Ziehen, Doppelklick bearbeitet, Liste springt hin,
+  Export/Import als JSON, liest auch Dateien des Map Builders), Vollbild,
+  Kompass N/O/S/W. Verbindungen laufen wie im Spiel von Inselmitte zu
+  Inselmitte. Unter Zoom −0,25 werden die Symbole kleiner.
+- **Weggelassen aus dem Entwurf:** Kartenbild-Upload (Karte ist fest), Tier-Feld.
+- Speicher: eigener Schlüssel `albion_kostenrechner_karte_v1` (Ebenen, Lauf,
+  Marker), beim Laden bereinigt (`laufBereinigen`, `markerBereinigen`).
+- Selbsttest **657/657** grün (644 + 13 Kartentests: Datenumfang,
+  Truhenarten, alle Punkte in der Raute, Verbindungen gültig, Bereiniger).
+  Im Browser bei 1600 und 390 px durchgeklickt (Truhe, Insel, Verbindung,
+  Marker setzen und speichern), keine Konsolenfehler, kein Seitenscrollbalken.
+
+**Offen:** Namen der Schreine im deutschen Client nicht geprüft (Tooltip sagt
+„Drachenschrein“). Ob die Variante `DRAGON-ISLANDS-002` (`DRA`, eigener Cluster)
+ein anderes Gerüst nutzt, ist nicht geprüft; beide Cluster-Dateien sind
+inhaltlich identisch und verweisen auf `DRAGON_001`.
 
 ## Nachtrag v3.13.0 (17.10.2026): Preisvergleich, Handelsvolumen je Stadt
 
@@ -612,6 +668,13 @@ Kostenrechner/
                               sell/buy/volOf/avgOf temporaer per Monkey-Patching durch
                               synthetische Fixtures (mitFixture()-Helfer), keine der drei
                               Eintopf-Dateien wurde dafuer geaendert (Nutzer-Entscheidung)
+  build_karte.py            neu v3.14.0, erzeugt assets/ancient-lands.webp und
+                              js/karte-daten.js aus dem Client-Dump (DRAGON_001)
+  js/karte.js               neu v3.14.0, Reiter "Ancient Lands" (Leaflet-Karte,
+                              Lauf-Tracker, eigene Marker), KARTE.selbsttest()
+  js/karte-daten.js         neu v3.14.0, erzeugt, nicht von Hand bearbeiten
+  vendor/leaflet/           neu v3.14.0, Leaflet 1.9.4 (js, css, LICENSE)
+  assets/ancient-lands.webp neu v3.14.0, Kartenbild 4096 px, erzeugt
   .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
 ```
 
