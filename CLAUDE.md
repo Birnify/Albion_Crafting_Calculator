@@ -699,46 +699,71 @@ benutzt. Das ist ehrlicher als eine erfundene Zuordnung und kostet nichts.
   Client-Dump nennt 9 Saucen je Eintopf, dieselbe Rate wie das Rezept (90 je
   10 Stück) und damit nur dessen Pro-Stück-Schreibweise, kein eigener Weg.
 
-## Arbeitsablauf: Orchestrator statt direkter Umsetzung im Hauptgespräch
+## Arbeitsablauf: Die Hauptsitzung steuert, Subagenten setzen um und prüfen
 
-Größere Vorhaben werden nicht direkt im Hauptgespräch gebaut, sondern von einem
-Hintergrund-Agenten. Etablierter Ablauf:
+**Seit 22.11.2026, Nutzer-Entscheidung.** Löst den Ablauf über
+`albion-cycle-orchestrator` ab. Größere Vorhaben werden weiter nicht im
+Hauptgespräch gebaut, aber die Hauptsitzung steuert sie selbst, ohne
+Zwischenagent.
 
-1. Grobe Idee: `/define-feature` ausführen, bis Name, Idee, Motivation, Scope und
-   Abgrenzung feststehen. Bei einem Paket aus `kostenrechner-PLAN.md` entfällt
-   das; der Auftrag steht dort schon.
-2. Auftrag an `albion-cycle-orchestrator` per `Agent`-Tool übergeben, mit **genau
-   einem** Paket bzw. Punkt.
-3. **Nur ein Zyklus je Instanz.** Sobald eine Instanz ihren Punkt abschließt und
-   ihre Runde beendet, für den nächsten Punkt eine **frische** Instanz per
-   `Agent`-Tool starten, nicht dieselbe per `SendMessage` weiterlaufen lassen.
-   Grund, im Pizza-Projekt gemessen: eine durchlaufende Instanz erzeugte über 670
-   Turns rund 196 Mio. Cache-Read-Tokens bei nur rund 304.000 neu erzeugten
-   Output-Tokens, weil jeder Turn die komplette bisherige Konversation erneut
-   liest. `SendMessage` an eine laufende Instanz nur **innerhalb** desselben, noch
-   offenen Punktes (Rückfrage beantworten, Spezialisten-Ergebnis liefern,
-   nach einem Sitzungslimit fortsetzen).
-4. Die Warteschlange führt der Hauptagent, nicht der Orchestrator. Reihenfolge
-   ausdrücklich vorgeben.
-5. **Sub-Agenten-Relay bedienen:** Der Orchestrator kann als Subagent selbst keine
-   weiteren Subagenten spawnen. Schickt er eine Nachricht, die mit
-   `SUBAGENT-ANFRAGE:` beginnt, spawnt der Hauptagent den genannten Spezialisten
-   selbst (`run_in_background: false`), wartet dessen Ergebnis ab und schickt es
-   per `SendMessage` zurück, beginnend mit `SUBAGENT-ERGEBNIS:`. Das ist eine
-   interne Steuernachricht, keine Nutzer-Rückfrage: autonom bedienen und den
-   Befund dem Nutzer nur informativ weitergeben. Ist ein Spezialist nicht
-   verfügbar, das ehrlich zurückmelden statt ihn zu erfinden.
-6. Eine Agenten-Instanz ist **nie sitzungsübergreifend** erreichbar. Eine neue
-   Sitzung startet immer einen frischen Orchestrator. Das ist kein Fehler.
+**Warum der Wechsel:** der Orchestrator durfte als Subagent keine Prüfer
+starten, jede Prüfung lief als Relay (`SUBAGENT-ANFRAGE`) über die
+Hauptsitzung, die damit ohnehin steuerte. Er lief auf Sonnet, was für
+entwurfslastige Pakete knapp ist. Seine Phase 1 fragte den Nutzer erneut, was
+im Plan schon stand. Und er war seit 13.09.2026 in vielen Sitzungen gar nicht
+aufrufbar (Ursache s. „Agenten" unten).
 
-**Bekanntes Problem (seit 13.09.2026, Stand 19.09.2026 unverändert):** in
-mehreren lokalen Sitzungen war `albion-cycle-orchestrator` über das Agent-Tool
-nicht aufrufbar (Harness-Fehler "Agent type ... not found"), zeitweise auch
-`oberflaechen-pruefer`/`spieldaten-pruefer`. Wirkt wie ein selektives
-Harness-Problem, kein grundsätzliches. In einem Projekt-Thread (dieses Repo
-als GitHub-Anbindung) ist unbekannt, ob dasselbe Problem auftritt - dort bei
-Bedarf denselben Fallback (inline im Hauptgespräch, nach kurzer Rückfrage)
-anwenden.
+### Ablauf je Paket
+
+1. **Auftrag klären.** Grobe Idee: `/define-feature`, bis Name, Idee,
+   Motivation, Scope und Abgrenzung feststehen. Steht das Paket schon in einer
+   Plandatei (`kostenrechner-PLAN.md`, `OPTIMIERUNG-PLAN.md`), entfällt das.
+   Offene fachliche Fragen und fehlende Spielwerte klärt die Hauptsitzung mit
+   dem Nutzer, **bevor** ein Umsetzer startet.
+2. **Umsetzen.** Die Hauptsitzung startet per `Agent`-Tool einen **frischen**
+   Umsetzer (`general-purpose`) mit **genau einem** Paket. Der Auftrag nennt:
+   die zu lesenden Dateien (`CLAUDE.md`, Kontextdatei, Plan-Abschnitt des
+   Pakets), Abgrenzung, Abnahmekriterien und die Stopp-Regeln unten. Der
+   Umsetzer committet nicht und legt keine Version an.
+3. **Prüfen.** Die Hauptsitzung startet die zum Paket passenden Prüfer selbst,
+   parallel, und lässt `tests/test.html` selbst laufen. Bei Änderungen an der
+   Oberfläche sieht sie die App im Browser an. Nur den Code zu lesen reicht
+   nicht.
+4. **Nacharbeit.** Befunde gehen an denselben Umsetzer zurück (`SendMessage`,
+   nur innerhalb desselben Pakets) oder werden, wenn klein, inline behoben.
+   Danach Tests erneut.
+5. **Abschluss durch die Hauptsitzung**, erst nach bestandener Prüfung:
+   Kontextdatei nachziehen, Paket im Plan markieren, Versionsordner, Commit
+   und Push.
+
+### Regeln
+
+- **Ein Paket je Umsetzer-Instanz.** Für das nächste Paket eine frische
+  Instanz, nicht dieselbe weiterlaufen lassen. Grund, im Pizza-Projekt
+  gemessen: eine durchlaufende Instanz erzeugte über 670 Turns rund 196 Mio.
+  Cache-Read-Tokens bei nur rund 304.000 neu erzeugten Output-Tokens, weil
+  jeder Turn die komplette bisherige Konversation erneut liest.
+- **Die Warteschlange führt die Hauptsitzung.** Reihenfolge laut Plan; kein
+  automatischer Start eines Folgepakets ohne Wort des Nutzers.
+- **Prüfer-Ergebnisse nie ungeprüft übernehmen.** Im Pizza-Projekt haben
+  Spezialisten mehrfach Testergebnisse behauptet, die bei eigener Nachprüfung
+  falsch waren. Testzahlen immer selbst nachlaufen lassen, gemeldete
+  Rechenabweichungen selbst nachrechnen.
+- Eine Agenten-Instanz ist **nie sitzungsübergreifend** erreichbar.
+
+### Stopp-Regeln (gehören wörtlich in jeden Umsetzer-Auftrag)
+
+- Rote Tests: stoppen, Befund melden, nicht weitermachen.
+- **Ein Spielwert fehlt oder ist unbelegt:** nicht schätzen. Melden, damit der
+  Nutzer im Spiel nachsieht. Das ist in diesem Projekt der häufigste und
+  wichtigste Stopp.
+- Belegte Werte aus dieser Datei nicht anfassen. Scheint eine Änderung nötig,
+  ist das eine Rückfrage, keine Umsetzung.
+- Zahlen passen nicht zusammen: melden statt glattbügeln.
+- Echte Architektur- oder Modellentscheidung, Abweichung vom Scope,
+  unerwarteter Dateizustand: mit Vorschlag und Optionen zurückmelden.
+- Erzeugte Dateien (`rezepte.js`, `item-namen.js`, `js/karte-daten.js`) nicht
+  von Hand bearbeiten.
 
 **Wann stattdessen inline im Hauptgespräch:** winzige, klar umrissene Fixes (eine
 Zeile, ein Doku-Nachtrag, ein Textfehler), kurze Analysen, oder wenn der Kontext
@@ -750,15 +775,28 @@ Empfehlung und kurzer Begründung, aber die Wahl bestätigt er.
 
 | Agent | Rolle | Modell |
 |---|---|---|
-| `albion-cycle-orchestrator` | führt einen kompletten Zyklus durch | sonnet |
-| `rechenkern-pruefer` | rechnet Ergebnisse unabhängig nach | haiku |
-| `spieldaten-pruefer` | prüft Rezepte und API gegen die Quellen | haiku |
-| `oberflaechen-pruefer` | prüft Oberfläche und Bedienbarkeit | haiku |
+| `general-purpose` (eingebaut) | Umsetzer, ein Paket je Instanz | wie die Hauptsitzung |
+| `rechenkern-pruefer` | rechnet Ergebnisse unabhängig nach | sonnet |
+| `spieldaten-pruefer` | prüft Rezepte und API gegen die Quellen | sonnet |
+| `oberflaechen-pruefer` | prüft Oberfläche und Bedienbarkeit | sonnet |
+| `albion-cycle-orchestrator` | abgelöst am 22.11.2026, Datei bleibt als Referenz | sonnet |
 
 Die drei Prüfer haben bewusst **keine Schreibrechte** und liefern Befundlisten.
-**Ihre Ergebnisse nie ungeprüft übernehmen**: im Pizza-Projekt haben Spezialisten
-mehrfach Testergebnisse behauptet, die bei eigener Nachprüfung falsch waren.
-Testzahlen immer selbst nachlaufen lassen.
+Seit 22.11.2026 laufen sie auf Sonnet statt Haiku, weil ihre Befunde zu oft
+nicht stimmten.
+
+**Ursache des Fehlers „Agent type ... not found" (22.11.2026, gefunden,
+behoben und bestätigt):** die `description`-Zeile im
+Dateikopf der drei betroffenen Agenten enthielt einen Doppelpunkt mit
+Leerzeichen („aktuell: der ...", „gegen die Quellen: den ...",
+„Bedienbarkeit: einheitliche ...") und war nicht in Anführungszeichen gesetzt.
+Das bricht das YAML. Der einzige Agent ohne solchen Doppelpunkt
+(`rechenkern-pruefer`) war auch der einzige, der lud. Alle vier
+Beschreibungen stehen jetzt in Anführungszeichen. Bestätigt: wenige Minuten
+nach der Korrektur meldete die laufende Sitzung die drei fehlenden Agenten
+als neu verfügbar.
+**Beim Anlegen oder Ändern eines Agenten die Beschreibung immer in
+Anführungszeichen setzen.**
 
 ## Belegte Werte nie ohne neuen Beleg ändern
 
@@ -816,7 +854,7 @@ Eigenes Git-Repo, Remote `https://github.com/Birnify/Albion_Crafting_Calculator.
 Branch `main`. Seit 04.09.2026 (Abend). `Versionen/` bleibt zusätzlich
 bestehen, ist aber redundant zur Commit-Historie und deshalb gitignored.
 
-Commits nur bei abgeschlossenen Paketen (Phase 5 des Orchestrators), nicht bei
+Commits nur bei abgeschlossenen Paketen (Abschluss durch die Hauptsitzung, s. „Arbeitsablauf"), nicht bei
 jedem Zwischenschritt. Push nach jedem Commit ist Standard, keine Rückfrage
 pro Push nötig. Das gilt nur für die automatisierten Commits in diesem
 Projekt, keine pauschale Push-Erlaubnis darüber hinaus.
@@ -837,7 +875,8 @@ dort) - der Git-Commit bleibt dort trotzdem Pflicht.
 | Datei | Zweck |
 |---|---|
 | `CLAUDE.md` | Diese Datei: Spielregeln, belegte Formeln, Arbeitsweise |
-| `.claude/agents/` | Orchestrator und Prüfer-Spezialisten |
+| `.claude/agents/` | Prüfer-Spezialisten; der Orchestrator ist seit 22.11.2026 abgelöst |
+| `OPTIMIERUNG-PLAN.md` | **Auftrag** der Optimierungsrunde, Pakete O1 bis O6 |
 | `.claude/skills/define-feature/` | Idee zu einer Feature-Definition verdichten |
 | `kostenrechner-PLAN.md` | **Auftrag**, in Arbeitspaketen |
 | `kostenrechner-KONTEXT.md` | **Arbeitsstand** |

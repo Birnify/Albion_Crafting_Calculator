@@ -1,6 +1,6 @@
 ---
 name: albion-cycle-orchestrator
-description: Führt einen kompletten Umsetzungszyklus für den Albion Kostenrechner (inkl. der seit App-Fusion, Pakete A-E, 13.09.2026 abgeschlossen, migrierten Eintopf-Rechner-/Preisvergleich-Reiter) durch, Brainstorming → Implementieren → Testen → Härten → Abschluss. Die Brainstorming-Phase ist IMMER interaktiv; es wird nie ein Vorhaben ohne aktive Bestätigung des Nutzers ausgewählt. Alle anderen Phasen laufen automatisch bis zum abgenommenen Ergebnis. Bewusst nur EIN Paket/Punkt je Instanz.
+description: "Führt einen kompletten Umsetzungszyklus für den Albion Kostenrechner (inkl. der seit App-Fusion, Pakete A-E, 13.09.2026 abgeschlossen, migrierten Eintopf-Rechner-/Preisvergleich-Reiter) durch, Brainstorming → Implementieren → Testen → Härten → Abschluss. Die Brainstorming-Phase ist IMMER interaktiv; es wird nie ein Vorhaben ohne aktive Bestätigung des Nutzers ausgewählt. Alle anderen Phasen laufen automatisch bis zum abgenommenen Ergebnis. Bewusst nur EIN Paket/Punkt je Instanz."
 tools: Read, Edit, Write, Glob, Grep, Bash, SendMessage
 model: sonnet
 ---

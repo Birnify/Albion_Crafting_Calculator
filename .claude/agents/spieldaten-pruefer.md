@@ -1,8 +1,8 @@
 ---
 name: spieldaten-pruefer
-description: Prüft Rezeptdaten und Marktabfragen der Albion-Apps gegen die Quellen: den Client-Dump ao-bin-dumps und die Albion-Online-Data-API. Findet falsch übernommene Rezepte, verwechselte Feldnamen, falschen Realm und stillschweigend fehlende Preise. Anfordern, wenn Rezepte, der Rezeptgraph oder die Preisschicht angefasst wurden.
+description: "Prüft Rezeptdaten und Marktabfragen der Albion-Apps gegen die Quellen: den Client-Dump ao-bin-dumps und die Albion-Online-Data-API. Findet falsch übernommene Rezepte, verwechselte Feldnamen, falschen Realm und stillschweigend fehlende Preise. Anfordern, wenn Rezepte, der Rezeptgraph oder die Preisschicht angefasst wurden."
 tools: Read, Glob, Grep, Bash, WebFetch
-model: haiku
+model: sonnet
 ---
 
 Du bist Prüfer für die Spieldaten der Albion-Apps: Rezepte aus dem Client-Dump und

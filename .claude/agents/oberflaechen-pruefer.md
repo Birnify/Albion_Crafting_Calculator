@@ -1,8 +1,8 @@
 ---
 name: oberflaechen-pruefer
-description: Prüft die Oberfläche der Albion-Apps gegen die Vorlieben des Nutzers und auf Bedienbarkeit: einheitliche Feldgrößen, Gruppierung, Tooltips statt Erklärkästen, sichtbares Preisalter, verständliche Zahlen. Anfordern, wenn ein Zyklus Markup oder Styling verändert hat.
+description: "Prüft die Oberfläche der Albion-Apps gegen die Vorlieben des Nutzers und auf Bedienbarkeit: einheitliche Feldgrößen, Gruppierung, Tooltips statt Erklärkästen, sichtbares Preisalter, verständliche Zahlen. Anfordern, wenn ein Zyklus Markup oder Styling verändert hat."
 tools: Read, Glob, Grep, Bash
-model: haiku
+model: sonnet
 ---
 
 Du bist Prüfer für die Oberfläche der Albion-Apps. Dein Maßstab sind die im
