@@ -3175,6 +3175,14 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       return { status: 200, ok: true, json: async () => antwortFuer(String(url)) };
     };
     const ohneAbrufzeit = (wert) => JSON.stringify(wert, (k, v) => (k === "abgerufenAm" ? undefined : v));
+    // v3.21.0 (O7): Handelsvolumen der Zutaten direkt aus den synthetischen history/-Zeilen, ohne Bestand.
+    const zutatAbsatzDirekt = (ids, stadt) => {
+      const out = {};
+      ids.forEach((id) => {
+        out[id] = { stueckJeTag: VEREDELN.zutatHandel(PREISE.absatzAusAntwort(historieZeilen(id, stadt), 7)[id]) };
+      });
+      return out;
+    };
     const stockungMessen = () => {
       let max = 0;
       let letzte = performance.now();
@@ -3254,6 +3262,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         idsC.zutaten.forEach((id) => {
           e.preiseRoh[id] = PREISE.preiseJeQualitaetAusAntwort([preisZeile(id, stadt, 1)])[id][1];
         });
+        e.zutatAbsatz = zutatAbsatzDirekt(idsC.zutaten, stadt); // v3.21.0 (O7)
         if (stadt === "Lymhurst") {
           e.produktJeQ = PREISE.preiseJeQualitaetAusAntwort([].concat(...idsC.produkte.map((id) => [1, 2, 3, 4, 5].map((q) => preisZeile(id, stadt, q)))));
           e.absatz = PREISE.absatzAusAntwort([].concat(...idsC.produkte.map((id) => historieZeilen(id, stadt))), 7);
@@ -3285,7 +3294,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       pruefe("bestand: zweite Suche derselben Auswahl (Veredeln) loest 0 Abrufe aus", v2.abrufe === 0, v2.abrufe);
       const zeilenV1 = VEREDELN.zeilenRechnen(kandV, v1.stadtDaten, auswahlV, einstV, JETZT);
       const zeilenV2 = VEREDELN.zeilenRechnen(kandV, v2.stadtDaten, auswahlV, einstV, JETZT);
-      const direktV = [{ stadt: "Thetford", preiseRoh: {}, absatz: PREISE.absatzAusAntwort([].concat(...v1.produktIds.map((id) => historieZeilen(id, "Thetford"))), 7) }];
+      const direktV = [{ stadt: "Thetford", preiseRoh: {}, absatz: PREISE.absatzAusAntwort([].concat(...v1.produktIds.map((id) => historieZeilen(id, "Thetford"))), 7), zutatAbsatz: zutatAbsatzDirekt(v1.zutatIds, "Thetford") }];
       v1.zutatIds.concat(v1.produktIds).forEach((id) => {
         direktV[0].preiseRoh[id] = PREISE.preiseJeQualitaetAusAntwort([preisZeile(id, "Thetford", 1)])[id][1];
       });
@@ -3533,6 +3542,14 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     };
     const U = (name) => "https://test.invalid/prices/" + name + ".json?locations=Lymhurst&qualities=1";
     const staedteVon = (url) => /[?&]locations=([^&]+)/.exec(decodeURIComponent(url))[1].split(",");
+    // v3.21.0 (O7): Handelsvolumen der Zutaten aus einem Einzelabruf je Stadt (Markt-ID -> Qualitaet -> Eintrag) in der Form von stadtDaten.zutatAbsatz.
+    const zutatAbsatzEinzeln = (jeId) => {
+      const out = {};
+      Object.keys(jeId).forEach((id) => {
+        out[id] = { stueckJeTag: VEREDELN.zutatHandel(jeId[id]) };
+      });
+      return out;
+    };
 
     try {
       await PREISE.testDatenbankLoeschen(DB);
@@ -3594,17 +3611,24 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       const zutatUrls = urls.filter((u) => /\/prices\//.test(u) && /qualities=1$/.test(u));
       const produktUrls = urls.filter((u) => /\/prices\//.test(u) && /qualities=1,2,3,4,5$/.test(u));
       const historieUrls = urls.filter((u) => /\/history\//.test(u));
+      // v3.21.0 (O7): Handelsvolumen der Produkte (Verkaufsstaedte) und der Zutaten (Einkaufsstaedte), je ein Abruf je ID-Block.
+      const historieProdukt = historieUrls.filter((u) => staedteVon(u).join("|") === "Lymhurst|Bridgewatch");
+      const historieZutat = historieUrls.filter((u) => staedteVon(u).join("|") === "Lymhurst|Fort Sterling|Thetford");
+      const idsInUrl = (u) => /\/(?:prices|history)\/(.+)\.json/.exec(u)[1].split(",");
       pruefe(
-        "planer: Suche mit 3 Einkaufs- und 2 Verkaufsstaedten sendet je ID-Block genau einen Abruf je Endpunkt (Zutatenpreise, Produktpreise, Handelsvolumen)",
-        zutatUrls.length === bl(idsC.zutaten.length) && produktUrls.length === bl(idsC.produkte.length) && historieUrls.length === bl(idsC.produkte.length) &&
+        "planer: Suche mit 3 Einkaufs- und 2 Verkaufsstaedten sendet je ID-Block genau einen Abruf je Endpunkt (Zutatenpreise, Produktpreise, Handelsvolumen der Produkte, Handelsvolumen der Zutaten)",
+        zutatUrls.length === bl(idsC.zutaten.length) && produktUrls.length === bl(idsC.produkte.length) && historieProdukt.length === bl(idsC.produkte.length) && historieZutat.length === bl(idsC.zutaten.length) &&
+          historieUrls.length === historieProdukt.length + historieZutat.length &&
+          [].concat(...historieUrls.map(idsInUrl)).length === new Set(idsC.zutaten.concat(idsC.produkte)).size &&
+          [].concat(...historieZutat.map(idsInUrl)).sort().join() === idsC.zutaten.slice().sort().join() &&
           urls.length === zutatUrls.length + produktUrls.length + historieUrls.length && m1.abrufe === urls.length &&
           urls.length === CRAFTEN.abrufSchaetzung(kandC, auswahlC).abrufe,
         idsC.zutaten.length + " Zutaten, " + idsC.produkte.length + " Produkte: " + zutatUrls.length + " + " + produktUrls.length + " + " + historieUrls.length + " Abrufe"
       );
       pruefe(
-        "planer: Zutatenpreise nur fuer die Einkaufsstaedte, Produktpreise und Handelsvolumen nur fuer die Verkaufsstaedte",
-        zutatUrls.every((u) => staedteVon(u).join("|") === "Lymhurst|Fort Sterling|Thetford") &&
-          produktUrls.concat(historieUrls).every((u) => staedteVon(u).join("|") === "Lymhurst|Bridgewatch"),
+        "planer: Zutatenpreise und Zutatenvolumen nur fuer die Einkaufsstaedte, Produktpreise und Produktvolumen nur fuer die Verkaufsstaedte",
+        zutatUrls.concat(historieZutat).every((u) => staedteVon(u).join("|") === "Lymhurst|Fort Sterling|Thetford") &&
+          produktUrls.concat(historieProdukt).every((u) => staedteVon(u).join("|") === "Lymhurst|Bridgewatch"),
         staedteVon(zutatUrls[0]).join(",") + " / " + staedteVon(produktUrls[0]).join(",")
       );
       const von = (daten, stadt) => daten.stadtDaten.find((d) => d.stadt === stadt);
@@ -3623,7 +3647,10 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         const vk = auswahlC.verkaufStaedte.indexOf(stadt) !== -1;
         if (!ek && !vk) continue;
         const e = { stadt };
-        if (ek) e.preiseRoh = await PREISE.preiseAbrufen(idsC.zutaten, { stadt, erzwingen: true, qualitaet: 1 });
+        if (ek) {
+          e.preiseRoh = await PREISE.preiseAbrufen(idsC.zutaten, { stadt, erzwingen: true, qualitaet: 1 });
+          e.zutatAbsatz = zutatAbsatzEinzeln(await PREISE.absatzAbrufen(idsC.zutaten, { stadt, tageFenster: 7, erzwingen: true })); // v3.21.0 (O7)
+        }
         if (vk) {
           e.produktJeQ = await PREISE.preiseAlleQualitaetenAbrufen(idsC.produkte, { stadt, erzwingen: true });
           e.absatz = await PREISE.absatzAbrufen(idsC.produkte, { stadt, tageFenster: 7, erzwingen: true });
@@ -3644,8 +3671,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       neuerLauf();
       const m3 = await CRAFTEN.datenAbrufen(kandC, Object.assign({}, auswahlC, { einkaufStaedte: ["Lymhurst", "Fort Sterling", "Thetford", "Martlock"] }));
       pruefe(
-        "planer: kommt eine Stadt hinzu, wird nur diese Stadt nachgeholt",
-        log.length === bl(idsC.zutaten.length) && log.every((e) => staedteVon(e.url).join("|") === "Martlock") && von(m3, "Martlock").preiseRoh[idsC.zutaten[0]].sell.preis === preisZeile(idsC.zutaten[0], "Martlock", 1).sell_price_min,
+        "planer: kommt eine Einkaufsstadt hinzu, wird nur diese Stadt nachgeholt (Zutatenpreise und Zutatenvolumen)",
+        log.length === 2 * bl(idsC.zutaten.length) && log.filter((e) => /\/history\//.test(e.url)).length === bl(idsC.zutaten.length) && log.every((e) => staedteVon(e.url).join("|") === "Martlock") && von(m3, "Martlock").preiseRoh[idsC.zutaten[0]].sell.preis === preisZeile(idsC.zutaten[0], "Martlock", 1).sell_price_min,
         log.map((e) => staedteVon(e.url).join(",")).join(" / ")
       );
 
@@ -3664,12 +3691,17 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       const idsIn = (u) => /\/(?:prices|history)\/(.+)\.json/.exec(u)[1].split(",");
       pruefe(
         "planer: Veredeln mit 3 Einkaufs- und 2 Verkaufsstaedten: ein Abruf je ID-Block und Endpunkt, keine ID doppelt, Zutaten nur in Einkaufs-, Produkte nur in Verkaufsstaedten",
-        vUrls.filter((u) => /\/prices\//.test(u)).length === bl(nurZ) + bl(nurP) + bl(beides) && vUrls.filter((u) => /\/history\//.test(u)).length === bl(v1.produktIds.length) &&
+        vUrls.filter((u) => /\/prices\//.test(u)).length === bl(nurZ) + bl(nurP) + bl(beides) && vUrls.filter((u) => /\/history\//.test(u)).length === bl(nurZ) + bl(nurP) + bl(beides) &&
           vUrls.filter((u) => /\/prices\//.test(u)).every((u) => {
             const st = staedteVon(u).join("|");
             return idsIn(u).every((id) => (zSet.has(id) && pSet.has(id) ? st === "Martlock|Thetford|Caerleon|Brecilien" : zSet.has(id) ? st === "Martlock|Thetford|Caerleon" : st === "Thetford|Brecilien"));
           }) &&
-          vUrls.filter((u) => /\/history\//.test(u)).every((u) => staedteVon(u).join("|") === "Thetford|Brecilien") &&
+          // v3.21.0 (O7): das Handelsvolumen folgt derselben Aufteilung wie die Preise, jede ID genau einmal.
+          vUrls.filter((u) => /\/history\//.test(u)).every((u) => {
+            const st = staedteVon(u).join("|");
+            return idsIn(u).every((id) => (zSet.has(id) && pSet.has(id) ? st === "Martlock|Thetford|Caerleon|Brecilien" : zSet.has(id) ? st === "Martlock|Thetford|Caerleon" : st === "Thetford|Brecilien"));
+          }) &&
+          [].concat(...vUrls.filter((u) => /\/history\//.test(u)).map(idsIn)).length === new Set(v1.zutatIds.concat(v1.produktIds)).size &&
           [].concat(...vUrls.filter((u) => /\/prices\//.test(u)).map(idsIn)).length === new Set(v1.zutatIds.concat(v1.produktIds)).size,
         nurZ + " nur Zutat, " + nurP + " nur Produkt, " + beides + " beides: " + vUrls.length + " Abrufe"
       );
@@ -3681,7 +3713,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         const ids = Array.from(new Set([].concat(ek ? v1.zutatIds : [], vk ? v1.produktIds : [])));
         const preiseRoh = await PREISE.preiseAbrufen(ids, { stadt, erzwingen: true, qualitaet: 1 });
         const absatz = vk ? await PREISE.absatzAbrufen(v1.produktIds, { stadt, tageFenster: 7, erzwingen: true }) : {};
-        alterWegV.push({ stadt, preiseRoh, absatz });
+        const zutatAbsatz = ek ? zutatAbsatzEinzeln(await PREISE.absatzAbrufen(v1.zutatIds, { stadt, tageFenster: 7, erzwingen: true })) : {}; // v3.21.0 (O7)
+        alterWegV.push({ stadt, preiseRoh, absatz, zutatAbsatz });
       }
       const sortiert = (daten) => daten.map((d) => ({ stadt: d.stadt, preiseRoh: Object.keys(d.preiseRoh).sort().map((id) => [id, d.preiseRoh[id]]), absatz: Object.keys(d.absatz).sort().map((id) => [id, d.absatz[id]]) }));
       const zeilenV = VEREDELN.zeilenRechnen(kandV, v1.stadtDaten, auswahlV, einstV, JETZT);
@@ -3698,8 +3731,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       const auswahlVGleich = Object.assign({}, auswahlV, { einkaufStaedte: ["Thetford", "Martlock"], verkaufStaedte: ["Thetford", "Martlock"] });
       const vGleich = await VEREDELN.datenAbrufen(kandV, auswahlVGleich);
       pruefe(
-        "planer: Veredeln mit gleichen Einkaufs- und Verkaufsstaedten holt alle Preise in einem Abruf je ID-Block (hier 2 Abrufe: Preise, Handelsvolumen)",
-        log.length === bl(new Set(vGleich.zutatIds.concat(vGleich.produktIds)).size) + bl(vGleich.produktIds.length) && log.length === 2 &&
+        "planer: Veredeln mit gleichen Einkaufs- und Verkaufsstaedten holt alle Preise in einem Abruf je ID-Block (hier 2 Abrufe: Preise, Handelsvolumen von Produkten und Zutaten zusammen)",
+        log.length === 2 * bl(new Set(vGleich.zutatIds.concat(vGleich.produktIds)).size) && log.length === 2 &&
           vGleich.stadtDaten.every((d) => vGleich.zutatIds.concat(vGleich.produktIds).every((id) => d.preiseRoh[id].sell.preis === preisZeile(id, d.stadt, 1).sell_price_min)),
         log.length + " Abrufe"
       );
@@ -4059,6 +4092,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     let log = []; // {url, start, ende}
     let zutaten = new Set();
     let aufschlag = 0; // v3.19.0 (O5): Aufschlag auf die Produktpreise der nachgebildeten API ("heute teurer als damals")
+    let ohneHistorie = new Set(); // v3.21.0 (O7): diese IDs laesst die nachgebildete API in history/ weg
+    let historieLeer = false; // v3.21.0 (O7): history/ antwortet ganz leer
     const umgebung = { jetzt: () => t, warte: (ms) => ((t += ms), Promise.resolve()), verborgen: () => verborgen };
     const stellen = () => PREISE.testEinstellen(Object.assign({ pauseMs: PREISE.PAUSE_MS, dbName: DB, lsKey: LS }, umgebung));
     const preisZeile = (id, stadt, q) => {
@@ -4075,7 +4110,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         return [].concat(...staedte.map((stadt) => [].concat(...p[1].split(",").map((id) => qs.map((q) => preisZeile(id, stadt, q))))));
       }
       const hi = /\/history\/(.+)\.json/.exec(u);
-      if (hi) return [].concat(...staedte.map((stadt) => [].concat(...hi[1].split(",").map((id) => historieZeilen(id, stadt)))));
+      if (hi) return historieLeer ? [] : [].concat(...staedte.map((stadt) => [].concat(...hi[1].split(",").filter((id) => !ohneHistorie.has(id)).map((id) => historieZeilen(id, stadt)))));
       return [];
     };
     window.fetch = async (url) => {
@@ -4460,6 +4495,157 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         JSON.stringify({ einkauf: listeO5.summe, erloes: listeO5.erloes, gewinn: listeO5.gewinn })
       );
       aufschlag = 0;
+
+      // ---- v3.21.0 (O7): Markttiefe im Einkauf ----
+      Date.now = echtesNow;
+      maschinen.forEach((m) => m.beenden());
+      const idsAus = (url) => /\/(?:prices|history)\/(.+)\.json/.exec(decodeURIComponent(url))[1].split(",");
+      const istHistorie = (e) => /\/history\//.test(e.url);
+      const volSynth = (id, stadt) => historieZeilen(id, stadt).reduce((a, z) => a + z.data[0].item_count, 0) / 7; // Summe ueber beide Qualitaeten, Mittel ueber 7 Tage
+      const UMFANG_O7 = {
+        warengruppen: ["sword"], rohstoffe: ["ore"], tiers: [4, 5], stufen: [0, 1], artefakte: false,
+        einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst"], fertigungsstadt: "Lymhurst", minAbsatz: 0,
+      };
+      zutatenMerken(UMFANG_O7);
+      const kandO7 = G.kandidaten(G.einstellungenBereinigen(UMFANG_O7));
+      const zutatO7 = new Set();
+      const produktO7 = new Set();
+      kandO7.forEach((x) => {
+        produktO7.add(x.produktId);
+        x.zutatIds.forEach((id) => zutatO7.add(id));
+      });
+      const nurZutatO7 = Array.from(zutatO7).filter((id) => !produktO7.has(id));
+
+      // Stand wie bis v3.20.1: Preise und das Handelsvolumen der PRODUKTE liegen im Bestand, das der Zutaten fehlt.
+      await PREISE.testDatenbankLoeschen(DB);
+      await stellen();
+      await PREISE.preiseAbrufen(Array.from(new Set(Array.from(zutatO7).concat(kandO7.filter((x) => x.art === "veredeln").map((x) => x.produktId)))), { staedte: ["Lymhurst"], qualitaet: 1 });
+      await PREISE.preiseAlleQualitaetenAbrufen(kandO7.filter((x) => x.art === "craften").map((x) => x.produktId), { staedte: ["Lymhurst"] });
+      await PREISE.absatzAbrufen(Array.from(produktO7), { staedte: ["Lymhurst"], tageFenster: 7 });
+      log = [];
+      const mO7 = neu(Object.assign({}, UMFANG_O7, { scanAn: false }));
+      await mO7.oeffnen();
+      await mO7.fertig();
+      const schO7 = mO7.schaetzung();
+      const vorO7 = {};
+      mO7.kandidaten().forEach((x) => {
+        const z = mO7.zeile(x.schluessel);
+        vorO7[x.schluessel] = { silber: z.silber, erloes: z.erloes, gewinn: z.gewinn, marge: z.marge, vkStadt: z.vkStadt, gewinnJeTag: z.gewinnJeTag, einkaufUnbekannt: z.einkaufUnbekannt, tagGrenze: z.tagGrenze, stueckJeTag: z.stueckJeTag, alt: G.istAlt(z) };
+      });
+      const mitGewinnO7 = Object.keys(vorO7).filter((k) => vorO7[k].gewinn != null && vorO7[k].stueckJeTag > 0);
+      const erzZeile = "v:T4_METALBAR:0"; // Erz und T3-Barren sind beide nie abgerufen: Zahl wie bis v3.20.1
+      pruefe(
+        "gelegenheiten: o7 Oeffnen ohne Abruf; fehlt das Handelsvolumen der Zutaten, tragen die Zeilen einkaufUnbekannt, gelten als alt, und Gewinn/Tag steht ohne Einkaufsgrenze wie bis v3.20.1 (Gewinn/Stueck x 25 % von verkauft/Tag)",
+        log.length === 0 && mitGewinnO7.length >= 8 && mitGewinnO7.every((k) => vorO7[k].einkaufUnbekannt === true && vorO7[k].alt === true) && vorO7[erzZeile] && vorO7[erzZeile].tagGrenze === "absatz" &&
+          nahe(vorO7[erzZeile].gewinnJeTag, vorO7[erzZeile].gewinn * 0.25 * vorO7[erzZeile].stueckJeTag, 1e-6) && mO7.status().frisch === 0,
+        log.length + " Abrufe, " + mitGewinnO7.length + " Zeilen mit Ergebnis, " + mO7.status().frisch + " frisch"
+      );
+      mO7.einstellen({ scanAn: true });
+      const scanO7 = await bis(() => mO7.status().vorgaenge > 0 && mO7.status().frisch === mO7.status().vorgaenge && !mO7.status().rechnet);
+      await mO7.fertig();
+      const logO7 = log.slice();
+      const geholtO7 = [].concat(...logO7.map((e) => idsAus(e.url)));
+      pruefe(
+        "gelegenheiten: o7 der Scan holt das fehlende Handelsvolumen der Zutaten nach: nur history/-Abrufe, genau die Zutaten ohne Volumen im Bestand, jede ID einmal, ein Abruf je 50 IDs",
+        scanO7 && logO7.length > 0 && logO7.every(istHistorie) && geholtO7.length === new Set(geholtO7).size && geholtO7.slice().sort().join() === nurZutatO7.slice().sort().join() &&
+          logO7.length === Math.ceil(nurZutatO7.length / PREISE.BLOCKGROESSE) && mO7.status().abrufe === logO7.length,
+        logO7.length + " Abrufe fuer " + geholtO7.length + " Zutaten-IDs (" + nurZutatO7.length + " ohne Volumen im Bestand)"
+      );
+      let begrenztO7 = 0;
+      const falschO7 = [];
+      mitGewinnO7.forEach((k) => {
+        const z = mO7.zeile(k);
+        const v = vorO7[k];
+        // Unabhaengig von der App: Volumen je Zutat aus den synthetischen history/-Zeilen, Bedarf aus der Zeile.
+        const einkauf = Math.min(...z.zutatenPreise.map((x) => (0.25 * volSynth(x.marktId, "Lymhurst")) / x.effektiveMenge));
+        const erwartet = z.gewinn * Math.min(0.25 * z.stueckJeTag, einkauf);
+        if (einkauf < 0.25 * z.stueckJeTag) begrenztO7++;
+        if (z.einkaufUnbekannt || G.istAlt(z) || !nahe(z.gewinnJeTag, erwartet, 1e-6) || (einkauf < 0.25 * z.stueckJeTag) !== (z.tagGrenze === "einkauf") ||
+          z.silber !== v.silber || z.erloes !== v.erloes || z.gewinn !== v.gewinn || z.marge !== v.marge || z.vkStadt !== v.vkStadt) falschO7.push(k);
+      });
+      pruefe(
+        "gelegenheiten: o7 nach dem Scan ist jede Zeile durch das Zutatenvolumen begrenzt, wo es knapper ist als der Absatz (Gewinn/Tag = Gewinn/Stueck x Minimum), das Kennzeichen ist weg, die Zeilen sind frisch; Kosten, Erloes, Gewinn/Stueck, Marge und Stadt unveraendert",
+        falschO7.length === 0 && begrenztO7 >= 1 && mitGewinnO7.some((k) => mO7.zeile(k).gewinnJeTag !== vorO7[k].gewinnJeTag),
+        mitGewinnO7.length + " Zeilen geprueft, " + begrenztO7 + " durch den Einkauf begrenzt, Abweichungen: " + (falschO7.slice(0, 5).join(",") || "keine")
+      );
+      mO7.beenden();
+
+      // Voller Durchlauf ohne Bestand, Einkauf und Verkauf in derselben Stadt: jede ID steht in hoechstens einem Volumenabruf.
+      await PREISE.testDatenbankLoeschen(DB);
+      await stellen();
+      log = [];
+      const mO7b = neu(UMFANG_O7);
+      mO7b.oeffnen();
+      const scanO7b = await bis(() => mO7b.status().vorgaenge > 0 && mO7b.status().frisch === mO7b.status().vorgaenge && !mO7b.status().rechnet);
+      await mO7b.fertig();
+      const histO7b = [].concat(...log.filter(istHistorie).map((e) => idsAus(e.url)));
+      pruefe(
+        "gelegenheiten: o7 voller Durchlauf ohne Bestand: das Handelsvolumen jeder Zutat und jedes Produkts wird geholt, jede ID je Durchlauf hoechstens einmal, die Abrufzahl bleibt unter der genannten Obergrenze",
+        scanO7b && histO7b.length === new Set(histO7b).size && Array.from(zutatO7).concat(Array.from(produktO7)).every((id) => histO7b.indexOf(id) !== -1) && log.length <= schO7.abrufe &&
+          mO7b.kandidaten().every((x) => !mO7b.zeile(x.schluessel).einkaufUnbekannt),
+        log.length + " Abrufe (davon " + log.filter(istHistorie).length + " history/), Obergrenze " + schO7.abrufe + ", " + histO7b.length + " IDs im Volumenabruf"
+      );
+      mO7b.beenden();
+
+      // Detailreiter: VEREDELN.datenAbrufen bringt das Zutatenvolumen mit; die drei Faelle bleiben getrennt.
+      await PREISE.testDatenbankLoeschen(DB);
+      await stellen();
+      zutaten = new Set(["T4_ORE", "T5_ORE", "T3_METALBAR"]);
+      ohneHistorie = new Set(["T5_ORE"]);
+      const aO7 = VEREDELN.einstellungenBereinigen({ rohstoffe: ["ore"], tiers: [4, 5], stufen: [0], einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst"], kaufweg: "sofort", verkaufsweg: "order" });
+      const kO7 = VEREDELN.kandidaten(aO7);
+      log = [];
+      const dO7 = await VEREDELN.datenAbrufen(kO7, aO7);
+      const zaO7 = dO7.stadtDaten[0].zutatAbsatz;
+      const zO7 = VEREDELN.zeilenRechnen(kO7, dO7.stadtDaten, aO7, einst);
+      const t4 = zO7.find((z) => z.marktId === "T4_METALBAR");
+      const t5 = zO7.find((z) => z.marktId === "T5_METALBAR");
+      const dO7zwei = await VEREDELN.datenAbrufen(kO7, aO7);
+      pruefe(
+        "veredeln: o7 datenAbrufen holt das Handelsvolumen der Zutaten im selben Abruf wie das der Produkte (Einkauf = Verkauf: ein history/-Abruf); zweite Suche 0 Abrufe mit denselben Daten",
+        log.filter(istHistorie).length === 1 && idsAus(log.filter(istHistorie)[0].url).length === new Set(dO7.zutatIds.concat(dO7.produktIds)).size && log.length === 2 &&
+          nahe(zaO7.T4_ORE.stueckJeTag, volSynth("T4_ORE", "Lymhurst"), 1e-9) && nahe(zaO7.T3_METALBAR.stueckJeTag, volSynth("T3_METALBAR", "Lymhurst"), 1e-9) && zaO7.T4_ORE.abgerufenAm > 0 &&
+          dO7zwei.abrufe === 0 && JSON.stringify(dO7zwei.stadtDaten) === JSON.stringify(dO7.stadtDaten),
+        log.length + " Abrufe, T4_ORE " + (zaO7.T4_ORE && zaO7.T4_ORE.stueckJeTag) + " verkauft/Tag"
+      );
+      pruefe(
+        "veredeln: o7 Fall 2, die API meldet fuer eine abgerufene Zutat keinen Handel (T5_ORE): Volumen 0, Gewinn/Tag 0 mit Grenze Einkauf, Gewinn/Stueck steht; die andere Zeile ist normal begrenzt",
+        zaO7.T5_ORE && zaO7.T5_ORE.stueckJeTag === 0 && t5 && t5.gewinn != null && t5.gewinnJeTag === 0 && t5.tagGrenze === "einkauf" && t5.einkaufUnbekannt === false &&
+          t4 && t4.gewinn != null && t4.einkaufUnbekannt === false &&
+          nahe(t4.gewinnJeTag, t4.gewinn * Math.min(0.25 * t4.stueckJeTag, ...t4.zutatenPreise.map((x) => (0.25 * volSynth(x.marktId, "Lymhurst")) / x.effektiveMenge)), 1e-6),
+        JSON.stringify({ t5: t5 && [t5.gewinn, t5.gewinnJeTag, t5.tagGrenze], t4: t4 && [t4.gewinnJeTag, t4.tagGrenze] })
+      );
+      ohneHistorie = new Set();
+      historieLeer = true;
+      const aO7m = Object.assign({}, aO7, { einkaufStaedte: ["Martlock"], verkaufStaedte: ["Martlock"] });
+      const dO7m = await VEREDELN.datenAbrufen(kO7, aO7m);
+      const zO7m = VEREDELN.zeilenRechnen(kO7, dO7m.stadtDaten, aO7m, einst);
+      historieLeer = false;
+      pruefe(
+        "veredeln: o7 Fall 1, liefert history/ fuer die Stadt gar nichts, gilt das Zutatenvolumen als nie abgerufen (nicht als \"kein Handel\"): kein Eintrag, die Zeilen tragen einkaufUnbekannt",
+        Object.keys(dO7m.stadtDaten[0].zutatAbsatz).length === 0 && zO7m.length === 2 && zO7m.every((z) => z.gewinn != null && z.zutatenPreise.every((x) => x.verkauftJeTag === null)) &&
+          PREISE.bestandAbsatz("Martlock", "T4_ORE", 7) === null,
+        JSON.stringify(dO7m.stadtDaten[0].zutatAbsatz)
+      );
+      const aCO7 = CRAFTEN.einstellungenBereinigen({ warengruppen: ["sword"], tiers: [4, 5], stufen: [0, 1], artefakte: false, einkaufStaedte: ["Lymhurst", "Thetford"], verkaufStaedte: ["Lymhurst"], verkaufsweg: "order" });
+      const kCO7 = CRAFTEN.kandidaten(aCO7);
+      zutaten = new Set(CRAFTEN.benoetigteMarktIds(kCO7).zutaten);
+      log = [];
+      const dCO7 = await CRAFTEN.datenAbrufen(kCO7, aCO7, { frisch: true });
+      const zCO7 = CRAFTEN.zeilenRechnen(kCO7, dCO7.stadtDaten, aCO7, einst);
+      const falschCO7 = zCO7.filter((z) => {
+        if (z.gewinn == null) return false;
+        const einkauf = Math.min(...z.zutatenPreise.map((x) => (0.25 * volSynth(x.marktId, x.stadt)) / x.effektiveMenge));
+        return z.einkaufUnbekannt || !nahe(z.gewinnJeTag, z.gewinn * Math.min(0.25 * z.stueckJeTag, einkauf), 1e-6);
+      });
+      pruefe(
+        "craften: o7 datenAbrufen holt das Handelsvolumen der Zutaten fuer beide Einkaufsstaedte; je Zutat zaehlt das Volumen der gewaehlten Stadt; die Abrufzahl entspricht der Schaetzung",
+        dCO7.abrufe === CRAFTEN.abrufSchaetzung(kCO7, aCO7).abrufe && log.length === dCO7.abrufe && zCO7.filter((z) => z.gewinn != null).length >= 3 && falschCO7.length === 0 &&
+          zCO7.some((z) => z.zutatenPreise.some((x) => x.stadt === "Thetford")) && zCO7.some((z) => z.zutatenPreise.some((x) => x.stadt === "Lymhurst")) &&
+          Object.keys(dCO7.stadtDaten.find((d) => d.stadt === "Thetford").zutatAbsatz).length === zutaten.size && !dCO7.stadtDaten.find((d) => d.stadt === "Thetford").absatz,
+        dCO7.abrufe + " Abrufe (Schaetzung " + CRAFTEN.abrufSchaetzung(kCO7, aCO7).abrufe + ", fetch " + log.length + "), " + zCO7.filter((z) => z.gewinn != null).length + " Zeilen geprueft, Abweichungen: " + falschCO7.length +
+          ", Staedte " + Array.from(new Set([].concat(...zCO7.map((z) => z.zutatenPreise.map((x) => x.stadt))))).join("/") + ", Zutaten " + Object.keys(dCO7.stadtDaten.find((d) => d.stadt === "Thetford").zutatAbsatz).length + " von " + zutaten.size
+      );
       pruefe("ui: o5 itemOeffnen ohne App-Markup meldet false, ohne zu werfen", (await UI.itemOeffnen({ item: "T5_MAIN_SWORD", stufe: 1, stadt: "Lymhurst" })) === false && typeof VEREDELN.kostenrechnerOeffnen === "function", "");
     } catch (e) {
       pruefe("gelegenheiten: asynchrone Tests laufen ohne Ausnahme durch", false, (e && e.stack) || e);

@@ -258,15 +258,23 @@ const CRAFTEN = (function () {
   /**
    * Grobe Abrufzahl je Suche, 50 IDs je Abruf. Seit v3.16.0 alle Staedte in
    * einem Abruf: die Zutaten einmal (fuer alle Einkaufsstaedte), Preise und
-   * Handel der Produkte je einmal (fuer alle Verkaufsstaedte).
+   * Handel der Produkte je einmal (fuer alle Verkaufsstaedte); seit v3.21.0
+   * dazu der Handel der Zutaten (fuer alle Einkaufsstaedte), im selben Abruf
+   * wie der Handel der Produkte, wenn Einkaufs- und Verkaufsstaedte gleich sind.
    */
   function abrufSchaetzung(kand, auswahl) {
     const ids = benoetigteMarktIds(kand);
     const bl = (n) => Math.ceil(n / 50);
-    const hat = (liste) => STAEDTE.some((s) => (liste || []).indexOf(s) !== -1);
+    const von = (liste) => STAEDTE.filter((s) => (liste || []).indexOf(s) !== -1);
+    const einkauf = von(auswahl.einkaufStaedte);
+    const verkauf = von(auswahl.verkaufStaedte);
     let n = 0;
-    if (hat(auswahl.einkaufStaedte)) n += bl(ids.zutaten.length);
-    if (hat(auswahl.verkaufStaedte)) n += 2 * bl(ids.produkte.length);
+    if (einkauf.length) n += bl(ids.zutaten.length);
+    if (verkauf.length) n += bl(ids.produkte.length);
+    // v3.21.0 (O7): Handelsvolumen der Produkte und der Zutaten, s. VEREDELN.absatzGruppen().
+    V.absatzGruppen(ids.zutaten, ids.produkte, einkauf, verkauf).forEach((g) => {
+      n += bl(g.ids.length);
+    });
     return { abrufe: n, produkte: ids.produkte.length, zutaten: ids.zutaten.length };
   }
 
@@ -361,7 +369,9 @@ const CRAFTEN = (function () {
   /**
    * Alle Zeilen aus abgerufenen Daten, ohne Netz.
    * stadtDaten: [{stadt, preiseRoh (Zutaten, Normal), produktJeQ
-   * (Markt-ID -> Qualitaet -> Eintrag), absatz (Markt-ID -> Qualitaet -> Eintrag)}].
+   * (Markt-ID -> Qualitaet -> Eintrag), absatz (Markt-ID -> Qualitaet -> Eintrag),
+   * zutatAbsatz (v3.21.0: Markt-ID -> {stueckJeTag, abgerufenAm} der Zutaten
+   * in einer Einkaufsstadt, s. VEREDELN.zutatAbsatzSetzen())}].
    */
   function zeilenRechnen(kand, stadtDaten, auswahl, einstellungen, jetzt) {
     const maxPreisAlterMin =
@@ -441,6 +451,7 @@ const CRAFTEN = (function () {
       zeile.vkStadt = vk.stadt;
       zeile.vkAlle = vk.alle || null;
       // Nach dem Volumen: Gewinn/Tag nutzt dieselbe Zahl, die die Zeile als verkauft/Tag zeigt.
+      V.zutatAbsatzSetzen(zeile, stadtDaten);
       V.kennzahlenSetzen(zeile, craftMit, craftOhne, kennzahlCtx);
       return zeile;
     });
@@ -780,11 +791,13 @@ const CRAFTEN = (function () {
       JSON.stringify(einstellungenBereinigen({ warengruppen: ["sword", "fiber"] }))
     );
     pruefe(
-      "abrufSchaetzung: Zutaten einmal fuer alle Einkaufsstaedte, Preise und Handel je einmal fuer alle Verkaufsstaedte",
+      "abrufSchaetzung: Zutaten einmal fuer alle Einkaufsstaedte, Preise und Handel je einmal fuer alle Verkaufsstaedte, dazu (v3.21.0) der Handel der Zutaten fuer die Einkaufsstaedte",
       (function () {
         const a = abrufSchaetzung(breit, { einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst", "Martlock"] });
         const nurEinkauf = abrufSchaetzung(breit, { einkaufStaedte: ["Lymhurst", "Thetford"], verkaufStaedte: [] });
-        return a.produkte === 5 && a.abrufe === 1 + 2 && nurEinkauf.abrufe === 1;
+        // Gleiche Staedte: Handel der Produkte und der Zutaten in EINEM Abruf (15 IDs).
+        const gleich = abrufSchaetzung(breit, { einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst"] });
+        return a.produkte === 5 && a.abrufe === 1 + 2 + 1 && nurEinkauf.abrufe === 1 + 1 && gleich.abrufe === 1 + 1 + 1;
       })(),
       JSON.stringify(abrufSchaetzung(breit, { einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst", "Martlock"] }))
     );
@@ -970,6 +983,46 @@ const CRAFTEN = (function () {
       const halb = zeilenRechnen([kBreit], stadtDaten, auswahl, Object.assign({}, einst, { absatzAnteilProzent: 50 }))[0];
       pruefe("o4 zeilenRechnen: gemeinsamer Anteil 50 % verdoppelt den Gewinn/Tag", Math.abs(halb.gewinnJeTag - 2 * ohne.gewinnJeTag) < 1e-6, halb.gewinnJeTag);
 
+      // ---- v3.21.0 (O7): Markttiefe im Einkauf, Craft mit zwei Zutaten ----
+      // Breitschwert T5.0: 16 Barren und 8 Leder je Stueck, Rueckgewinnung
+      // B 0,33, also Bedarf 16 / 1,33 und 8 / 1,33. Bei 8.000 verkauft/Tag
+      // liesse der Absatz 2.000 Stueck zu. Barren 4.800/Tag: 25 % x 4.800 x
+      // 1,33 / 16 = 99,75 Stueck; Leder 1.000/Tag: 25 % x 1.000 x 1,33 / 8 =
+      // 41,5625 Stueck. Das Leder entscheidet.
+      const mitZutaten = (za, absatzProdukt) => [Object.assign({}, stadtDaten[0], { absatz: { T5_MAIN_SWORD: { 1: { stueckJeTag: absatzProdukt == null ? 8000 : absatzProdukt } } }, zutatAbsatz: za })];
+      const zaBeide = { T5_METALBAR: { stueckJeTag: 4800, abgerufenAm: 11 }, T5_LEATHER: { stueckJeTag: 1000, abgerufenAm: 12 } };
+      const ekC = zeilenRechnen([kBreit], mitZutaten(zaBeide), auswahl, einst)[0];
+      pruefe(
+        "o7 zeilenRechnen: Craft mit zwei Zutaten, die knappere entscheidet (Leder 41,5625 Stueck vor Barren 99,75 und Absatz 2.000): (2.711,5 - 3.200 / 1,33) x 41,5625 = 12.696,72; Kosten und Gewinn/Stueck unveraendert",
+        Math.abs(ekC.einkaufStueckJeTag - 41.5625) < 1e-9 && ekC.einkaufZutat.marktId === "T5_LEATHER" && ekC.tagGrenze === "einkauf" && Math.abs(ekC.gewinnJeTag - (erl - 3200 / 1.33) * 41.5625) < 1e-6 &&
+          Math.abs(ekC.gewinnJeTag - 12696.72) < 0.01 && ekC.silber === ohne.silber && ekC.gewinn === ohne.gewinn && ekC.marge === ohne.marge && ekC.einkaufUnbekannt === false,
+        ekC.gewinnJeTag + " / " + ekC.einkaufStueckJeTag
+      );
+      const ekCAbsatz = zeilenRechnen([kBreit], mitZutaten(zaBeide, 8), auswahl, einst)[0];
+      const ekCFokus = zeilenRechnen([kBreit], mitZutaten({ T5_METALBAR: { stueckJeTag: 1e7 }, T5_LEATHER: { stueckJeTag: 1e7 } }), Object.assign({}, auswahl, { mitFokus: true }), einst)[0];
+      pruefe(
+        "o7 zeilenRechnen: bei 8 verkauft/Tag bindet der Absatz (2 Stueck, Zahl wie bis v3.20.1); bei reichlich Zutaten und Fokus bindet das Fokusbudget",
+        ekCAbsatz.tagGrenze === "absatz" && ekCAbsatz.gewinnJeTag === ohne.gewinnJeTag && ekCAbsatz.einkaufStueckJeTag > 2 && ekCFokus.tagGrenze === "fokus" && ekCFokus.gewinnJeTag === mitViel.gewinnJeTag,
+        ekCAbsatz.gewinnJeTag + " / " + ekCFokus.tagGrenze
+      );
+      const ekCFehlt = zeilenRechnen([kBreit], mitZutaten({ T5_METALBAR: { stueckJeTag: 4800 } }), auswahl, einst)[0];
+      const ekCNull = zeilenRechnen([kBreit], mitZutaten({ T5_METALBAR: { stueckJeTag: 4800 }, T5_LEATHER: { stueckJeTag: 0 } }), auswahl, einst)[0];
+      const ekCEigen = zeilenRechnen([kBreit], mitZutaten(zaBeide), Object.assign({}, auswahl, { preisUeberschreibungen: { Lymhurst: { T5_LEATHER: 200 } } }), einst)[0];
+      pruefe(
+        "o7 zeilenRechnen: Leder nie abgerufen: der Barren begrenzt (99,75 Stueck) und einkaufUnbekannt; Leder ohne Handel: Gewinn/Tag 0, Zeile bleibt und sortiert nach unten; eigener Lederpreis: Leder begrenzt nicht mehr",
+        ekCFehlt.einkaufUnbekannt === true && ekCFehlt.einkaufFehlt[0].marktId === "T5_LEATHER" && Math.abs(ekCFehlt.einkaufStueckJeTag - 99.75) < 1e-9 && ekCFehlt.tagGrenze === "einkauf" &&
+          ekCNull.gewinnJeTag === 0 && ekCNull.tagGrenze === "einkauf" && ekCNull.gewinn === ohne.gewinn &&
+          filtereUndSortiere([ekCNull, ekC], { minAbsatz: 0, sortierung: "tag" }).map((x) => x.gewinnJeTag).join() === ekC.gewinnJeTag + ",0" &&
+          Math.abs(ekCEigen.einkaufStueckJeTag - 99.75) < 1e-9 && ekCEigen.einkaufZutat.marktId === "T5_METALBAR" && ekCEigen.silber === ohne.silber && ekCEigen.einkaufUnbekannt === false,
+        ekCFehlt.einkaufStueckJeTag + " / " + ekCNull.gewinnJeTag + " / " + ekCEigen.einkaufStueckJeTag
+      );
+      const ekCNormal = zeilenRechnen([kBreit], mitZutaten({ T5_METALBAR: { stueckJeTag: 4800 }, T5_LEATHER: { stueckJeTag: 1000 } }), Object.assign({}, auswahl, { volumenAlleQualitaeten: false }), einst)[0];
+      pruefe(
+        "o7 zeilenRechnen: der Schalter \"nur Normal\" betrifft nur das Produkt, die Einkaufsgrenze bleibt gleich",
+        ekCNormal.einkaufStueckJeTag === ekC.einkaufStueckJeTag && ekCNormal.gewinnJeTag === ekC.gewinnJeTag,
+        ekCNormal.einkaufStueckJeTag
+      );
+
       // Vorgang ohne Fokus im Dump (craftingfocus 0): Mehrgewinn leer.
       const alleSpeisen = kandidaten({ warengruppen: ["food"], tiers: [8], stufen: [0], artefakte: true });
       const ohneF = alleSpeisen.find((k) => k.rezepte.every((r) => !(REGELN.rezepteFuerStufe(g.items[k.item], k.stufe)[r.rezeptIndex].f > 0)));
@@ -1042,8 +1095,9 @@ const CRAFTEN = (function () {
    * Preise und Handelsvolumen der Auswahl beschaffen (v3.15.0): aus dem
    * Preisbestand, was frisch ist, der Rest per Abruf. Seit v3.16.0 alle
    * Staedte in einem Abruf je ID-Block (PREISE, Abrufplaner): Zutatenpreise
-   * nur fuer die Einkaufsstaedte, Produktpreise und Handelsvolumen nur fuer
-   * die Verkaufsstaedte. opts.frisch erzwingt den Abruf von allem. Ohne DOM,
+   * nur fuer die Einkaufsstaedte, Produktpreise nur fuer die
+   * Verkaufsstaedte, Handelsvolumen der Produkte fuer die Verkaufs- und
+   * (seit v3.21.0) der Zutaten fuer die Einkaufsstaedte. opts.frisch erzwingt den Abruf von allem. Ohne DOM,
    * mit nachgebildetem fetch testbar.
    * @returns {Promise<{stadtDaten:Array, ids:{zutaten:string[], produkte:string[]}, abrufe:number}>}
    */
@@ -1074,19 +1128,33 @@ const CRAFTEN = (function () {
         erzwingen: frisch,
         aufFortschritt: (f, g) => status("Verkaufspreise (" + anzahl(verkauf) + ") " + f + "/" + g + " ..."),
       });
-      absatz = await PREISE.absatzAbrufen(ids.produkte, {
-        staedte: verkauf,
+    }
+    // v3.21.0 (O7): Handelsvolumen der Produkte (Verkaufsstaedte) und der
+    // Zutaten (Einkaufsstaedte), jede ID hoechstens einmal.
+    staedte.forEach((s) => {
+      absatz[s] = {};
+    });
+    for (const gr of V.absatzGruppen(ids.zutaten, ids.produkte, einkauf, verkauf)) {
+      const teil = await PREISE.absatzAbrufen(gr.ids, {
+        staedte: gr.staedte,
         tageFenster: TAGE_FENSTER,
         erzwingen: frisch,
-        aufFortschritt: (f, g) => status("Handelsvolumen (" + anzahl(verkauf) + ") " + f + "/" + g + " ..."),
+        aufFortschritt: (f, g) => status("Handelsvolumen (" + anzahl(gr.staedte) + ") " + f + "/" + g + " ..."),
       });
+      gr.staedte.forEach((s) => Object.assign(absatz[s], teil[s]));
     }
     const stadtDaten = staedte.map((stadt) => {
       const eintrag = { stadt };
-      if (preiseRoh[stadt]) eintrag.preiseRoh = preiseRoh[stadt];
+      if (preiseRoh[stadt]) {
+        eintrag.preiseRoh = preiseRoh[stadt];
+        eintrag.zutatAbsatz = V.zutatAbsatzAusBestand(stadt, ids.zutaten, PREISE.bestandAbsatz);
+      }
       if (produktJeQ[stadt]) {
         eintrag.produktJeQ = produktJeQ[stadt];
-        eintrag.absatz = absatz[stadt];
+        eintrag.absatz = {};
+        ids.produkte.forEach((id) => {
+          if (absatz[stadt][id] !== undefined) eintrag.absatz[id] = absatz[stadt][id];
+        });
       }
       return eintrag;
     });
@@ -1294,7 +1362,7 @@ const CRAFTEN = (function () {
       umfangEl.textContent = kand.length
         ? a.produkte + " Produkte, " + a.zutaten + " Zutaten, höchstens " + a.abrufe + " Abrufe (rund " + (a.abrufe * 2 < 60 ? a.abrufe * 2 + " s" : (Math.round((a.abrufe * 2) / 60 * 10) / 10).toString().replace(".", ",") + " Min.") + ")"
         : "Nichts ausgewählt.";
-      umfangEl.title = "Obergrenze: was im Preisbestand noch frisch ist (Preise " + PREISE.PREIS_GUELTIG_MIN + " Min., Handelsvolumen " + PREISE.VOLUMEN_GUELTIG_MIN + " Min.), wird nicht neu abgerufen. Die Preis-Schnittstelle drosselt; die App fragt 50 Einträge je Abruf mit Pause dazwischen ab. Alle Städte kommen in einem Abruf; weniger Warengruppen oder Tiers gehen schneller.";
+      umfangEl.title = "Obergrenze: was im Preisbestand noch frisch ist (Preise " + PREISE.PREIS_GUELTIG_MIN + " Min., Handelsvolumen " + PREISE.VOLUMEN_GUELTIG_MIN + " Min.), wird nicht neu abgerufen. Abgerufen werden die Preise der Zutaten, die Preise der Produkte und das Handelsvolumen (verkauft/Tag) von beiden. Die Preis-Schnittstelle drosselt; die App fragt 50 Einträge je Abruf mit Pause dazwischen ab. Alle Städte kommen in einem Abruf; weniger Warengruppen oder Tiers gehen schneller.";
     }
 
     function preiseResetAktualisieren() {
@@ -1576,10 +1644,11 @@ const CRAFTEN = (function () {
           const herkunft = x.uebersteuert
             ? "Eigener Preis für " + x.stadt + (m.preis != null ? ", Markt: " + fmt(m.preis) + (alter ? " (" + alter + " alt)" : "") : ", kein Marktpreis")
             : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + " in " + x.stadt + (alter ? ", " + alter + " alt" : "") + (abruf ? ", abgerufen " + abruf : "");
+          const handelText = V.zutatHandelText(x);
           const titel =
             kontext.mehrEk && x.alle && x.alle.length > 1
-              ? staedteListe(x.alle.map((a) => ({ stadt: a.stadt, wert: a.basis })), x.stadt, false) + (abruf && !x.uebersteuert ? "\n\nAbgerufen " + abruf + "." : "") + "\n\nKlicken zum Überschreiben."
-              : herkunft + ". Klicken zum Überschreiben.";
+              ? staedteListe(x.alle.map((a) => ({ stadt: a.stadt, wert: a.basis })), x.stadt, false) + (abruf && !x.uebersteuert ? "\n\nAbgerufen " + abruf + "." : "") + (handelText ? "\n\n" + handelText : "") + "\n\nKlicken zum Überschreiben."
+              : herkunft + (/\.$/.test(herkunft) ? "" : ".") + (handelText ? " " + handelText : "") + " Klicken zum Überschreiben.";
           const wert = Math.round(x.basisPreis * 100) / 100;
           const feld =
             "<input type='text' inputmode='decimal' autocomplete='off' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' value='" + PREISFELD.anzeige(wert) + "' data-vd-roh='" + wert + "'" +
@@ -1731,6 +1800,7 @@ const CRAFTEN = (function () {
         (z.zutatenPreise || [])
           .filter((x) => !x.uebersteuert)
           .map((x) => x.roh)
+          .concat((z.zutatenPreise || []).filter((x) => !x.uebersteuert && x.handel).map((x) => x.handel))
           .concat(p.preise, p.absatz)
       );
     }
@@ -1786,7 +1856,7 @@ const CRAFTEN = (function () {
             "<td class='num'>" + fmt(z.kostenGesamt) + "</td>" +
             "<td class='num vd-wert' title='" + einstufung + "'>" + fmt(z.gewinn) + "</td>" +
             "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
-            V.kennzahlZellenHtml(z, esc) +
+            V.kennzahlZellenHtml(z, esc, "", "", nameVon) +
             "<td class='num vd-wert'>" + fmt(z.gewinnGesamt) + "</td>" +
             "</tr>"
           );

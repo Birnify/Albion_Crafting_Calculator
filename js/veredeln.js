@@ -512,6 +512,11 @@ const VEREDELN = (function () {
    *   hoechstens 10.000 / Fokus je Stueck. Ohne Premium ist kein Tagesbudget
    *   belegt: keine Fokusgrenze. Ohne erfassten Handel leer (nicht 0).
    *
+   * v3.21.0 (O7, Markttiefe im Einkauf): dritte Grenze ist das erfasste
+   * Tagesvolumen der gekauften Zutaten, s. einkaufGrenze(). Erreichbar ist
+   * das Minimum aus Absatz, Fokus und Einkauf; tagGrenze nennt, was bindet
+   * (bei Gleichstand bleibt die zuerst gepruefte: Absatz, Fokus, Einkauf).
+   *
    * @param ctx {mitFokus:boolean, premium:boolean, anteil:number (Bruch)}
    */
   function kennzahlenSetzen(z, craftMit, craftOhne, ctx) {
@@ -523,7 +528,11 @@ const VEREDELN = (function () {
     z.mehrgewinnJeFokus = z.gewinnMitFokus != null && z.gewinnOhneFokus != null ? (z.gewinnMitFokus - z.gewinnOhneFokus) / z.fokusJeStueck : null;
     z.stueckJeTagErreichbar = null;
     z.fokusStueckJeTag = null; // so viele Stueck gibt das Fokusbudget je Tag her (nur mit Fokus und Premium)
-    z.tagGrenze = null; // "absatz" | "fokus"
+    z.tagGrenze = null; // "absatz" | "fokus" | "einkauf"
+    z.einkaufStueckJeTag = null; // so viele Stueck gibt der Einkauf der knappsten Zutat je Tag her; null = keine Grenze bekannt
+    z.einkaufZutat = null; // die knappste Zutat: {n, stufe, marktId, stadt, verkauftJeTag, effektiveMenge}
+    z.einkaufUnbekannt = false; // true: fuer mindestens eine gekaufte Zutat fehlt das Handelsvolumen (nie abgerufen)
+    z.einkaufFehlt = []; // diese Zutaten: [{n, stufe, marktId, stadt}]
     z.fokusBudgetBelegt = null; // false: Zeile rechnet mit Fokus, aber ohne Premium ist kein Tagesbudget belegt
     z.gewinnJeTag = null;
     if (z.gewinn == null || !(z.stueckJeTag > 0)) return z;
@@ -539,9 +548,153 @@ const VEREDELN = (function () {
         }
       }
     }
+    const ek = einkaufGrenze(z, ctx.anteil);
+    z.einkaufStueckJeTag = ek.stueck;
+    z.einkaufZutat = ek.zutat;
+    z.einkaufFehlt = ek.fehlt;
+    z.einkaufUnbekannt = ek.fehlt.length > 0;
+    if (ek.stueck != null && ek.stueck < stueck) {
+      stueck = ek.stueck;
+      z.tagGrenze = "einkauf";
+    }
     z.stueckJeTagErreichbar = stueck;
-    z.gewinnJeTag = z.gewinn * stueck;
+    z.gewinnJeTag = stueck > 0 ? z.gewinn * stueck : 0; // 0 statt -0 bei Verlustzeilen ohne Einkaufsvolumen
     return z;
+  }
+
+  /**
+   * v3.21.0 (O7): Einkaufsgrenze einer Zeile aus z.zutatenPreise.
+   *   je gekaufter Zutat: Stueck/Tag = Anteil x verkauft/Tag der Zutat in
+   *   ihrer GEWAEHLTEN Einkaufsstadt / Bedarf je Stueck Produkt
+   *   Bedarf = effektiveMenge des Rechenkerns (Menge je Stueck nach
+   *   Rueckgewinnung): bei laufender Fertigung fliesst die Rueckgewinnung als
+   *   Material zurueck, nachgekauft wird nur der Verbrauch.
+   *   Grenze der Zeile = Minimum ueber die Zutaten.
+   * Drei Faelle je Zutat (x.verkauftJeTag setzt zutatAbsatzSetzen()):
+   *   null/undefined  Volumen nie abgerufen: begrenzt nicht, steht in fehlt
+   *   Zahl (auch 0)   abgerufen: begrenzt; 0 = kein erfasster Handel
+   *   eigener Preis (x.uebersteuert) oder ohne Markt-ID: begrenzt nie
+   * Dieselbe Zutat zweimal im Rezept (gleiche Stadt und Markt-ID) zaehlt mit
+   * der Summe ihres Bedarfs.
+   * @returns {{stueck:?number, zutat:?object, fehlt:object[]}}
+   */
+  function einkaufGrenze(z, anteil) {
+    const jeZutat = new Map();
+    (z.zutatenPreise || []).forEach((x) => {
+      if (!x || x.uebersteuert || !x.marktId || !(x.effektiveMenge > 0)) return;
+      const key = x.stadt + "::" + x.marktId;
+      const e = jeZutat.get(key);
+      if (e) e.effektiveMenge += x.effektiveMenge;
+      else jeZutat.set(key, { n: x.n, stufe: x.stufe, marktId: x.marktId, stadt: x.stadt, verkauftJeTag: x.verkauftJeTag, effektiveMenge: x.effektiveMenge });
+    });
+    let stueck = null;
+    let zutat = null;
+    const fehlt = [];
+    jeZutat.forEach((e) => {
+      if (e.verkauftJeTag == null || !isFinite(e.verkauftJeTag)) {
+        fehlt.push({ n: e.n, stufe: e.stufe, marktId: e.marktId, stadt: e.stadt });
+        return;
+      }
+      const s = (anteil * e.verkauftJeTag) / e.effektiveMenge;
+      if (stueck == null || s < stueck) {
+        stueck = s;
+        zutat = e;
+      }
+    });
+    return { stueck, zutat, fehlt };
+  }
+
+  /** Erfasster Handel einer Zutat je Tag aus dem Absatz je Qualitaet: Summe ueber alle Qualitaeten; ohne Eintrag 0 (abgerufen, nichts erfasst). */
+  function zutatHandel(jeQ) {
+    let summe = 0;
+    Object.keys(jeQ || {}).forEach((q) => {
+      const e = jeQ[q];
+      if (e && isFinite(e.stueckJeTag)) summe += e.stueckJeTag;
+    });
+    return summe;
+  }
+
+  /**
+   * v3.21.0 (O7): zutatAbsatz einer Einkaufsstadt, so wie zeilenRechnen() es
+   * erwartet: Markt-ID -> {stueckJeTag, abgerufenAm}. Nur IDs, fuer die
+   * lesenAbsatz(stadt, id, tage) einen Bestandseintrag liefert; eine ID ohne
+   * Eintrag fehlt (Fall "nie abgerufen").
+   */
+  function zutatAbsatzAusBestand(stadt, ids, lesenAbsatz) {
+    const out = {};
+    (ids || []).forEach((id) => {
+      const a = lesenAbsatz(stadt, id, TAGE_FENSTER);
+      if (a) out[id] = { stueckJeTag: zutatHandel(a.jeQ), abgerufenAm: a.abgerufenAm > 0 ? a.abgerufenAm : 0 };
+    });
+    return out;
+  }
+
+  /**
+   * v3.21.0 (O7): traegt an jede Zutat der Zeile den erfassten Handel in
+   * ihrer gewaehlten Einkaufsstadt ein: x.verkauftJeTag (Zahl oder null) und
+   * x.handel ({abgerufenAm} oder null, fuer die Altersangaben).
+   * stadtDaten[].zutatAbsatz: Markt-ID -> {stueckJeTag, abgerufenAm}. Fehlt
+   * der Eintrag, bleibt verkauftJeTag null (nie abgerufen).
+   */
+  function zutatAbsatzSetzen(z, stadtDaten) {
+    (z.zutatenPreise || []).forEach((x) => {
+      const d = (stadtDaten || []).find((s) => s.stadt === x.stadt);
+      const e = d && d.zutatAbsatz && x.marktId ? d.zutatAbsatz[x.marktId] : null;
+      x.verkauftJeTag = e && isFinite(e.stueckJeTag) ? e.stueckJeTag : null;
+      x.handel = x.verkauftJeTag != null ? { abgerufenAm: e.abgerufenAm > 0 ? e.abgerufenAm : 0 } : null;
+    });
+    return z;
+  }
+
+  /**
+   * v3.21.0 (O7): Gruppen fuer den Abruf des Handelsvolumens, so dass keine
+   * ID doppelt geholt wird: nur Zutat (Einkaufsstaedte), nur Produkt
+   * (Verkaufsstaedte), beides (alle beteiligten Staedte). Gruppen mit
+   * denselben Staedten laufen zusammen. Leere Gruppen entfallen.
+   * @returns {{ids:string[], staedte:string[]}[]}
+   */
+  function absatzGruppen(zutatIds, produktIds, einkauf, verkauf) {
+    const istZutat = new Set(zutatIds);
+    const istProdukt = new Set(produktIds);
+    const alle = STAEDTE.filter((s) => einkauf.indexOf(s) !== -1 || verkauf.indexOf(s) !== -1);
+    const gruppen = [];
+    [
+      { ids: produktIds.filter((id) => !istZutat.has(id)), staedte: verkauf },
+      { ids: zutatIds.filter((id) => !istProdukt.has(id)), staedte: einkauf },
+      { ids: zutatIds.filter((id) => istProdukt.has(id)), staedte: alle },
+    ].forEach((g) => {
+      if (!g.ids.length || !g.staedte.length) return;
+      const gleich = gruppen.find((x) => x.staedte.join("|") === g.staedte.join("|"));
+      if (gleich) gleich.ids = gleich.ids.concat(g.ids);
+      else gruppen.push({ ids: g.ids.slice(), staedte: g.staedte.slice() });
+    });
+    return gruppen;
+  }
+
+  /**
+   * v3.21.0 (O7): Satz fuer den Tooltip des Zutatenpreises: erfasster Handel
+   * der Zutat in ihrer Einkaufsstadt. Leer bei eigenem Preis (begrenzt nicht).
+   */
+  function zutatHandelText(x) {
+    if (!x || x.uebersteuert || !x.marktId) return "";
+    if (x.verkauftJeTag == null) return "Handelsvolumen in " + x.stadt + " noch nicht abgerufen.";
+    return (
+      "Erfasster Handel in " + x.stadt + ": " + stueckText(x.verkauftJeTag) + " verkauft/Tag (Mittel der letzten " + TAGE_FENSTER + " Tage, alle Qualitäten, Untergrenze)" +
+      (x.handel && x.handel.abgerufenAm > 0 ? ", abgerufen " + abrufAlterText(x.handel.abgerufenAm) : "") + "."
+    );
+  }
+
+  let namenCache = null;
+  /** Deutscher Name eines Items fuer Tooltips, wenn der Aufrufer keinen eigenen Namensgeber reicht. */
+  function standardName(item, stufe) {
+    if (!namenCache) {
+      namenCache = {};
+      (typeof ITEM_NAMEN !== "undefined" && ITEM_NAMEN.alle ? ITEM_NAMEN.alle : []).forEach((e) => {
+        namenCache[e.id] = e.n;
+      });
+    }
+    const id = marktIdVon(item, stufe);
+    return namenCache[id] || (typeof REZEPTGRAPH !== "undefined" && REZEPTGRAPH.namen && REZEPTGRAPH.namen[item]) || id;
   }
 
   const zahlText = (n, stellen) => n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: stellen == null ? 0 : stellen });
@@ -552,23 +705,37 @@ const VEREDELN = (function () {
     return z.gewinnJeTag == null || !isFinite(z.gewinnJeTag) ? "" : zahlText(Math.round(z.gewinnJeTag), 0);
   }
 
-  /** Tooltip der Zelle Gewinn/Tag: die eingesetzten Zahlen. */
-  function tagTitel(z) {
+  /**
+   * Tooltip der Zelle Gewinn/Tag: die Rechnung, alle drei Grenzen (Absatz,
+   * Einkauf, Fokus) mit ihren Zahlen und welche bindet. nameVon (optional):
+   * (item, stufe) => Name der Zutat.
+   */
+  function tagTitel(z, nameVon) {
     if (z.gewinnJeTag == null) return z.gewinn == null ? "" : "Kein erfasster Handel in der Verkaufsstadt, deshalb keine Angabe.";
+    const name = typeof nameVon === "function" ? nameVon : standardName;
     const anteil = zahlText(z.absatzAnteil * 100, 1) + " %";
-    const absatz = anteil + " von " + stueckText(z.stueckJeTag) + " verkauft/Tag";
-    const ergebnis = " = " + tagText(z) + " Silber/Tag (Untergrenze)";
     const gewinn = zahlText(z.gewinn, Math.abs(z.gewinn) < 100 ? 1 : 0) + " Silber";
-    if (z.tagGrenze === "fokus") {
-      return (
-        gewinn + " × " + stueckText(z.fokusStueckJeTag) + " Stück/Tag (10.000 Fokus / " + zahlText(z.fokusJeStueck, 1) + " Fokus je Stück)" + ergebnis +
-        "; der Fokus begrenzt, der Absatz ließe " + stueckText(z.absatzAnteil * z.stueckJeTag) + " Stück zu (" + absatz + ")"
+    const grenzen = ["Absatz " + stueckText(z.absatzAnteil * z.stueckJeTag) + " Stück (" + anteil + " von " + stueckText(z.stueckJeTag) + " verkauft/Tag)"];
+    const fehlt = (z.einkaufFehlt || []).map((x) => name(x.n, x.stufe) + " in " + x.stadt).join(", ");
+    if (z.einkaufZutat) {
+      const q = z.einkaufZutat;
+      grenzen.push(
+        "Einkauf " + stueckText(z.einkaufStueckJeTag) + " Stück (" + anteil + " von " + stueckText(q.verkauftJeTag) + " " + name(q.n, q.stufe) + " in " + q.stadt + ", Bedarf " +
+          q.effektiveMenge.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + " je Stück nach Rückgewinnung)"
       );
-    }
-    let fokus = "";
-    if (z.fokusBudgetBelegt === true) fokus = "; Fokus begrenzt nicht (10.000 Fokus reichen für " + stueckText(z.fokusStueckJeTag) + " Stück)";
-    else if (z.fokusBudgetBelegt === false) fokus = "; ohne Premium ist kein Tagesbudget an Fokus belegt, deshalb nicht durch Fokus begrenzt";
-    return gewinn + " × " + absatz + " (" + stueckText(z.stueckJeTagErreichbar) + " Stück)" + ergebnis + fokus;
+    } else if (fehlt) grenzen.push("Einkauf unbekannt");
+    else grenzen.push("Einkauf begrenzt nicht");
+    if (z.tagGrenze === "fokus") {
+      grenzen.push("Fokus " + stueckText(z.fokusStueckJeTag) + " Stück (10.000 Fokus / " + zahlText(z.fokusJeStueck, 1) + " Fokus je Stück)");
+    } else if (z.fokusBudgetBelegt === true) grenzen.push("Fokus begrenzt nicht (10.000 Fokus reichen für " + stueckText(z.fokusStueckJeTag) + " Stück)");
+    else if (z.fokusBudgetBelegt === false) grenzen.push("ohne Premium ist kein Tagesbudget an Fokus belegt, deshalb nicht durch Fokus begrenzt");
+    else grenzen.push("Fokus begrenzt nicht");
+    const bindet = { absatz: "der Absatz", einkauf: "der Einkauf", fokus: "der Fokus" }[z.tagGrenze] || "nichts";
+    return (
+      gewinn + " × " + stueckText(z.stueckJeTagErreichbar) + " Stück/Tag = " + tagText(z) + " Silber/Tag (Untergrenze). Grenzen: " + grenzen.join(", ") + ". Es begrenzt " + bindet + "." +
+      (fehlt ? " Das Handelsvolumen von " + fehlt + " fehlt noch, die Einkaufsgrenze ist insoweit nicht eingerechnet." : "") +
+      (z.tagGrenze === "einkauf" && !(z.einkaufStueckJeTag > 0) ? " Für die Zutat ist kein Handel erfasst." : "")
+    );
   }
 
   /** Mehrgewinn je Fokuspunkt als Zelltext: eine Nachkommastelle, unter 1 zwei; leer ohne Fokus. */
@@ -589,15 +756,17 @@ const VEREDELN = (function () {
 
   const KOPF_TITEL = {
     tag: (anteilProzent) =>
-      "Untergrenze: Gewinn je Stück mal erreichbare Stück je Tag. Erreichbar ist mein Anteil am erfassten Handel der Verkaufsstadt (Annahme: " +
-      zahlText(anteilProzent, 1) + " % von verkauft/Tag, das selbst eine Untergrenze ist). Mit Fokus und Premium höchstens so viele Stück, wie 10.000 Fokus je Tag hergeben; " +
-      "ohne Premium ist kein Tagesbudget belegt, dann begrenzt der Fokus nicht. Ohne erfassten Handel leer. Klicken sortiert absteigend.",
+      "Untergrenze: Gewinn je Stück mal erreichbare Stück je Tag. Erreichbar ist mein Anteil am erfassten Handel (Annahme: " +
+      zahlText(anteilProzent, 1) + " % von verkauft/Tag, das selbst eine Untergrenze ist), und zwar auf beiden Marktseiten: beim Produkt in der Verkaufsstadt und bei jeder gekauften Zutat in ihrer Einkaufsstadt. " +
+      "Die knappste Zutat begrenzt über ihren Bedarf je Stück nach Rückgewinnung (bei laufender Fertigung fließt die Rückgewinnung zurück, nachgekauft wird nur der Verbrauch); " +
+      "Zutaten mit eigenem Preis begrenzen nicht. Mit Fokus und Premium höchstens so viele Stück, wie 10.000 Fokus je Tag hergeben; " +
+      "ohne Premium ist kein Tagesbudget belegt, dann begrenzt der Fokus nicht. Ohne erfassten Handel des Produkts leer. Klicken sortiert absteigend.",
     jefokus:
       "Mehrgewinn je Fokuspunkt: Gewinn je Stück mit Fokus minus Gewinn je Stück ohne Fokus, geteilt durch den Fokus je Stück, bei denselben Preisen. " +
       "Zeigt, wo ein Fokuspunkt am meisten bringt, unabhängig vom Fokus-Schalter. Leer bei Vorgängen ohne Fokus. Klicken sortiert absteigend.",
     marge: "Gewinn bezogen auf die eigenen Kosten, also der Gewinn je eingesetztem Silber. Klicken sortiert absteigend.",
     anteil:
-      "Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. " +
+      "Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten, Produkt und Zutaten, und bestimmt die Spalte Gewinn/Tag. " +
       "Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.",
   };
 
@@ -606,11 +775,19 @@ const VEREDELN = (function () {
    * maskiert Attributwerte. vorTag (v3.19.0, optional): HTML vor dem
    * Gewinn/Tag, in "Gelegenheiten" der Wert im Moment des Merkens;
    * titelDavor (optional): Text, der im Tooltip vor der Rechnung steht.
+   * nameVon (v3.21.0, optional): Namensgeber fuer die Zutat im Tooltip.
+   * Schilder (v3.21.0): "Einkauf", wenn das Volumen einer Zutat bindet;
+   * "Einkauf ?", wenn das Volumen einer Zutat noch fehlt.
    */
-  function kennzahlZellenHtml(z, esc, vorTag, titelDavor) {
+  function kennzahlZellenHtml(z, esc, vorTag, titelDavor, nameVon) {
+    const hatWert = z.gewinnJeTag != null;
+    const schilder =
+      (hatWert && z.tagGrenze === "einkauf" ? "<span class='vd-grenze'>Einkauf</span>" : "") +
+      (hatWert && z.einkaufUnbekannt ? "<span class='vd-grenze vd-grenze-offen'>Einkauf ?</span>" : "");
     return (
-      "<td class='num vd-wert vd-tag-zelle' title='" + esc((titelDavor ? titelDavor + "\n\n" : "") + tagTitel(z)) + "'>" + (vorTag || "") + tagText(z) +
-      (z.tagGrenze === "fokus" ? "<div class='vd-klein vd-umbruch'>Fokus begrenzt</div>" : "") + "</td>" +
+      "<td class='num vd-wert vd-tag-zelle' title='" + esc((titelDavor ? titelDavor + "\n\n" : "") + tagTitel(z, nameVon)) + "'>" + (vorTag || "") + tagText(z) +
+      (z.tagGrenze === "fokus" ? "<div class='vd-klein vd-umbruch'>Fokus begrenzt</div>" : "") +
+      (schilder ? "<div class='vd-grenzen'>" + schilder + "</div>" : "") + "</td>" +
       "<td class='num vd-jefokus-zelle' title='" + esc(jeFokusTitel(z)) + "'>" + jeFokusText(z) + "</td>"
     );
   }
@@ -856,9 +1033,11 @@ const VEREDELN = (function () {
    * aus ihrer guenstigsten Einkaufsstadt, verkauft in der besten Verkaufsstadt.
    *
    * @param kand Kandidatenliste (kandidaten())
-   * @param stadtDaten [{stadt, preiseRoh, absatz}] wie von PREISE geliefert;
+   * @param stadtDaten [{stadt, preiseRoh, absatz, zutatAbsatz}] wie von PREISE geliefert;
    *   eine Stadt zaehlt als Einkaufs- bzw. Verkaufsquelle, wenn sie in
-   *   auswahl.einkaufStaedte bzw. auswahl.verkaufStaedte steht
+   *   auswahl.einkaufStaedte bzw. auswahl.verkaufStaedte steht. zutatAbsatz
+   *   (v3.21.0): Markt-ID -> {stueckJeTag, abgerufenAm} der Zutaten in einer
+   *   Einkaufsstadt; fehlt eine ID, gilt ihr Volumen als nie abgerufen
    * @param auswahl Reiter-Einstellungen (einstellungenBereinigen())
    * @param einstellungen Kostenrechner-Einstellungen (UI.einstellungenLesen())
    */
@@ -927,6 +1106,7 @@ const VEREDELN = (function () {
       const zeile = zeileBauen(k, fertigung, craft, vk.erloes, ((vkDaten.absatz || {})[k.marktId] || {})[1], Object.assign({}, auswahl, { herkunft }));
       zeile.vkStadt = vk.stadt;
       zeile.vkAlle = vk.alle || null;
+      zutatAbsatzSetzen(zeile, stadtDaten);
       kennzahlenSetzen(zeile, craftMit, craftOhne, kennzahlCtx);
       return zeile;
     });
@@ -1417,13 +1597,13 @@ const VEREDELN = (function () {
       );
       pruefe(
         "o4 Gewinn/Tag: Zelltooltip nennt die eingesetzten Zahlen und die Untergrenze",
-        tagTitel(a) === "141 Silber × 25 % von 26.810 verkauft/Tag (6.703 Stück) = 945.053 Silber/Tag (Untergrenze)",
+        tagTitel(a) === "141 Silber × 6.703 Stück/Tag = 945.053 Silber/Tag (Untergrenze). Grenzen: Absatz 6.703 Stück (25 % von 26.810 verkauft/Tag), Einkauf begrenzt nicht, Fokus begrenzt nicht. Es begrenzt der Absatz.",
         tagTitel(a)
       );
       const b = k(true, 26810, true);
       pruefe(
         "o4 Gewinn/Tag mit Fokus, das Fokusbudget begrenzt: 10.000 / 50 = 200 Stueck statt 6.702,5; 200 x 200 = 40.000",
-        b.gewinnJeTag === 40000 && b.stueckJeTagErreichbar === 200 && b.fokusStueckJeTag === 200 && b.tagGrenze === "fokus" && b.fokusBudgetBelegt === true && /der Fokus begrenzt/.test(tagTitel(b)),
+        b.gewinnJeTag === 40000 && b.stueckJeTagErreichbar === 200 && b.fokusStueckJeTag === 200 && b.tagGrenze === "fokus" && b.fokusBudgetBelegt === true && /Fokus 200 Stück \(10\.000 Fokus \/ 50 Fokus je Stück\)\. Es begrenzt der Fokus\./.test(tagTitel(b)),
         b.gewinnJeTag + " / " + tagTitel(b)
       );
       const c = k(true, 400, true);
@@ -1513,6 +1693,187 @@ const VEREDELN = (function () {
       pruefe("o4 zeilenRechnen (Veredeln): gemeinsamer Anteil 50 % verdoppelt den Gewinn/Tag", Math.abs(zHalb.gewinnJeTag - 2 * zo.gewinnJeTag) < 1e-6 && zHalb.absatzAnteil === 0.5, zHalb.gewinnJeTag);
       const zLeer = zeilenRechnen(k4, [{ stadt: "Lymhurst", preiseRoh: pr, absatz: {} }], einstellungenBereinigen({ kaufweg: "sofort", verkaufsweg: "sofort" }), e2)[0];
       pruefe("o4 zeilenRechnen (Veredeln): ohne erfassten Handel bleibt Gewinn/Tag leer, der Gewinn/Stueck steht trotzdem", zLeer.gewinnJeTag === null && zLeer.gewinn != null && zLeer.mehrgewinnJeFokus != null, zLeer.gewinnJeTag);
+
+      // ---- v3.21.0 (O7): Markttiefe im Einkauf ----
+      // Kunstzeile wie oben: Erloes 500, Kosten 359 ohne und 300 mit Fokus
+      // (Gewinn 141 bzw. 200), Fokus 50 je Stueck. Zutat "Himmelsblume":
+      // 15.000 verkauft/Tag, Bedarf 3,0 je Stueck nach Rueckgewinnung.
+      const zt = (n, verkauftJeTag, effektiveMenge, extra) => Object.assign({ n, stufe: 0, marktId: n, stadt: "Lymhurst", effektiveMenge, verkauftJeTag }, extra || {});
+      const kz = (mitFokus, stueckJeTag, zutaten, anteil) =>
+        kennzahlenSetzen(Object.assign(zeile(mitFokus, stueckJeTag), { zutatenPreise: zutaten, silber: mitFokus ? 300 : 359, marge: 0.4, einstufung: "gewinn" }), mit, ohne, { mitFokus, premium: true, anteil: anteil == null ? 0.25 : anteil });
+      const blume = () => zt("T5_FIBER", 15000, 3);
+      const namen = (n) => ({ T5_FIBER: "Himmelsblume", T4_CLOTH: "Guter Stoff" }[n] || n);
+      const ek1 = kz(false, 26810, [blume()]);
+      pruefe(
+        "o7 Einkauf bindet: Absatz 25 % von 26.810 = 6.702,5 Stueck, Einkauf 25 % von 15.000 / 3,0 = 1.250 Stueck; 141 x 1.250 = 176.250",
+        ek1.gewinnJeTag === 176250 && ek1.stueckJeTagErreichbar === 1250 && ek1.einkaufStueckJeTag === 1250 && ek1.tagGrenze === "einkauf" && ek1.einkaufZutat.n === "T5_FIBER" && ek1.einkaufUnbekannt === false && ek1.einkaufFehlt.length === 0,
+        ek1.gewinnJeTag + " / " + ek1.tagGrenze
+      );
+      pruefe(
+        "o7 Tooltip nennt alle drei Grenzen mit Zahlen und welche bindet",
+        tagTitel(ek1, namen) ===
+          "141 Silber × 1.250 Stück/Tag = 176.250 Silber/Tag (Untergrenze). Grenzen: Absatz 6.703 Stück (25 % von 26.810 verkauft/Tag), Einkauf 1.250 Stück (25 % von 15.000 Himmelsblume in Lymhurst, Bedarf 3,0 je Stück nach Rückgewinnung), Fokus begrenzt nicht. Es begrenzt der Einkauf.",
+        tagTitel(ek1, namen)
+      );
+      const ek2 = kz(false, 400, [blume()]);
+      pruefe(
+        "o7 Absatz bindet: 25 % von 400 = 100 Stueck unter den 1.250 des Einkaufs; 141 x 100 = 14.100",
+        ek2.gewinnJeTag === 14100 && ek2.tagGrenze === "absatz" && ek2.einkaufStueckJeTag === 1250 && ek2.stueckJeTagErreichbar === 100 && /Es begrenzt der Absatz\./.test(tagTitel(ek2, namen)),
+        ek2.gewinnJeTag + " / " + ek2.tagGrenze
+      );
+      const ek3 = kz(true, 26810, [blume()]);
+      const ek3b = kz(true, 26810, [zt("T5_FIBER", 1200, 3)]);
+      pruefe(
+        "o7 Fokus bindet: 10.000 / 50 = 200 Stueck unter Absatz (6.702,5) und Einkauf (1.250): 200 x 200 = 40.000; bei 1.200 Himmelsblumen bindet der Einkauf (100 Stueck): 200 x 100 = 20.000",
+        ek3.gewinnJeTag === 40000 && ek3.tagGrenze === "fokus" && ek3.einkaufStueckJeTag === 1250 && ek3b.gewinnJeTag === 20000 && ek3b.tagGrenze === "einkauf" && ek3b.fokusStueckJeTag === 200 &&
+          /Fokus begrenzt nicht \(10\.000 Fokus reichen für 200 Stück\)\. Es begrenzt der Einkauf\./.test(tagTitel(ek3b, namen)),
+        ek3.gewinnJeTag + " / " + ek3b.gewinnJeTag + " / " + tagTitel(ek3b, namen)
+      );
+      const ek4 = kz(false, 26810, [blume(), zt("T4_CLOTH", 800, 0.5)]);
+      pruefe(
+        "o7 zwei Zutaten, die knappere entscheidet: Himmelsblume 1.250 Stueck, Guter Stoff 25 % von 800 / 0,5 = 400 Stueck; 141 x 400 = 56.400",
+        ek4.gewinnJeTag === 56400 && ek4.einkaufStueckJeTag === 400 && ek4.einkaufZutat.n === "T4_CLOTH" && ek4.tagGrenze === "einkauf" && /25 % von 800 Guter Stoff in Lymhurst, Bedarf 0,5 je Stück/.test(tagTitel(ek4, namen)),
+        ek4.gewinnJeTag + " / " + (ek4.einkaufZutat && ek4.einkaufZutat.n)
+      );
+      const ek5 = kz(false, 26810, [zt("T5_FIBER", null, 3)]);
+      const ek5b = kz(false, 26810, [blume(), zt("T4_CLOTH", undefined, 0.5)]);
+      pruefe(
+        "o7 Fall 1, Zutat nie abgerufen: Gewinn/Tag wie bisher ohne Einkaufsgrenze (945.052,5), einkaufUnbekannt; fehlt nur eine von zwei, begrenzt die bekannte und das Kennzeichen bleibt",
+        Math.abs(ek5.gewinnJeTag - 945052.5) < 1e-6 && ek5.tagGrenze === "absatz" && ek5.einkaufUnbekannt === true && ek5.einkaufStueckJeTag === null && ek5.einkaufFehlt.length === 1 && ek5.einkaufFehlt[0].n === "T5_FIBER" &&
+          /Einkauf unbekannt/.test(tagTitel(ek5, namen)) && /Das Handelsvolumen von Himmelsblume in Lymhurst fehlt noch/.test(tagTitel(ek5, namen)) &&
+          ek5b.gewinnJeTag === 176250 && ek5b.tagGrenze === "einkauf" && ek5b.einkaufUnbekannt === true && /Guter Stoff in Lymhurst fehlt noch/.test(tagTitel(ek5b, namen)),
+        ek5.gewinnJeTag + " / " + tagTitel(ek5, namen)
+      );
+      const ek6 = kz(false, 26810, [zt("T5_FIBER", 0, 3)]);
+      const ek6minus = kennzahlenSetzen({ erloes: 300, gewinn: -59, stueckJeTag: 1000, zutatenPreise: [zt("T5_FIBER", 0, 3)] }, mit, ohne, { mitFokus: false, premium: true, anteil: 0.25 });
+      pruefe(
+        "o7 Fall 2, Zutat abgerufen und ohne erfassten Handel: Gewinn/Tag 0 (nicht leer, nicht -0), Grenze Einkauf; die Zeile bleibt sichtbar und sortiert unter die mit Gewinn/Tag, aber vor die ohne Angabe",
+        ek6.gewinnJeTag === 0 && ek6.tagGrenze === "einkauf" && ek6.einkaufStueckJeTag === 0 && ek6.gewinn === 141 && tagText(ek6) === "0" && Object.is(ek6minus.gewinnJeTag, 0) && tagText(ek6minus) === "0" &&
+          /kein Handel erfasst/.test(tagTitel(ek6, namen)) &&
+          sortiere([ek6, k(false, 0, true), ek2, ek1], "tag").map((z) => z.gewinnJeTag).join() === "176250,14100,0," &&
+          filtereUndSortiere([ek6, ek1], { sortierung: "tag" }).length === 2 && filtereUndSortiere([ek6, ek1], { sortierung: "tag" })[1] === ek6,
+        ek6.gewinnJeTag + " / " + tagTitel(ek6, namen)
+      );
+      const ek7 = kz(false, 26810, [zt("T5_FIBER", 10, 3, { uebersteuert: true })]);
+      const ek7b = kz(false, 26810, [zt("T5_FIBER", 10, 3, { marktId: null }), zt("T4_CLOTH", null, 0.5, { uebersteuert: true })]);
+      pruefe(
+        "o7 Fall 3, eigener Preis oder nicht gekaufte Zutat begrenzt nicht und gilt nicht als unbekannt: Gewinn/Tag 945.052,5",
+        Math.abs(ek7.gewinnJeTag - 945052.5) < 1e-6 && ek7.tagGrenze === "absatz" && ek7.einkaufStueckJeTag === null && ek7.einkaufUnbekannt === false && /Einkauf begrenzt nicht/.test(tagTitel(ek7, namen)) &&
+          Math.abs(ek7b.gewinnJeTag - 945052.5) < 1e-6 && ek7b.einkaufUnbekannt === false,
+        ek7.gewinnJeTag + " / " + tagTitel(ek7, namen)
+      );
+      const ek9 = kz(false, 26810, [blume()], 0.5);
+      const ek9b = kz(false, 400, [blume()], 0.5);
+      pruefe(
+        "o7 Anteil wirkt auf beide Marktseiten: 50 % verdoppelt die Einkaufsgrenze (2.500 Stueck, 352.500) und die Absatzgrenze (200 Stueck, 28.200)",
+        ek9.einkaufStueckJeTag === 2500 && ek9.gewinnJeTag === 352500 && ek9.tagGrenze === "einkauf" && ek9b.gewinnJeTag === 28200 && ek9b.tagGrenze === "absatz",
+        ek9.gewinnJeTag + " / " + ek9b.gewinnJeTag
+      );
+      const escT = (s) => String(s).replace(/'/g, "&#39;");
+      pruefe(
+        "o7 Zelle Gewinn/Tag: Schild \"Einkauf\", wenn der Einkauf bindet; \"Einkauf ?\", wenn das Volumen einer Zutat fehlt; kein Schild, wenn Absatz oder Fokus binden; keine neue Spalte (zwei Zellen)",
+        /<span class='vd-grenze'>Einkauf<\/span>/.test(kennzahlZellenHtml(ek1, escT, "", "", namen)) && !/vd-grenze-offen/.test(kennzahlZellenHtml(ek1, escT, "", "", namen)) &&
+          /<span class='vd-grenze vd-grenze-offen'>Einkauf \?<\/span>/.test(kennzahlZellenHtml(ek5, escT, "", "", namen)) && !/vd-grenze/.test(kennzahlZellenHtml(ek2, escT, "", "", namen)) &&
+          /Fokus begrenzt/.test(kennzahlZellenHtml(ek3, escT, "", "", namen)) && !/vd-grenze/.test(kennzahlZellenHtml(ek3, escT, "", "", namen)) &&
+          (kennzahlZellenHtml(ek5b, escT, "", "", namen).match(/vd-grenze[ ']/g) || []).length === 2 && (kennzahlZellenHtml(ek1, escT, "", "", namen).match(/<td /g) || []).length === 2,
+        kennzahlZellenHtml(ek5b, escT, "", "", namen)
+      );
+      (function () {
+        // Stein hat je Rohstoffstufe ein Rezept mit eigener Ausbeute (1/2/4/8 Bloecke je Vorgang).
+        // Die Zeile fuehrt den Bedarf je STUECK Produkt (effektiveMenge), die Anzeige die Menge je VORGANG.
+        const stein = kandidaten({ rohstoffe: ["rock"], tiers: [4, 5], stufen: [0, 1, 2, 3] });
+        const prS = {};
+        benoetigteMarktIds(stein).forEach((id, i) => (prS[id] = roh(100 + i, 90 + i)));
+        const zS = zeilenRechnen(stein, [{ stadt: "Lymhurst", preiseRoh: prS, absatz: {} }], einstellungenBereinigen({ kaufweg: "sofort", verkaufsweg: "sofort", rohstoffe: ["rock"] }), { stationssaetze: { Steinmetz: 0 }, fce: 0, premium: true, maxPreisAlterMin: null });
+        const mehr = zS.filter((z) => z.ausbeute > 1 && z.gewinn != null);
+        pruefe(
+          "o7 Bedarf je Stueck bei Ausbeute > 1 (Steinbloecke): effektiveMenge = Menge je Vorgang / Ausbeute x (1 - Rueckgewinnung), bei jeder Zutat",
+          mehr.length >= 4 && mehr.every((z) => z.zutatenPreise.every((x) => Math.abs(x.effektiveMenge - (x.menge / z.ausbeute) * (1 - z.rrr)) < 1e-9)),
+          mehr.length + " Zeilen mit Ausbeute " + Array.from(new Set(mehr.map((z) => z.ausbeute))).join("/")
+        );
+      })();
+      pruefe(
+        "o7 einkaufGrenze: dieselbe Zutat zweimal im Rezept zaehlt mit der Summe ihres Bedarfs (25 % von 15.000 / (3 + 2) = 750)",
+        einkaufGrenze({ zutatenPreise: [blume(), zt("T5_FIBER", 15000, 2)] }, 0.25).stueck === 750 && einkaufGrenze({}, 0.25).stueck === null && einkaufGrenze({ zutatenPreise: [] }, 0.25).fehlt.length === 0,
+        einkaufGrenze({ zutatenPreise: [blume(), zt("T5_FIBER", 15000, 2)] }, 0.25).stueck
+      );
+      pruefe(
+        "o7 zutatHandel: Summe ueber alle Qualitaeten, ohne Eintrag 0; zutatAbsatzAusBestand nimmt nur, was im Bestand liegt",
+        zutatHandel({ 1: { stueckJeTag: 6 }, 2: { stueckJeTag: 1.5 } }) === 7.5 && zutatHandel({}) === 0 && zutatHandel(null) === 0 &&
+          JSON.stringify(zutatAbsatzAusBestand("Lymhurst", ["A", "B", "C"], (s, id) => (id === "A" ? { abgerufenAm: 5, jeQ: { 1: { stueckJeTag: 9 } } } : id === "B" ? { abgerufenAm: 6, jeQ: {} } : null))) ===
+            JSON.stringify({ A: { stueckJeTag: 9, abgerufenAm: 5 }, B: { stueckJeTag: 0, abgerufenAm: 6 } }),
+        ""
+      );
+      pruefe(
+        "o7 absatzGruppen: gleiche Staedte ein Abruf fuer alles; verschiedene Staedte: nur Produkt (Verkauf), nur Zutat (Einkauf), beides (alle); keine ID doppelt",
+        JSON.stringify(absatzGruppen(["a", "b"], ["b", "c"], ["Lymhurst"], ["Lymhurst"])) === JSON.stringify([{ ids: ["c", "a", "b"], staedte: ["Lymhurst"] }]) &&
+          JSON.stringify(absatzGruppen(["a", "b"], ["b", "c"], ["Lymhurst"], ["Martlock"])) ===
+            JSON.stringify([{ ids: ["c"], staedte: ["Martlock"] }, { ids: ["a"], staedte: ["Lymhurst"] }, { ids: ["b"], staedte: ["Lymhurst", "Martlock"] }]) &&
+          absatzGruppen(["a"], ["c"], ["Lymhurst"], []).length === 1 && absatzGruppen(["a"], ["c"], [], ["Lymhurst"])[0].ids.join() === "c",
+        JSON.stringify(absatzGruppen(["a", "b"], ["b", "c"], ["Lymhurst"], ["Martlock"]))
+      );
+      pruefe(
+        "o7 zutatHandelText: verkauft/Tag der Zutat fuer den Tooltip des Preises; fehlt das Volumen, steht das da; bei eigenem Preis leer",
+        /^Erfasster Handel in Lymhurst: 15\.000 verkauft\/Tag \(Mittel der letzten 7 Tage, alle Qualitäten, Untergrenze\)\.$/.test(zutatHandelText(blume())) &&
+          zutatHandelText(zt("T5_FIBER", null, 3)) === "Handelsvolumen in Lymhurst noch nicht abgerufen." && zutatHandelText(zt("T5_FIBER", 5, 3, { uebersteuert: true })) === "",
+        zutatHandelText(blume())
+      );
+
+      // Integration: Guter Stoff T4.0 wie oben (2 Faser a 100 + 1 T3-Stoff a
+      // 200, Lymhurst B 0,58, Erloes 288, 1.000 verkauft/Tag). Bedarf je
+      // Stueck nach Rueckgewinnung: 2 / 1,58 Faser und 1 / 1,58 T3-Stoff.
+      const datEk = (zutatAbsatz) => [{ stadt: "Lymhurst", preiseRoh: pr, absatz: { T4_CLOTH: { 1: { stueckJeTag: 1000 } } }, zutatAbsatz }];
+      const zrEk = (zutatAbsatz, aus, e) => zeilenRechnen(k4, datEk(zutatAbsatz), einstellungenBereinigen(Object.assign({ kaufweg: "sofort", verkaufsweg: "sofort" }, aus || {})), e || e2)[0];
+      const zEk = zrEk({ T4_FIBER: { stueckJeTag: 500, abgerufenAm: 7 }, T3_CLOTH: { stueckJeTag: 100000, abgerufenAm: 8 } });
+      pruefe(
+        "o7 zeilenRechnen (Veredeln): 500 Fasern/Tag begrenzen auf 25 % x 500 / (2 / 1,58) = 98,75 Stueck (Absatz liesse 250 zu): (288 - 400 / 1,58) x 98,75 = 3.440,00; Kosten und Gewinn/Stueck unveraendert",
+        Math.abs(zEk.einkaufStueckJeTag - 98.75) < 1e-9 && zEk.tagGrenze === "einkauf" && zEk.einkaufZutat.marktId === "T4_FIBER" && Math.abs(zEk.gewinnJeTag - (288 - 400 / 1.58) * 98.75) < 1e-6 && Math.abs(zEk.gewinnJeTag - 3440.0) < 0.01 &&
+          zEk.silber === zo.silber && zEk.gewinn === zo.gewinn && zEk.marge === zo.marge && zEk.zutatenPreise[0].verkauftJeTag === 500 && zEk.zutatenPreise[0].handel.abgerufenAm === 7,
+        zEk.gewinnJeTag + " / " + zEk.einkaufStueckJeTag
+      );
+      const zEkFokus = zrEk({ T4_FIBER: { stueckJeTag: 500 }, T3_CLOTH: { stueckJeTag: 100000 } }, { mitFokus: true });
+      pruefe(
+        "o7 zeilenRechnen (Veredeln): mit Fokus sinkt der Bedarf (2 / 2,17), der Einkauf erlaubt 135,6 Stueck und begrenzt vor dem Fokus (185,19) und dem Absatz (250): (288 - 400 / 2,17) x 135,625 = 14.060,00",
+        Math.abs(zEkFokus.einkaufStueckJeTag - 135.625) < 1e-9 && zEkFokus.tagGrenze === "einkauf" && Math.abs(zEkFokus.gewinnJeTag - (288 - 400 / 2.17) * 135.625) < 1e-6 && Math.abs(zEkFokus.gewinnJeTag - 14060.0) < 0.01,
+        zEkFokus.gewinnJeTag + " / " + zEkFokus.einkaufStueckJeTag
+      );
+      const zEkOhne = zrEk(undefined);
+      const zEkTeil = zrEk({ T4_FIBER: { stueckJeTag: 500 } });
+      pruefe(
+        "o7 zeilenRechnen (Veredeln): ohne Zutatenvolumen (nie abgerufen) Gewinn/Tag wie bis v3.20.1 (8.708,86) mit einkaufUnbekannt; fehlt nur der T3-Stoff, begrenzt die Faser und das Kennzeichen bleibt",
+        zEkOhne.gewinnJeTag === zo.gewinnJeTag && zEkOhne.einkaufUnbekannt === true && zEkOhne.einkaufFehlt.length === 2 && zEkOhne.tagGrenze === "absatz" && zEkOhne.zutatenPreise[0].verkauftJeTag === null && zEkOhne.zutatenPreise[0].handel === null &&
+          zo.einkaufUnbekannt === true && zEkTeil.tagGrenze === "einkauf" && zEkTeil.einkaufUnbekannt === true && zEkTeil.einkaufFehlt.length === 1 && zEkTeil.einkaufFehlt[0].marktId === "T3_CLOTH",
+        zEkOhne.gewinnJeTag + " / " + zEkTeil.gewinnJeTag
+      );
+      const zEkNull = zrEk({ T4_FIBER: { stueckJeTag: 100000 }, T3_CLOTH: { stueckJeTag: 0 } });
+      pruefe(
+        "o7 zeilenRechnen (Veredeln): T3-Stoff abgerufen und ohne Handel: Gewinn/Tag 0, Grenze Einkauf, Gewinn/Stueck steht; die Zeile bleibt in der Liste",
+        zEkNull.gewinnJeTag === 0 && zEkNull.tagGrenze === "einkauf" && zEkNull.einkaufZutat.marktId === "T3_CLOTH" && zEkNull.gewinn === zo.gewinn && filtereUndSortiere([zEkNull, zEk], { sortierung: "tag" }).map((z) => z.gewinnJeTag).join() === zEk.gewinnJeTag + ",0",
+        zEkNull.gewinnJeTag
+      );
+      const zEkEigen = zrEk({ T4_FIBER: { stueckJeTag: 500 }, T3_CLOTH: { stueckJeTag: 100000 } }, { preisUeberschreibungen: { Lymhurst: { T4_FIBER: 100 } } });
+      pruefe(
+        "o7 zeilenRechnen (Veredeln): eigener Preis fuer die Faser (hier gleich dem Marktpreis) hebt deren Grenze auf; es bindet wieder der Absatz, Kosten gleich",
+        zEkEigen.zutatenPreise[0].uebersteuert === true && zEkEigen.tagGrenze === "absatz" && zEkEigen.gewinnJeTag === zo.gewinnJeTag && zEkEigen.silber === zo.silber && zEkEigen.einkaufUnbekannt === false &&
+          Math.abs(zEkEigen.einkaufStueckJeTag - 0.25 * 100000 * 1.58) < 1e-6,
+        zEkEigen.gewinnJeTag + " / " + zEkEigen.tagGrenze
+      );
+      const zEkHalb = zrEk({ T4_FIBER: { stueckJeTag: 500 }, T3_CLOTH: { stueckJeTag: 100000 } }, null, Object.assign({}, e2, { absatzAnteilProzent: 50 }));
+      pruefe("o7 zeilenRechnen (Veredeln): gemeinsamer Anteil 50 % verdoppelt auch die Einkaufsgrenze (197,5 Stueck)", Math.abs(zEkHalb.einkaufStueckJeTag - 197.5) < 1e-9 && Math.abs(zEkHalb.gewinnJeTag - 2 * zEk.gewinnJeTag) < 1e-6, zEkHalb.gewinnJeTag);
+      // Zwei Einkaufsstaedte: Faser in Martlock billiger (90 statt 100), T3-Stoff
+      // in Lymhurst billiger (200 statt 250). Es zaehlt je Zutat das Volumen
+      // der GEWAEHLTEN Stadt: Faser Martlock 632/Tag, T3-Stoff Lymhurst 400/Tag.
+      const zweiStaedte = [
+        { stadt: "Lymhurst", preiseRoh: pr, absatz: { T4_CLOTH: { 1: { stueckJeTag: 1000 } } }, zutatAbsatz: { T4_FIBER: { stueckJeTag: 100000 }, T3_CLOTH: { stueckJeTag: 400 } } },
+        { stadt: "Martlock", preiseRoh: { T4_FIBER: roh(90, 80), T3_CLOTH: roh(250, 240) }, absatz: {}, zutatAbsatz: { T4_FIBER: { stueckJeTag: 632 }, T3_CLOTH: { stueckJeTag: 1000000 } } },
+      ];
+      const zZwei = zeilenRechnen(k4, zweiStaedte, einstellungenBereinigen({ kaufweg: "sofort", verkaufsweg: "sofort", einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Lymhurst"] }), e2)[0];
+      pruefe(
+        "o7 zeilenRechnen (Veredeln): zwei Einkaufsstaedte, je Zutat zaehlt das Volumen der gewaehlten Stadt: Faser aus Martlock (632/Tag) erlaubt 25 % x 632 x 1,58 / 2 = 124,82 Stueck, T3-Stoff aus Lymhurst (400/Tag) 158; (288 - 380 / 1,58) x 124,82 = 5.928,16",
+        zZwei.zutatenPreise[0].stadt === "Martlock" && zZwei.zutatenPreise[1].stadt === "Lymhurst" && zZwei.zutatenPreise[0].verkauftJeTag === 632 && zZwei.zutatenPreise[1].verkauftJeTag === 400 &&
+          zZwei.einkaufZutat.stadt === "Martlock" && Math.abs(zZwei.einkaufStueckJeTag - 124.82) < 1e-9 && zZwei.tagGrenze === "einkauf" && Math.abs(zZwei.gewinnJeTag - (288 - 380 / 1.58) * 124.82) < 1e-6 && Math.abs(zZwei.gewinnJeTag - 5928.16) < 0.01,
+        zZwei.gewinnJeTag + " / " + zZwei.einkaufStueckJeTag
+      );
 
       // Bisherige Zahlen unveraendert: die Zeile ohne Fokus entspricht
       // zeichengleich der bisherigen Rechnung mit fokusAus, die Zeile mit
@@ -1628,9 +1989,10 @@ const VEREDELN = (function () {
    * Preise und Handelsvolumen der Auswahl beschaffen: aus dem Bestand, was
    * frisch ist, der Rest per Abruf. Seit v3.16.0 alle Staedte in einem
    * Abruf je ID-Block (PREISE, Abrufplaner): Zutatenpreise nur fuer die
-   * Einkaufsstaedte, Produktpreise und Handelsvolumen nur fuer die
-   * Verkaufsstaedte; IDs, die Zutat UND Produkt sind (Veredelungskette),
-   * fuer beide Gruppen in einem Abruf. opts.frisch erzwingt den Abruf von
+   * Einkaufsstaedte, Produktpreise nur fuer die Verkaufsstaedte,
+   * Handelsvolumen der Produkte fuer die Verkaufs- und (seit v3.21.0) der
+   * Zutaten fuer die Einkaufsstaedte; IDs, die Zutat UND Produkt sind
+   * (Veredelungskette), fuer beide Gruppen in einem Abruf. opts.frisch erzwingt den Abruf von
    * allem. Ohne DOM, mit nachgebildetem fetch testbar.
    * @returns {Promise<{stadtDaten:Array, zutatIds:string[], produktIds:string[], abrufe:number}>}
    */
@@ -1676,15 +2038,29 @@ const VEREDELN = (function () {
       });
       g.staedte.forEach((s) => Object.assign(jeStadt[s], teil[s]));
     }
-    let absatz = {};
-    if (verkauf.length) {
-      absatz = await PREISE.absatzAbrufen(produktIds, {
-        staedte: verkauf,
+    // v3.21.0 (O7): Handelsvolumen der Produkte (Verkaufsstaedte) UND der
+    // Zutaten (Einkaufsstaedte, fuer die Einkaufsgrenze von Gewinn/Tag), jede
+    // ID hoechstens einmal, s. absatzGruppen().
+    const absatz = {};
+    staedte.forEach((s) => {
+      absatz[s] = {};
+    });
+    for (const g of absatzGruppen(zutatIds, produktIds, einkauf, verkauf)) {
+      const teil = await PREISE.absatzAbrufen(g.ids, {
+        staedte: g.staedte,
         tageFenster: TAGE_FENSTER,
         erzwingen: frisch,
-        aufFortschritt: (f, n) => status("Handelsvolumen (" + verkauf.length + (verkauf.length === 1 ? " Stadt" : " Städte") + ") " + f + "/" + n + " ..."),
+        aufFortschritt: (f, n) => status("Handelsvolumen (" + g.staedte.length + (g.staedte.length === 1 ? " Stadt" : " Städte") + ") " + f + "/" + n + " ..."),
       });
+      g.staedte.forEach((s) => Object.assign(absatz[s], teil[s]));
     }
+    const produktAbsatz = (stadt) => {
+      const out = {};
+      produktIds.forEach((id) => {
+        if (absatz[stadt][id] !== undefined) out[id] = absatz[stadt][id];
+      });
+      return out;
+    };
     const stadtDaten = staedte.map((stadt) => {
       const ek = einkauf.indexOf(stadt) !== -1;
       const vk = verkauf.indexOf(stadt) !== -1;
@@ -1694,7 +2070,10 @@ const VEREDELN = (function () {
       Array.from(new Set([].concat(ek ? zutatIds : [], vk ? produktIds : []))).forEach((id) => {
         preiseRoh[id] = jeStadt[stadt][id] !== undefined ? jeStadt[stadt][id] : null;
       });
-      return { stadt, preiseRoh, absatz: vk ? absatz[stadt] || {} : {} };
+      // zutatAbsatz aus dem Bestand: nur was dort wirklich liegt, zaehlt als
+      // abgerufen (liefert die API fuer eine Stadt gar nichts, bleibt die
+      // Zutat "nie abgerufen" statt "kein Handel").
+      return { stadt, preiseRoh, absatz: vk ? produktAbsatz(stadt) : {}, zutatAbsatz: ek ? zutatAbsatzAusBestand(stadt, zutatIds, PREISE.bestandAbsatz) : {} };
     });
     return { stadtDaten, zutatIds, produktIds, abrufe: PREISE.abrufZaehler() - start };
   }
@@ -2145,9 +2524,10 @@ const VEREDELN = (function () {
           const herkunft = x.uebersteuert
             ? "Eigener Preis für " + x.stadt + (m.preis != null ? ", Markt: " + fmt(m.preis) + (alter ? " (" + alter + " alt)" : "") : ", kein Marktpreis")
             : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + " in " + x.stadt + (alter ? ", " + alter + " alt" : "") + (abruf ? ", abgerufen " + abruf : "");
+          const handelText = zutatHandelText(x);
           const titel = kontext.mehrEk && x.alle && x.alle.length > 1
-            ? staedteListe(x.alle.map((a) => ({ stadt: a.stadt, wert: a.basis })), x.stadt, false) + (abruf && !x.uebersteuert ? "\n\nAbgerufen " + abruf + "." : "") + "\n\nKlicken zum Überschreiben."
-            : herkunft + ". Klicken zum Überschreiben.";
+            ? staedteListe(x.alle.map((a) => ({ stadt: a.stadt, wert: a.basis })), x.stadt, false) + (abruf && !x.uebersteuert ? "\n\nAbgerufen " + abruf + "." : "") + (handelText ? "\n\n" + handelText : "") + "\n\nKlicken zum Überschreiben."
+            : herkunft + (/\.$/.test(herkunft) ? "" : ".") + (handelText ? " " + handelText : "") + " Klicken zum Überschreiben.";
           const wert = Math.round(x.basisPreis * 100) / 100;
           const feld =
             "<input type='text' inputmode='decimal' autocomplete='off' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' value='" + PREISFELD.anzeige(wert) + "' data-vd-roh='" + wert + "'" +
@@ -2207,6 +2587,7 @@ const VEREDELN = (function () {
         (z.zutatenPreise || [])
           .filter((x) => !x.uebersteuert)
           .map((x) => x.roh)
+          .concat((z.zutatenPreise || []).filter((x) => !x.uebersteuert && x.handel).map((x) => x.handel))
           .concat(d ? [(d.preiseRoh || {})[z.marktId], ((d.absatz || {})[z.marktId] || {})[1]] : [])
       );
     }
@@ -2248,7 +2629,7 @@ const VEREDELN = (function () {
             "<td class='num'>" + fmt(z.kostenGesamt) + "</td>" +
             "<td class='num vd-wert' title='" + einstufung + "'>" + fmt(z.gewinn) + "</td>" +
             "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
-            kennzahlZellenHtml(z, esc) +
+            kennzahlZellenHtml(z, esc, "", "", nameVon) +
             "<td class='num vd-wert'>" + fmt(z.gewinnGesamt) + "</td>" +
             "</tr>"
           );
@@ -2385,6 +2766,12 @@ const VEREDELN = (function () {
     sortierungBereinigen,
     anteilVon,
     kennzahlenSetzen,
+    einkaufGrenze,
+    zutatHandel,
+    zutatAbsatzAusBestand,
+    zutatAbsatzSetzen,
+    absatzGruppen,
+    zutatHandelText,
     tagText,
     tagTitel,
     jeFokusText,

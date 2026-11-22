@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.20.1 · Lootsplit: Gildenkasse vom ganzen Topf
+Stand: 2026-11-22 · Version: v3.21.0 · O7: Markttiefe im Einkauf
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -64,7 +64,7 @@ der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
 Die Runde ist damit abgeschlossen.** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
 Fund zum Einkauf, Potenzialerkennung ohne Vorauswahl, Performance nur wo
 nötig. Einzelheiten je Version: Historie, Nachträge v3.15.0 bis v3.19.0.
-Selbsttest zuletzt **872/872** grün.
+Selbsttest zuletzt **907/907** grün.
 
 - **O1, v3.15.0, gemeinsamer Preisbestand.** Preise und Handelsvolumen von
   `js/preise.js` liegen in IndexedDB (`albion_kostenrechner_bestand`), mit
@@ -117,6 +117,24 @@ Selbsttest zuletzt **872/872** grün.
   Merkliste mit den Zahlen des Moments (`einstellungen.merkliste`, höchstens
   200). `VEREDELN.nachZeiger()` behebt den verlorenen ersten Klick nach
   einer Zahleneingabe. Tabellen bei 1440 px ohne waagerechtes Scrollen.
+
+**O7, v3.21.0 (22.11.2026), Markttiefe im Einkauf.** `gewinnJeTag` wird
+zusätzlich durch den Einkauf begrenzt (`VEREDELN.einkaufGrenze`): je
+gekaufter Zutat `Anteil × verkauft/Tag in der gewählten Einkaufsstadt /
+effektive Menge je Stück` (nach Rückgewinnung), das Minimum zählt neben
+Absatz und Fokus; `tagGrenze` kennt `"einkauf"`, `einkaufZutat` nennt die
+begrenzende Zutat. Drei Fälle: Zutat nie abgerufen (keine Grenze,
+`einkaufUnbekannt`, Schild „Einkauf ?“), abgerufen ohne Handel (Gewinn/Tag
+0), eigener Preis (begrenzt nicht). Der Anteil gilt jetzt für beide
+Marktseiten, das Feld heißt „Annahme: Marktanteil %“. `datenAbrufen` beider
+Detailreiter und der Scan holen das Zutatenvolumen mit
+(`stadtDaten[].zutatAbsatz`); Durchlauf der Vorgabe höchstens 209 statt 202
+Abrufe. Kosten, Gewinn/Stück, Marge und Stadtwahl unverändert (4.614 Zeilen
+bytegleich, Umsetzer). **Live gemessen (Hauptsitzung):** Kunstvoller Stoff
+T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
+(25 % von 109.647 Himmelsblume, Bedarf 1,9 je Stück). **Die Grenze halbiert
+hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
+entscheidet weiter der angenommene Marktanteil.
 
 **Lootsplit, v3.20.0 und v3.20.1 (22.11.2026, nach der Runde).** Wunsch des Nutzers:
 Lootwert, Geldbeutel, Regear getrennt je Partymitglied; seine Entscheidungen:
@@ -200,7 +218,7 @@ der Änderungsgeschichte je Datei steht in der Historie, Block „Ausgelagert am
 | `assets/ancient-lands.webp` | **Erzeugt** von `build_karte.py`: Kartenbild |
 | `build_graph.py` | Baut `rezepte.js` und `item-namen.js` aus dem Client-Dump (`--refresh`) |
 | `build_karte.py` | Baut Kartenbild und `js/karte-daten.js` aus dem Client-Dump |
-| `tests/test.html` | Selbsttest aller Module, 872 Tests |
+| `tests/test.html` | Selbsttest aller Module, 907 Tests |
 | `vendor/leaflet/` | Leaflet 1.9.4 lokal (js, css, LICENSE) |
 | `assets/lymhurst-bg.jpg`, `assets/radiantwilds-bg.jpg` | Banner; das zweite ist bisher unbenutzt |
 | `design.md` | Verbindliche Design-Spezifikation |
@@ -240,7 +258,7 @@ Außerhalb des Repos, eine Ebene höher: `Kostenrechner öffnen.bat`,
   ungeprüft übernehmen, immer selbst nachlaufen lassen.
   **Die Seite ist erst fertig bei
   `document.body.dataset.testsFertig === "1"`** (ein Teil der Tests läuft
-  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 872/872.
+  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 907/907.
 - **Nach jeder Änderung im Browser gegenprüfen**, nicht nur den Code lesen. Im
   Eintopf-Projekt fielen mehrere Fehler erst in der gerenderten Seite auf.
 - **Rechenergebnisse unabhängig nachziehen** (kurzes Python-Skript im Scratchpad).
@@ -276,10 +294,24 @@ solange sich daran nichts ändert.
 
 **Rechnung und Daten**
 
-- **Markttiefe auf der Einkaufsseite:** Gewinn/Tag begrenzt nur den Verkauf
-  und unterstellt bei Massenware, dass sich alle Zutaten zum Bestpreis
-  kaufen lassen. Eigenes Paket mit Volumenabruf je Zutat; bis dahin Anteil
-  senken (v3.18.0, `OPTIMIERUNG-PLAN.md` Abschnitt 6).
+- **Marktanteil 25 % ist für Massenware zu hoch.** Seit v3.21.0 begrenzt
+  auch der Einkauf, bei liquiden Rohstoffen bleiben trotzdem fünfstellige
+  Stückzahlen je Tag. Offen: Vorgabe senken oder statt eines Anteils ein
+  Tagesbudget (Silber oder Stück) einführen; Entscheidung des Nutzers.
+  Keine Preisstaffel möglich (die API kennt kein Orderbuch).
+- **Verkaufspreis aus besserer Qualität:** „Craften: Gewinn“ und
+  „Gelegenheiten“ nehmen das billigste Angebot über alle Qualitäten; fehlt
+  ein Normal-Angebot, rechnet die Zeile mit einem Exzellent-Preis für ein
+  meist normales Stück (Heiligenstab des Adepten T4.2: 146 % Marge;
+  überschlagen mit Aufwertung bis Exzellent rund 13 %). Geplantes Paket
+  „Qualität im Verkauf“: Wege je Zielqualität mit Aufwertungskosten
+  vergleichen, Normalpreis über gehandelten Durchschnitt absichern, Volumen
+  der Zielqualität, Qualitätsbonus aus Schicksalsbrett und Salat
+  (`CLAUDE.md`, Tabelle vom 22.11.2026; Einheit im Spiel zu bestätigen).
+- O7: die Einkaufsgrenze verkleinert auch einen negativen Gewinn/Tag; bei
+  verschiedenen Einkaufs- und Verkaufsstädten kann eine ID je Scan-Durchlauf
+  in zwei Volumenabrufen stehen; meldet `history/` für eine Stadt nichts,
+  wird der Kandidat nie „frisch“ (v3.21.0).
 - Gewinn/Tag mehrerer Fokus-Zeilen ist nicht summierbar, jede Zeile setzt
   das volle Fokusbudget an (v3.18.0).
 - **Echte 429 weit unter dem Limit, Ursache ungeklärt** (fehlende

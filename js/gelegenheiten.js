@@ -327,7 +327,8 @@ const GELEGENHEITEN = (function () {
   /**
    * Eingaben fuer VEREDELN.zeilenRechnen() aus dem Bestand, in der Form von
    * VEREDELN.datenAbrufen(): je Stadt preiseRoh (Zutaten in Einkaufs-,
-   * Produkte in Verkaufsstaedten, Normal) und absatz (nur Verkaufsstaedte).
+   * Produkte in Verkaufsstaedten, Normal), absatz (nur Verkaufsstaedte) und
+   * zutatAbsatz (v3.21.0: Handelsvolumen der Zutaten, nur Einkaufsstaedte).
    */
   function stadtDatenVeredeln(teil, e, lesen) {
     const ek = staedteVon(e.einkaufStaedte);
@@ -355,14 +356,16 @@ const GELEGENHEITEN = (function () {
           }
         });
       }
-      return { stadt, preiseRoh, absatz, absatzAm };
+      // v3.21.0 (O7): Handelsvolumen der Zutaten in den Einkaufsstaedten, fuer die Einkaufsgrenze von Gewinn/Tag.
+      return { stadt, preiseRoh, absatz, absatzAm, zutatAbsatz: istEk ? V.zutatAbsatzAusBestand(stadt, Array.from(zutatIds), lesen.absatz) : {} };
     });
   }
 
   /**
    * Eingaben fuer CRAFTEN.zeilenRechnen() aus dem Bestand, in der Form von
    * CRAFTEN.datenAbrufen(): preiseRoh (Zutaten, Normal) nur in
-   * Einkaufsstaedten, produktJeQ und absatz nur in Verkaufsstaedten.
+   * Einkaufsstaedten, produktJeQ und absatz nur in Verkaufsstaedten,
+   * zutatAbsatz (v3.21.0) nur in Einkaufsstaedten.
    */
   function stadtDatenCraften(teil, e, lesen) {
     const ek = staedteVon(e.einkaufStaedte);
@@ -378,6 +381,7 @@ const GELEGENHEITEN = (function () {
       if (ek.indexOf(stadt) !== -1) {
         eintrag.preiseRoh = {};
         zutatIds.forEach((id) => (eintrag.preiseRoh[id] = lesen.preis(stadt, id, 1) || null));
+        eintrag.zutatAbsatz = V.zutatAbsatzAusBestand(stadt, Array.from(zutatIds), lesen.absatz); // v3.21.0 (O7)
       }
       if (vk.indexOf(stadt) !== -1) {
         eintrag.produktJeQ = {};
@@ -404,9 +408,11 @@ const GELEGENHEITEN = (function () {
    * machen CRAFTEN.zeilenRechnen() und VEREDELN.zeilenRechnen(). Jede Zeile
    * bekommt dazu art, schluessel und die Abrufzeiten der verwendeten Werte:
    * preisAbrufAm (aeltester verwendeter Preis: Zutaten und Produkt in der
-   * gewaehlten Verkaufsstadt), volAbrufAm (Handelsvolumen dort), abrufAm
-   * (der aeltere von beiden; fehlt einer, der vorhandene). 0 heisst: fehlt
-   * im Bestand.
+   * gewaehlten Verkaufsstadt), volAbrufAm (Handelsvolumen dort und, seit
+   * v3.21.0, das der gekauften Zutaten in ihrer gewaehlten Einkaufsstadt;
+   * das aelteste zaehlt, Zutaten mit eigenem Preis nicht), abrufAm (der
+   * aeltere von beiden; fehlt einer, der vorhandene). 0 heisst: fehlt im
+   * Bestand.
    *
    * @param teil Kandidaten aus kandidaten()
    * @param e Einstellungen des Reiters
@@ -432,7 +438,12 @@ const GELEGENHEITEN = (function () {
       (z.zutatenPreise || []).forEach((p) => preisZeiten.push(zeitVon(p.roh)));
       if (!(z.zutatenPreise || []).length) preisZeiten.push(0);
       z.preisAbrufAm = aelteste(preisZeiten);
-      z.volAbrufAm = volAm > 0 ? volAm : 0;
+      // v3.21.0 (O7): das Handelsvolumen der Zutaten gehoert zum Alter der Zeile; fehlt es, gilt die Zeile als alt.
+      const volZeiten = [volAm > 0 ? volAm : 0];
+      (z.zutatenPreise || []).forEach((p) => {
+        if (!p.uebersteuert && p.marktId) volZeiten.push(p.handel && p.handel.abgerufenAm > 0 ? p.handel.abgerufenAm : 0);
+      });
+      z.volAbrufAm = aelteste(volZeiten);
       z.abrufAm = z.preisAbrufAm > 0 && z.volAbrufAm > 0 ? Math.min(z.preisAbrufAm, z.volAbrufAm) : Math.max(z.preisAbrufAm, z.volAbrufAm);
       return z;
     };
@@ -558,7 +569,9 @@ const GELEGENHEITEN = (function () {
   /**
    * Stand eines Kandidaten im Bestand: aelteste Abrufzeit seiner Preise
    * (Zutaten in allen Einkaufsstaedten, Produkt in allen Verkaufsstaedten)
-   * und seines Handelsvolumens. 0 = mindestens ein Wert fehlt.
+   * und seines Handelsvolumens (Produkt in allen Verkaufsstaedten, seit
+   * v3.21.0 auch die Zutaten in allen Einkaufsstaedten). 0 = mindestens ein
+   * Wert fehlt.
    */
   function kandidatStand(x, e, lesen) {
     const ek = staedteVon(e.einkaufStaedte);
@@ -566,7 +579,12 @@ const GELEGENHEITEN = (function () {
     if (!ek.length || !vk.length) return { preisAm: 0, volAm: 0 };
     let preisAm = Infinity;
     let volAm = Infinity;
-    x.zutatIds.forEach((id) => ek.forEach((s) => (preisAm = Math.min(preisAm, zeitVon(lesen.preis(s, id, 1))))));
+    x.zutatIds.forEach((id) =>
+      ek.forEach((s) => {
+        preisAm = Math.min(preisAm, zeitVon(lesen.preis(s, id, 1)));
+        volAm = Math.min(volAm, zeitVon(lesen.absatz(s, id, TAGE_FENSTER))); // v3.21.0 (O7): Zutatenvolumen
+      })
+    );
     vk.forEach((s) => {
       preisAm = Math.min(preisAm, zeitVon(x.art === "craften" ? lesen.alleQ(s, x.produktId) : lesen.preis(s, x.produktId, 1)));
       volAm = Math.min(volAm, zeitVon(lesen.absatz(s, x.produktId, TAGE_FENSTER)));
@@ -614,8 +632,9 @@ const GELEGENHEITEN = (function () {
   /**
    * Was fuer eine Einheit (hoechstens PREISE.BLOCKGROESSE Kandidaten)
    * abzurufen ist: Produktpreise der Crafts in allen Qualitaeten (alleQ),
-   * Normalpreise (q1: alle Zutaten, dazu die Veredelungsprodukte) und
-   * Handelsvolumen. Faellig ist, was in mindestens einer benoetigten Stadt
+   * Normalpreise (q1: alle Zutaten, dazu die Veredelungsprodukte),
+   * Handelsvolumen der Produkte (absatz, Verkaufsstaedte) und seit v3.21.0
+   * Handelsvolumen der Zutaten (zutatAbsatz, Einkaufsstaedte). Faellig ist, was in mindestens einer benoetigten Stadt
    * fehlt oder ueber der Gueltigkeit liegt. `versucht` (Map "art:id" ->
    * Zeit) haelt fest, was der Scan schon angefragt hat: liefert die API eine
    * ID nicht, wird sie nicht in jedem Durchlauf erneut geholt.
@@ -626,23 +645,79 @@ const GELEGENHEITEN = (function () {
     const alleQ = new Set();
     const q1 = new Set();
     const absatz = new Set();
+    const zutatAbsatz = new Set(); // v3.21.0 (O7): Handelsvolumen der Zutaten in den Einkaufsstaedten
     const pMax = PREIS_MAX_MS();
     const vMax = VOLUMEN_MAX_MS();
     const offen = (art, id, max) => !(versucht && zeitFrisch(versucht.get(art + ":" + id), jetzt, max));
+    // v3.21.0 (O7): das Handelsvolumen einer ID wird als Produkt ("a",
+    // Verkaufsstaedte) und als Zutat ("za", Einkaufsstaedte) gebraucht. Hat
+    // der Scan es in der einen Rolle gerade angefragt und decken deren
+    // Staedte die der anderen ab, zaehlt das auch fuer die andere (sonst
+    // wuerde eine ID, die die API nicht liefert, je Rolle einmal geholt).
+    const ekInVk = ek.every((s) => vk.indexOf(s) !== -1);
+    const vkInEk = vk.every((s) => ek.indexOf(s) !== -1);
+    const volOffen = (art, id) => offen(art, id, vMax) && !(art === "a" ? vkInEk && !offen("za", id, vMax) : ekInVk && !offen("a", id, vMax));
     if (ek.length && vk.length) {
       einheit.forEach((x) => {
         x.zutatIds.forEach((id) => {
           if (ek.some((s) => !zeitFrisch(zeitVon(lesen.preis(s, id, 1)), jetzt, pMax)) && offen("q1", id, pMax)) q1.add(id);
+          if (ek.some((s) => !zeitFrisch(zeitVon(lesen.absatz(s, id, TAGE_FENSTER)), jetzt, vMax)) && volOffen("za", id)) zutatAbsatz.add(id);
         });
         const pid = x.produktId;
         if (x.art === "craften") {
           if (vk.some((s) => !zeitFrisch(zeitVon(lesen.alleQ(s, pid)), jetzt, pMax)) && offen("qA", pid, pMax)) alleQ.add(pid);
         } else if (vk.some((s) => !zeitFrisch(zeitVon(lesen.preis(s, pid, 1)), jetzt, pMax)) && offen("q1", pid, pMax)) q1.add(pid);
-        if (vk.some((s) => !zeitFrisch(zeitVon(lesen.absatz(s, pid, TAGE_FENSTER)), jetzt, vMax)) && offen("a", pid, vMax)) absatz.add(pid);
+        if (vk.some((s) => !zeitFrisch(zeitVon(lesen.absatz(s, pid, TAGE_FENSTER)), jetzt, vMax)) && volOffen("a", pid)) absatz.add(pid);
       });
     }
+    // Eine ID, die in dieser Einheit als Produkt UND als Zutat faellig ist
+    // (Veredelungskette), laeuft mit dem Produktabruf; der holt dann alle
+    // beteiligten Staedte (absatzAlleStaedte), wenn die Einkaufsstaedte nicht
+    // ohnehin in den Verkaufsstaedten liegen. So steht jede ID je Einheit in
+    // hoechstens einem Volumenabruf.
+    let absatzAlleStaedte = false;
+    absatz.forEach((id) => {
+      if (!zutatAbsatz.has(id)) return;
+      zutatAbsatz.delete(id);
+      if (ek.some((s) => vk.indexOf(s) === -1)) absatzAlleStaedte = true;
+    });
     const bl = (n) => Math.ceil(n / PREISE.BLOCKGROESSE);
-    return { alleQ: Array.from(alleQ), q1: Array.from(q1), absatz: Array.from(absatz), abrufe: bl(alleQ.size) + bl(q1.size) + bl(absatz.size) };
+    return {
+      alleQ: Array.from(alleQ),
+      q1: Array.from(q1),
+      absatz: Array.from(absatz),
+      zutatAbsatz: Array.from(zutatAbsatz),
+      absatzAlleStaedte,
+      abrufe: bl(alleQ.size) + bl(q1.size) + bl(absatz.size) + bl(zutatAbsatz.size),
+    };
+  }
+
+  /**
+   * v3.21.0 (O7): fuellt den Zutaten-Volumenabruf einer Einheit auf volle
+   * Bloecke auf, mit faelligen Zutaten der weiteren Kandidaten in
+   * Scanreihenfolge. Sonst kostete fast jede Einheit einen eigenen, fast
+   * leeren Abruf fuer ein paar neue Zutaten; so braucht ein Durchlauf fuer
+   * alle Zutaten zusammen nur einen Abruf je PREISE.BLOCKGROESSE IDs.
+   */
+  function zutatAbsatzAuffuellen(f, reihenfolge, e, lesen, jetzt, versucht) {
+    const block = PREISE.BLOCKGROESSE;
+    if (!f.zutatAbsatz.length || f.zutatAbsatz.length % block === 0) return f;
+    const ek = staedteVon(e.einkaufStaedte);
+    const vk = staedteVon(e.verkaufStaedte);
+    const ekInVk = ek.every((s) => vk.indexOf(s) !== -1);
+    const vMax = VOLUMEN_MAX_MS();
+    const drin = new Set(f.zutatAbsatz.concat(f.absatz));
+    for (let i = 0; i < reihenfolge.length && f.zutatAbsatz.length % block !== 0; i++) {
+      const ids = reihenfolge[i].zutatIds;
+      for (let k = 0; k < ids.length && f.zutatAbsatz.length % block !== 0; k++) {
+        const id = ids[k];
+        if (drin.has(id)) continue;
+        drin.add(id);
+        if (versucht && (zeitFrisch(versucht.get("za:" + id), jetzt, vMax) || (ekInVk && zeitFrisch(versucht.get("a:" + id), jetzt, vMax)))) continue;
+        if (ek.some((s) => !zeitFrisch(zeitVon(lesen.absatz(s, id, TAGE_FENSTER)), jetzt, vMax))) f.zutatAbsatz.push(id);
+      }
+    }
+    return f;
   }
 
   /**
@@ -652,18 +727,26 @@ const GELEGENHEITEN = (function () {
    * Normalpreis-IDs ein weiterer (jede ID wird je Durchlauf nur einmal
    * geholt). Mehr Staedte aendern die Zahl nicht (ein Abruf je Block fuer
    * alle Staedte), nur die Datenmenge.
+   * v3.21.0 (O7): dazu das Handelsvolumen der Zutaten, ein Abruf je 50
+   * Zutaten (zutatAbsatzAuffuellen() fuellt die Bloecke); der letzte Block
+   * darf angebrochen sein, deshalb aufgerundet.
    */
   function abrufSchaetzung(liste) {
     const q1 = new Set();
     const produkte = new Set();
+    const zutaten = new Set();
     liste.forEach((x) => {
       produkte.add(x.produktId);
-      x.zutatIds.forEach((id) => q1.add(id));
+      x.zutatIds.forEach((id) => {
+        q1.add(id);
+        zutaten.add(id);
+      });
       if (x.art === "veredeln") q1.add(x.produktId);
     });
     const einheiten = Math.ceil(liste.length / PREISE.BLOCKGROESSE);
-    const abrufe = liste.length ? 3 * einheiten + Math.ceil(q1.size / PREISE.BLOCKGROESSE) : 0;
-    return { vorgaenge: liste.length, produkte: produkte.size, normalpreisIds: q1.size, einheiten, abrufe, sekunden: abrufe * 2 };
+    const zutatAbrufe = Math.ceil(zutaten.size / PREISE.BLOCKGROESSE);
+    const abrufe = liste.length ? 3 * einheiten + Math.ceil(q1.size / PREISE.BLOCKGROESSE) + zutatAbrufe : 0;
+    return { vorgaenge: liste.length, produkte: produkte.size, normalpreisIds: q1.size, zutatIds: zutaten.size, zutatAbrufe: liste.length ? zutatAbrufe : 0, einheiten, abrufe, sekunden: abrufe * 2 };
   }
 
   // -----------------------------------------------------------------------
@@ -755,7 +838,7 @@ const GELEGENHEITEN = (function () {
       rangCache = null;
     }
 
-    const WERTE = ["silber", "erloes", "gewinn", "stueckJeTag", "vkStadt"];
+    const WERTE = ["silber", "erloes", "gewinn", "stueckJeTag", "vkStadt", "gewinnJeTag"]; // v3.21.0: gewinnJeTag, weil das Zutatenvolumen ihn aendert
     function scheibeRechnen(indizes) {
       const start = typeof performance !== "undefined" ? performance.now() : Date.now();
       const teil = indizes.map((i) => liste[i]);
@@ -896,10 +979,17 @@ const GELEGENHEITEN = (function () {
         zaehlen(f.q1.length);
       }
       if (f.absatz.length) {
-        await PREISE.absatzAbrufen(f.absatz, Object.assign({ staedte: vk, tageFenster: TAGE_FENSTER }, basis));
+        await PREISE.absatzAbrufen(f.absatz, Object.assign({ staedte: f.absatzAlleStaedte ? alle : vk, tageFenster: TAGE_FENSTER }, basis));
         if (lauf !== scan.lauf) return;
         merken("a", f.absatz);
         zaehlen(f.absatz.length);
+      }
+      // v3.21.0 (O7): Handelsvolumen der Zutaten in den Einkaufsstaedten.
+      if (f.zutatAbsatz && f.zutatAbsatz.length) {
+        await PREISE.absatzAbrufen(f.zutatAbsatz, Object.assign({ staedte: ek, tageFenster: TAGE_FENSTER }, basis));
+        if (lauf !== scan.lauf) return;
+        merken("za", f.zutatAbsatz);
+        zaehlen(f.zutatAbsatz.length);
       }
     }
 
@@ -916,7 +1006,7 @@ const GELEGENHEITEN = (function () {
       for (let i = 0; i < reihenfolge.length && einheit.length < PREISE.BLOCKGROESSE; i++) {
         if (faelligFuer([reihenfolge[i]], e, lesen, t, scan.versucht).abrufe) einheit.push(reihenfolge[i]);
       }
-      return einheit.length ? faelligFuer(einheit, e, lesen, t, scan.versucht) : null;
+      return einheit.length ? zutatAbsatzAuffuellen(faelligFuer(einheit, e, lesen, t, scan.versucht), reihenfolge, e, lesen, t, scan.versucht) : null;
     }
 
     /**
@@ -960,7 +1050,7 @@ const GELEGENHEITEN = (function () {
         if (version === umfangVersion) {
           // Jeder abgeschlossene Block rechnet sofort neu, was seine IDs braucht.
           const betroffen = new Set();
-          f.alleQ.concat(f.q1, f.absatz).forEach((id) => (nutzer.get(id) || []).forEach((n) => betroffen.add(n)));
+          f.alleQ.concat(f.q1, f.absatz, f.zutatAbsatz || []).forEach((id) => (nutzer.get(id) || []).forEach((n) => betroffen.add(n)));
           standCache = null;
           anfordern(Array.from(betroffen));
           melden({ typ: "status" });
@@ -1187,6 +1277,10 @@ const GELEGENHEITEN = (function () {
       "Lymhurst::T5_ORE::q1": preis(50, 40, am),
       "Lymhurst::T4_METALBAR::q1": preis(60, 50, am),
       "Lymhurst::T5_METALBAR::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 900 } } },
+      // v3.21.0 (O7): Handelsvolumen der Zutaten, so gross, dass es in den Tests bis v3.20.1 nicht begrenzt.
+      "Lymhurst::T5_LEATHER::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 1e9 } } },
+      "Lymhurst::T5_ORE::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 1e9 } } },
+      "Lymhurst::T4_METALBAR::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 1e9 } } },
     };
     const einst = { premium: true, stationssaetze: { Kriegerschmiede: 0, Schmelze: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null };
     const zBreit = zeilenRechnen([breit], klein, einst, leser(daten), T0)[0];
@@ -1304,7 +1398,11 @@ const GELEGENHEITEN = (function () {
       JSON.stringify(fSpaeter)
     );
     const fStunde = faelligFuer([breit, barren], klein, lf, T0 + 70 * 60000, null);
-    pruefe("faelligFuer: nach 70 Min. ist auch das Handelsvolumen faellig", fStunde.absatz.slice().sort().join() === "T5_MAIN_SWORD,T5_METALBAR" && fStunde.abrufe === 3, JSON.stringify(fStunde));
+    pruefe(
+      "faelligFuer: nach 70 Min. ist auch das Handelsvolumen faellig, das der Produkte und (v3.21.0) das der Zutaten; der Barren ist beides und steht nur im Produktabruf",
+      fStunde.absatz.slice().sort().join() === "T5_MAIN_SWORD,T5_METALBAR" && fStunde.zutatAbsatz.slice().sort().join() === "T4_METALBAR,T5_LEATHER,T5_ORE" && fStunde.absatzAlleStaedte === false && fStunde.abrufe === 4,
+      JSON.stringify(fStunde)
+    );
     const versucht = new Map([["qA:T5_MAIN_SWORD", T0 + 39 * 60000]]);
     pruefe(
       "faelligFuer: eine gerade angefragte ID, die die API nicht geliefert hat, wird nicht in jedem Durchlauf erneut geholt",
@@ -1327,13 +1425,16 @@ const GELEGENHEITEN = (function () {
 
     const sch = abrufSchaetzung(kl);
     const q1Ids = new Set();
+    const zutatIdSet = new Set();
     kl.forEach((x) => {
       x.zutatIds.forEach((id) => q1Ids.add(id));
+      x.zutatIds.forEach((id) => zutatIdSet.add(id));
       if (x.art === "veredeln") q1Ids.add(x.produktId);
     });
     pruefe(
-      "abrufSchaetzung: Obergrenze 3 Abrufe je Einheit zu 50 Vorgaengen plus ein Abruf je 50 Normalpreis-IDs; die Staedte aendern die Zahl nicht",
-      sch.vorgaenge === kl.length && sch.einheiten === Math.ceil(kl.length / 50) && sch.abrufe === 3 * sch.einheiten + Math.ceil(q1Ids.size / 50) && sch.normalpreisIds === q1Ids.size &&
+      "abrufSchaetzung: Obergrenze 3 Abrufe je Einheit zu 50 Vorgaengen plus ein Abruf je 50 Normalpreis-IDs plus (v3.21.0) ein Abruf je 50 Zutaten fuer deren Handelsvolumen; die Staedte aendern die Zahl nicht",
+      sch.vorgaenge === kl.length && sch.einheiten === Math.ceil(kl.length / 50) && sch.zutatIds === zutatIdSet.size && sch.zutatAbrufe === Math.ceil(zutatIdSet.size / 50) &&
+        sch.abrufe === 3 * sch.einheiten + Math.ceil(q1Ids.size / 50) + sch.zutatAbrufe && sch.normalpreisIds === q1Ids.size &&
         abrufSchaetzung(kandidaten(Object.assign({}, klein, { einkaufStaedte: STAEDTE.slice(), verkaufStaedte: STAEDTE.slice() }))).abrufe === sch.abrufe && abrufSchaetzung([]).abrufe === 0,
       JSON.stringify(sch)
     );
@@ -1342,18 +1443,34 @@ const GELEGENHEITEN = (function () {
       const leer = leser({});
       const gemerkt = new Map();
       let abrufe = 0;
+      let ohneZutatVolumen = 0; // so viele waeren es ohne das Zutatenvolumen (Stand bis v3.20.1)
+      let zutatVolumenAbrufe = 0;
+      const zutatVolumenIds = [];
+      const bl = (n) => Math.ceil(n / 50);
       for (let i = 0; i < alleStd.length; i += 50) {
-        const f = faelligFuer(alleStd.slice(i, i + 50), std, leer, T0, gemerkt);
-        abrufe += f.abrufe;
+        const f = zutatAbsatzAuffuellen(faelligFuer(alleStd.slice(i, i + 50), std, leer, T0, gemerkt), alleStd, std, leer, T0, gemerkt);
+        const n = bl(f.alleQ.length) + bl(f.q1.length) + bl(f.absatz.length) + bl(f.zutatAbsatz.length);
+        abrufe += n;
+        ohneZutatVolumen += n - bl(f.zutatAbsatz.length);
+        zutatVolumenAbrufe += bl(f.zutatAbsatz.length);
         f.alleQ.forEach((id) => gemerkt.set("qA:" + id, T0));
         f.q1.forEach((id) => gemerkt.set("q1:" + id, T0));
         f.absatz.forEach((id) => gemerkt.set("a:" + id, T0));
+        f.zutatAbsatz.forEach((id) => {
+          gemerkt.set("za:" + id, T0);
+          zutatVolumenIds.push(id);
+        });
       }
       const s = abrufSchaetzung(alleStd);
       pruefe(
         "abrufSchaetzung: ein voller Durchlauf des Vorgabe-Umfangs ohne Bestand bleibt unter der genannten Obergrenze",
         abrufe > 0 && abrufe <= s.abrufe,
-        abrufe + " Abrufe bei Obergrenze " + s.abrufe + " (" + s.vorgaenge + " Vorgaenge)"
+        abrufe + " Abrufe (ohne Zutatenvolumen " + ohneZutatVolumen + ") bei Obergrenze " + s.abrufe + " (" + s.vorgaenge + " Vorgaenge)"
+      );
+      pruefe(
+        "o7 Scan: das Zutatenvolumen des Vorgabe-Umfangs kostet je Durchlauf hoechstens einen Abruf je 50 Zutaten (aufgefuellte Bloecke), jede Zutaten-ID steht hoechstens einmal in einem Volumenabruf",
+        zutatVolumenAbrufe > 0 && zutatVolumenAbrufe <= s.zutatAbrufe && new Set(zutatVolumenIds).size === zutatVolumenIds.length && abrufe - ohneZutatVolumen === zutatVolumenAbrufe,
+        zutatVolumenAbrufe + " Abrufe fuer " + zutatVolumenIds.length + " Zutaten-IDs (" + s.zutatIds + " Zutaten gesamt, der Rest laeuft als Produkt mit), Obergrenze " + s.zutatAbrufe
       );
     })();
 
@@ -1676,7 +1793,7 @@ const GELEGENHEITEN = (function () {
 
     function alterTitel(z, jetzt) {
       return (
-        "Ältester verwendeter Wert dieser Zeile. Preise abgerufen " + (V.abrufAlterText(z.preisAbrufAm, jetzt) || "nie") + ", verkauft/Tag " + (V.abrufAlterText(z.volAbrufAm, jetzt) || "nie") +
+        "Ältester verwendeter Wert dieser Zeile. Preise abgerufen " + (V.abrufAlterText(z.preisAbrufAm, jetzt) || "nie") + ", verkauft/Tag (Produkt und Zutaten) " + (V.abrufAlterText(z.volAbrufAm, jetzt) || "nie") +
         "; als frisch gelten Preise " + PREISE.PREIS_GUELTIG_MIN + " Min. und verkauft/Tag " + PREISE.VOLUMEN_GUELTIG_MIN + " Min.; ältere Zeilen frischt der Scan auf."
       );
     }
@@ -1780,7 +1897,8 @@ const GELEGENHEITEN = (function () {
           : zahl(s.vorgaenge) + " Produkte, höchstens " + zahl(s.abrufe) + " Abrufe je Durchlauf, rund " + dauerText(s.sekunden);
       umfangEl.title =
         "Jede Verzauberungsstufe zählt als eigenes Produkt. Obergrenze für einen Durchlauf, in dem nichts mehr frisch ist: " + zahl(s.einheiten) + " Blöcke zu 50 Produkten mit je höchstens 3 Abrufen (Verkaufspreise, verkauft/Tag, Zutatenpreise), dazu ein Abruf je 50 der " +
-        zahl(s.normalpreisIds) + " verschiedenen Zutaten und Veredelungsprodukte: " + zahl(s.einheiten) + " × 3 + " + zahl(s.abrufe - 3 * s.einheiten) + " = " + zahl(s.abrufe) + ". Üblich sind weniger. Was im Preisbestand noch frisch ist (Preise " +
+        zahl(s.normalpreisIds) + " verschiedenen Zutaten und Veredelungsprodukte und, für die Einkaufsgrenze von Gewinn/Tag, ein Abruf je 50 der " + zahl(s.zutatIds) + " Zutaten für deren verkauft/Tag: " +
+        zahl(s.einheiten) + " × 3 + " + zahl(s.abrufe - 3 * s.einheiten - s.zutatAbrufe) + " + " + zahl(s.zutatAbrufe) + " = " + zahl(s.abrufe) + ". Üblich sind weniger. Was im Preisbestand noch frisch ist (Preise " +
         PREISE.PREIS_GUELTIG_MIN + " Min., verkauft/Tag " + PREISE.VOLUMEN_GUELTIG_MIN +
         " Min.), wird nicht abgerufen. Mehr Städte erhöhen die Zahl der Abrufe nicht (ein Abruf je Block für alle Städte), aber die Datenmenge je Abruf. Gerechnet mit 2 s je Abruf, weil die Preis-Schnittstelle drosselt (1,5 s Pause).";
     }
@@ -1847,8 +1965,9 @@ const GELEGENHEITEN = (function () {
                   .map((a) => a.stadt + ": " + (a.basis == null ? "kein Preis" : fmt(Math.round(a.basis)) + (a.stadt === x.stadt ? "  ✓" : "")))
                   .join("\n")
               : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + " in " + x.stadt + (x.roh && x.roh.abgerufenAm ? ", abgerufen " + V.abrufAlterText(x.roh.abgerufenAm) : "");
+          const handelText = V.zutatHandelText(x);
           return (
-            "<div class='gl-zutat' title='" + esc(titel) + "'>" + icon(x.n, 20, "") +
+            "<div class='gl-zutat' title='" + esc(titel + (handelText ? (titel.indexOf("\n") !== -1 ? "\n\n" : /\.$/.test(titel) ? " " : ". ") + handelText : "")) + "'>" + icon(x.n, 20, "") +
             "<span class='gl-zname'>" + Math.round(x.menge * 100) / 100 + "× " + esc(name) + "</span>" +
             "<span class='num'>" + fmt(Math.round(x.basisPreis * 100) / 100) + "</span>" +
             (mehrEk ? "<span class='vd-stadt' title='" + esc("Günstigste angehakte Einkaufsstadt für diese Zutat. " + TRANSPORT) + "'>" + esc(x.stadt) + "</span>" : "") +
@@ -1973,7 +2092,7 @@ const GELEGENHEITEN = (function () {
         "<td class='num'>" + fmtN(z.silber) + (z.fokusJeVorgang > 0 ? "<div class='vd-klein vd-umbruch'>" + fmtFokus(z.fokusJeVorgang) + "&nbsp;Fokus je&nbsp;Vorgang</div>" : "") + "</td>" +
         "<td class='num vd-wert'" + damalsZelle(d, z) + ">" + damalsHtml(d, z, "gewinn", fmt, 1) + fmtN(z.gewinn) + "</td>" +
         "<td class='num vd-wert2'" + damalsZelle(d, z) + ">" + damalsHtml(d, z, "marge", prozent, 1000) + prozentN(z.marge) + "</td>" +
-        V.kennzahlZellenHtml(z, esc, damalsHtml(d, z, "gewinnJeTag", (n) => zahl(n), 1), d ? damalsTitel(d, z) : "") +
+        V.kennzahlZellenHtml(z, esc, damalsHtml(d, z, "gewinnJeTag", (n) => zahl(n), 1), d ? damalsTitel(d, z) : "", nameVon) +
         zusatzSpalten.map((s) => "<td class='num'>" + s.zelle(z) + "</td>").join("") +
         "<td class='num gl-alter' title='" + esc(alterTitel(z, k.jetzt)) + "'>" + alterText(z.abrufAm, k.jetzt) + "</td>" +
         "</tr>"
