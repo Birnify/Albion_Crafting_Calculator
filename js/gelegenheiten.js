@@ -84,7 +84,8 @@ const GELEGENHEITEN = (function () {
       mitFokus: false,
       minAbsatz: 5,
       art: "beides",
-      sortierung: "marge",
+      sortierung: "tag", // v3.18.0 (O4): Gewinn/Tag statt Marge
+      sortTagUmgestellt: true, // Merker der einmaligen Umstellung, s. VEREDELN.sortierungBereinigen()
       scanAn: true,
       scanAuchVerborgen: false,
       einstellungenOffen: false, // der eingeklappte Block ueber der Rangliste
@@ -111,7 +112,8 @@ const GELEGENHEITEN = (function () {
       mitFokus: !!roh.mitFokus,
       minAbsatz: minRoh !== "" && minRoh != null && isFinite(Number(minRoh)) ? Math.max(0, Number(minRoh)) : basis.minAbsatz,
       art: ARTEN.indexOf(roh.art) !== -1 ? roh.art : basis.art,
-      sortierung: SORTIERER[roh.sortierung] ? roh.sortierung : basis.sortierung,
+      sortierung: V.sortierungBereinigen(roh, (x) => !!SORTIERER[x], basis.sortierung),
+      sortTagUmgestellt: true,
       scanAn: roh.scanAn == null ? true : !!roh.scanAn,
       scanAuchVerborgen: !!roh.scanAuchVerborgen,
       einstellungenOffen: !!roh.einstellungenOffen,
@@ -373,8 +375,13 @@ const GELEGENHEITEN = (function () {
   // Filter und Sortierung
   // -----------------------------------------------------------------------
 
-  // Sortierschluessel der Tabellenkoepfe. O4 ergaenzt weitere ueber spalteErgaenzen().
+  // Sortierschluessel der Tabellenkoepfe; weitere ueber spalteErgaenzen().
+  // v3.18.0 (O4): "tag" = Gewinn/Tag (Vorgabe), "jefokus" = Mehrgewinn je
+  // Fokuspunkt; beide Kennzahlen kommen mit der Zeile aus
+  // VEREDELN.kennzahlenSetzen(). Zeilen ohne Wert sortieren ans Ende.
   const SORTIERER = {
+    tag: { wert: (z) => z.gewinnJeTag, auf: false },
+    jefokus: { wert: (z) => z.mehrgewinnJeFokus, auf: false },
     marge: { wert: (z) => z.marge, auf: false },
     stueck: { wert: (z) => z.gewinn, auf: false },
     kosten: { wert: (z) => z.silber, auf: true },
@@ -969,19 +976,20 @@ const GELEGENHEITEN = (function () {
     function pruefe(name, ok, details) {
       ergebnisse.push({ name, ok: !!ok, details: details == null ? "" : String(details) });
     }
+    const aktuellerGraphFokus = (item) => REZEPTGRAPH.items[item].r[0].f; // Grundfokus je Stueck laut Dump
     const std = standardEinstellungen();
     pruefe(
       "Vorgaben: alle Warengruppen und fuenf Rohstoffe, T4 bis T8, alle Stufen, ohne Artefakte, alles Lymhurst, Sofortkauf, Verkaufsorder, ohne Fokus, mind. 5 verkauft/Tag, Scan an",
       std.warengruppen.length === C.WARENGRUPPEN.length && std.rohstoffe.length === 5 && std.tiers.join() === "4,5,6,7,8" && std.stufen.join() === "0,1,2,3,4" &&
         std.artefakte === false && std.fertigungsstadt === "Lymhurst" && std.einkaufStaedte.join() === "Lymhurst" && std.verkaufStaedte.join() === "Lymhurst" &&
-        std.kaufweg === "sofort" && std.verkaufsweg === "order" && std.mitFokus === false && std.minAbsatz === 5 && std.art === "beides" && std.sortierung === "marge" &&
+        std.kaufweg === "sofort" && std.verkaufsweg === "order" && std.mitFokus === false && std.minAbsatz === 5 && std.art === "beides" && std.sortierung === "tag" &&
         std.scanAn === true && std.scanAuchVerborgen === false,
       JSON.stringify(std).slice(0, 200)
     );
     const ber = einstellungenBereinigen({ warengruppen: ["sword", "fiber", "gibtsnicht"], rohstoffe: [], tiers: [9, 5], minAbsatz: -3, art: "x", sortierung: "y", kaufweg: "order", scanAn: false, einkaufStaedte: ["Martlock", "Atlantis"] });
     pruefe(
       "einstellungenBereinigen: Unbekanntes faellt weg, leere Listen bleiben leer, Fehlendes kommt aus dem Standard",
-      ber.warengruppen.join() === "sword" && ber.rohstoffe.length === 0 && ber.tiers.join() === "5" && ber.minAbsatz === 0 && ber.art === "beides" && ber.sortierung === "marge" &&
+      ber.warengruppen.join() === "sword" && ber.rohstoffe.length === 0 && ber.tiers.join() === "5" && ber.minAbsatz === 0 && ber.art === "beides" && ber.sortierung === "tag" &&
         ber.kaufweg === "order" && ber.verkaufsweg === "order" && ber.scanAn === false && ber.einkaufStaedte.join() === "Martlock" && ber.verkaufStaedte.join() === "Lymhurst",
       JSON.stringify(ber)
     );
@@ -1232,6 +1240,68 @@ const GELEGENHEITEN = (function () {
       prozentText(258.296) === "25.829,6 %" && prozentText(0.574) === "57,4 %" && prozentText(0.05) === "5,0 %" && prozentText(-0.123) === "-12,3 %" && prozentText(10) === "1.000,0 %",
       [prozentText(258.296), prozentText(0.574), prozentText(-0.123)].join(" | ")
     );
+
+    // ---- v3.18.0 (O4): Gewinn/Tag und Mehrgewinn je Fokuspunkt ----
+    (function () {
+      const F = aktuellerGraphFokus("T5_MAIN_SWORD");
+      const erl = 2900 * 0.935;
+      pruefe(
+        "o4 zeilenRechnen: Breitschwert aus dem Bestand traegt Gewinn/Tag ((2.711,5 - 3.200 / 1,33) x 25 % von 8) und Mehrgewinn je Fokuspunkt ((3.200 / 1,33 - 3.200 / 1,92) / Fokus je Stueck)",
+        Math.abs(zBreit.gewinnJeTag - (erl - 3200 / 1.33) * 2) < 1e-6 && Math.abs(zBreit.mehrgewinnJeFokus - (3200 / 1.33 - 3200 / 1.92) / F) < 1e-9 && zBreit.tagGrenze === "absatz",
+        zBreit.gewinnJeTag + " / " + zBreit.mehrgewinnJeFokus
+      );
+      const mitF = zeilenRechnen([breit, barren], Object.assign({}, klein, { mitFokus: true }), einst, leser(daten), T0);
+      pruefe(
+        "o4 zeilenRechnen: mit Fokus begrenzt beim Barren (900 verkauft/Tag) das Fokusbudget, beim Schwert (8 verkauft/Tag) der Absatz; ohne Premium begrenzt der Fokus nie",
+        mitF[1].tagGrenze === "fokus" && Math.abs(mitF[1].gewinnJeTag - (mitF[1].gewinn * 10000) / mitF[1].fokusJeStueck) < 1e-6 && mitF[0].tagGrenze === "absatz" &&
+          zeilenRechnen([barren], Object.assign({}, klein, { mitFokus: true }), Object.assign({}, einst, { premium: false }), leser(daten), T0)[0].tagGrenze === "absatz",
+        mitF.map((z) => z.tagGrenze + ":" + z.gewinnJeTag).join(" | ")
+      );
+      pruefe(
+        "o4 zeilenRechnen: der gemeinsame Anteil (einstellungen.absatzAnteilProzent) wirkt auf Crafts und Veredelungen",
+        (function () {
+          const doppelt = zeilenRechnen([breit, barren], klein, Object.assign({}, einst, { absatzAnteilProzent: 50 }), leser(daten), T0);
+          return Math.abs(doppelt[0].gewinnJeTag - 2 * zBreit.gewinnJeTag) < 1e-6 && Math.abs(doppelt[1].gewinnJeTag - 2 * zBarren.gewinnJeTag) < 1e-6 && zBarren.gewinnJeTag != null;
+        })(),
+        ""
+      );
+      const zt = [
+        { schluessel: "b", art: "craften", gewinn: 10, marge: 0.5, stueckJeTag: 10, gewinnJeTag: 25, mehrgewinnJeFokus: null },
+        { schluessel: "a", art: "veredeln", gewinn: 50, marge: 0.1, stueckJeTag: 7, gewinnJeTag: 87.5, mehrgewinnJeFokus: 0.4 },
+        { schluessel: "c", art: "craften", gewinn: 50, marge: 0.9, stueckJeTag: null, gewinnJeTag: null, mehrgewinnJeFokus: 2 },
+        { schluessel: "d", art: "craften", gewinn: 5, marge: 0.2, stueckJeTag: 400, gewinnJeTag: 500, mehrgewinnJeFokus: 1 },
+      ];
+      pruefe(
+        "o4 Sortierung: Gewinn/Tag absteigend, ohne erfassten Handel am Ende; Mehrgewinn je Fokuspunkt absteigend, ohne Fokus am Ende",
+        filtereUndSortiere(zt, { minAbsatz: 0, art: "beides", sortierung: "tag" }).zeilen.map((z) => z.schluessel).join() === "d,a,b,c" &&
+          filtereUndSortiere(zt, { minAbsatz: 0, art: "beides", sortierung: "jefokus" }).zeilen.map((z) => z.schluessel).join() === "c,d,a,b",
+        filtereUndSortiere(zt, { minAbsatz: 0, art: "beides", sortierung: "tag" }).zeilen.map((z) => z.schluessel).join()
+      );
+      const alt1 = einstellungenBereinigen({ sortierung: "marge" });
+      const bewusst = einstellungenBereinigen(Object.assign({}, alt1, { sortierung: "marge" }));
+      pruefe(
+        "o4 Sortierung: Vorgabe Gewinn/Tag; gespeichertes \"marge\" wird einmalig umgestellt, danach bewusst gewaehltes \"marge\" bleibt, gespeichertes \"volumen\" bleibt",
+        standardEinstellungen().sortierung === "tag" && alt1.sortierung === "tag" && alt1.sortTagUmgestellt === true && bewusst.sortierung === "marge" &&
+          einstellungenBereinigen(JSON.parse(JSON.stringify(bewusst))).sortierung === "marge" && einstellungenBereinigen({ sortierung: "volumen" }).sortierung === "volumen" &&
+          einstellungenBereinigen({ sortierung: "alter" }).sortierung === "alter",
+        [alt1.sortierung, bewusst.sortierung].join()
+      );
+      pruefe(
+        "o4 Maschine: Umstellen auf Marge ueber einstellen() bleibt erhalten (kein erneutes Umstellen)",
+        (function () {
+          const mm = erzeugen({ einstellungen: { sortierung: "marge", scanAn: false }, lesen: leser(daten), jetzt: () => T0, einstellungenLesen: () => einst });
+          const start = mm.einstellungen().sortierung;
+          mm.einstellen({ sortierung: "marge" });
+          const danach = mm.einstellungen().sortierung;
+          mm.einstellen({ minAbsatz: 3 });
+          const ok = start === "tag" && danach === "marge" && mm.einstellungen().sortierung === "marge";
+          mm.beenden();
+          return ok;
+        })(),
+        ""
+      );
+    })();
+
     return ergebnisse;
   }
 
@@ -1262,6 +1332,7 @@ const GELEGENHEITEN = (function () {
     const fertigungEl = el("glFertigung");
     const minAbsatzEl = el("glMinAbsatz");
     const artEl = el("glArt");
+    const anteilEl = el("glAnteil");
 
     let gespeichert = null;
     try {
@@ -1379,6 +1450,12 @@ const GELEGENHEITEN = (function () {
         .map(([wert, text]) => "<label class='vd-chip" + (s.art === wert ? " an" : "") + "'><input type='radio' name='glArt' value='" + wert + "'" + (s.art === wert ? " checked" : "") + ">" + text + "</label>")
         .join("");
       minAbsatzEl.value = s.minAbsatz;
+      anteilSetzen();
+    }
+
+    /** Gemeinsame Annahme "Anteil am Tageshandel" ins Feld schreiben (v3.18.0). */
+    function anteilSetzen() {
+      if (anteilEl) anteilEl.value = UI.einstellungenLesen().absatzAnteilProzent;
     }
 
     const SCHALTER = {
@@ -1461,7 +1538,9 @@ const GELEGENHEITEN = (function () {
         sortTh("volumen", "verkauft/Tag", "Erfasster Handel des Produkts in der Verkaufsstadt, Mittel der letzten " + TAGE_FENSTER + " Tage. Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen. Klicken sortiert absteigend.") +
         sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
         sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
-        sortTh("marge", "Marge", "Gewinn bezogen auf die eigenen Kosten. Klicken sortiert absteigend.") +
+        sortTh("marge", "Marge", V.KOPF_TITEL.marge) +
+        sortTh("tag", "Gewinn/Tag", V.KOPF_TITEL.tag(UI.einstellungenLesen().absatzAnteilProzent)) +
+        sortTh("jefokus", "Mehrgewinn<br>je Fokus", V.KOPF_TITEL.jefokus) +
         zusatzSpalten.map((s) => (typeof s.wert === "function" ? sortTh(s.id, esc(s.kopf), s.titel || "") : "<th class='num'" + (s.titel ? " title='" + esc(s.titel) + "'" : "") + ">" + esc(s.kopf) + "</th>")).join("") +
         sortTh("alter", "Alter", "Ältester verwendeter Wert der Zeile (Preise oder verkauft/Tag). Klicken zeigt die frischesten zuerst.") +
         "</tr></thead>"
@@ -1529,6 +1608,7 @@ const GELEGENHEITEN = (function () {
         "<td class='num'>" + fmt(z.silber) + (z.fokusJeVorgang > 0 ? "<div class='vd-klein'>" + fmtFokus(z.fokusJeVorgang) + " Fokus/Vorgang</div>" : "") + "</td>" +
         "<td class='num vd-wert'>" + fmt(z.gewinn) + "</td>" +
         "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
+        V.kennzahlZellenHtml(z, esc) +
         zusatzSpalten.map((s) => "<td class='num'>" + s.zelle(z) + "</td>").join("") +
         "<td class='num gl-alter' title='" + esc(alterTitel(z, k.jetzt)) + "'>" + alterText(z.abrufAm, k.jetzt) + "</td>" +
         "</tr>"
@@ -1723,6 +1803,11 @@ const GELEGENHEITEN = (function () {
         geaendert(m.einstellen({ art: ev.target.value }));
         return;
       }
+      if (anteilEl && ev.target === anteilEl) {
+        // Gemeinsame Einstellung: das Ereignis unten rechnet und zeichnet neu, auch hier.
+        UI.absatzAnteilSetzen(anteilEl.value, "gelegenheiten");
+        return;
+      }
       if (ev.target === fertigungEl) geaendert(m.einstellen({ fertigungsstadt: fertigungEl.value }));
       else if (ev.target === minAbsatzEl) {
         geaendert(m.einstellen({ minAbsatz: minAbsatzEl.value }));
@@ -1776,9 +1861,10 @@ const GELEGENHEITEN = (function () {
     });
 
     // Gemeinsame Einstellungen der App: neu rechnen, kein Abruf.
-    [UI.TAGESBONUS_EVENT, UI.STATIONSSAETZE_EVENT, UI.PREMIUM_EVENT].forEach((name) => {
+    [UI.TAGESBONUS_EVENT, UI.STATIONSSAETZE_EVENT, UI.PREMIUM_EVENT, UI.ABSATZANTEIL_EVENT].forEach((name) => {
       document.addEventListener(name, () => {
         schalterSetzen();
+        anteilSetzen();
         if (!m.status().geoeffnet) return;
         m.neuRechnen();
         m.fertig().then(zeichnen);

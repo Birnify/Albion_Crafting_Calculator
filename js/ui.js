@@ -15,6 +15,7 @@ const UI = (function () {
 
   const EINSTELLUNGEN_KEY = "albion_kostenrechner_einstellungen";
   const EINSTELLUNGEN_SCHEMA = 1;
+  const ABSATZANTEIL_VORGABE = 25; // Prozent, Annahme (s. absatzAnteilSetzen)
 
   function defaultEinstellungen() {
     return {
@@ -93,6 +94,11 @@ const UI = (function () {
       kaufweg: "sofort",
       verkaufsweg: "order",
       premium: true,
+      // v3.18.0 (O4): Anteil am erfassten Tageshandel, den man selbst
+      // verkauft. ANNAHME, kein Spielwert; gemeinsame Einstellung der Reiter
+      // "Gelegenheiten", "Craften: Gewinn" und "Veredeln leveln" fuer die
+      // Kennzahl Gewinn/Tag, s. absatzAnteilSetzen().
+      absatzAnteilProzent: ABSATZANTEIL_VORGABE,
       maxPreisAlterMin: 4320, // Vorgabe 3 Tage, frei gewaehlt, kein Spielwert
     };
   }
@@ -128,6 +134,7 @@ const UI = (function () {
       basis.kaufweg = daten.kaufweg || basis.kaufweg;
       basis.verkaufsweg = daten.verkaufsweg || basis.verkaufsweg;
       basis.premium = daten.premium != null ? !!daten.premium : basis.premium;
+      basis.absatzAnteilProzent = absatzAnteilBereinigen(daten.absatzAnteilProzent);
       basis.maxPreisAlterMin = daten.maxPreisAlterMin !== undefined ? daten.maxPreisAlterMin : basis.maxPreisAlterMin;
       return basis;
     } catch (e) {
@@ -230,6 +237,31 @@ const UI = (function () {
     einstellungenSchreiben(e);
     if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
       document.dispatchEvent(new CustomEvent(PREMIUM_EVENT, { detail: { wert: w, quelle: quelle || null } }));
+    }
+    return w;
+  }
+
+  // v3.18.0 (22.11.2026, OPTIMIERUNG-PLAN.md Paket O4): Anteil am erfassten
+  // Tageshandel, den man selbst verkauft, in Prozent (1 bis 100, Vorgabe 25).
+  // Eine ANNAHME, kein Spielwert. Gemeinsame Einstellung der drei
+  // Gewinn-Reiter, Abgleich wie bei Premium per Ereignis.
+  const ABSATZANTEIL_EVENT = "albion:absatzanteil";
+
+  /** Gueltiger Anteil in Prozent: Zahl zwischen 1 und 100, sonst die Vorgabe 25. */
+  function absatzAnteilBereinigen(wert) {
+    const zahl = Number(wert);
+    if (wert === "" || wert == null || !isFinite(zahl)) return ABSATZANTEIL_VORGABE;
+    return Math.min(100, Math.max(1, zahl));
+  }
+
+  /** Anteil setzen, speichern und melden. Liefert den gespeicherten Wert. */
+  function absatzAnteilSetzen(wert, quelle) {
+    const w = absatzAnteilBereinigen(wert);
+    const e = einstellungenLesen();
+    e.absatzAnteilProzent = w;
+    einstellungenSchreiben(e);
+    if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
+      document.dispatchEvent(new CustomEvent(ABSATZANTEIL_EVENT, { detail: { wert: w, quelle: quelle || null } }));
     }
     return w;
   }
@@ -2867,6 +2899,14 @@ const UI = (function () {
       persistiereUndRechne();
     });
 
+    // v3.18.0: Anteil am Tageshandel in einem Gewinn-Reiter geaendert. Der
+    // Kostenrechner rechnet nicht damit, muss den Wert aber im
+    // Arbeitsspeicher fuehren, sonst schreibt sein naechstes Speichern den
+    // alten Stand zurueck.
+    document.addEventListener(ABSATZANTEIL_EVENT, (ev) => {
+      einstellungen.absatzAnteilProzent = absatzAnteilBereinigen((ev.detail || {}).wert);
+    });
+
     // ---- Start ----
     ladeEinstellungenInFormular();
     renderSpezialisierungsknoten(null);
@@ -2892,6 +2932,10 @@ const UI = (function () {
     tagesbonusSetzen,
     PREMIUM_EVENT,
     premiumSetzen,
+    ABSATZANTEIL_EVENT,
+    ABSATZANTEIL_VORGABE,
+    absatzAnteilBereinigen,
+    absatzAnteilSetzen,
     fceUeberschreibungenAus,
     sammleVerwendeteKategorien,
     sammleVerwendeteGebaeude,

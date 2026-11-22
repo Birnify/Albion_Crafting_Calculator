@@ -232,6 +232,67 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     }
   })();
 
+  // v3.18.0 (O4): der Anteil am Tageshandel ist eine gemeinsame Einstellung der drei Gewinn-Reiter.
+  (function () {
+    const KEY = "albion_kostenrechner_einstellungen";
+    let vorher = null;
+    try { vorher = localStorage.getItem(KEY); } catch (e) { /* ignorieren */ }
+    const gemeldet = [];
+    const horcher = (ev) => gemeldet.push(ev.detail);
+    document.addEventListener(UI.ABSATZANTEIL_EVENT, horcher);
+    try {
+      try { localStorage.removeItem(KEY); } catch (e) { /* ignorieren */ }
+      const vorgabe = UI.einstellungenLesen().absatzAnteilProzent;
+      const gesetzt = UI.absatzAnteilSetzen(40, "craften");
+      const gelesen = UI.einstellungenLesen().absatzAnteilProzent; // wie nach einem Neuladen: frisch aus dem Speicher
+      const imSpeicher = JSON.parse(localStorage.getItem(KEY)).absatzAnteilProzent;
+      const zuKlein = UI.absatzAnteilSetzen(0, "veredeln");
+      const zuGross = UI.absatzAnteilSetzen(250, "gelegenheiten");
+      const quatsch = UI.absatzAnteilSetzen("x", "gelegenheiten");
+      pruefe(
+        "o4 Anteil am Tageshandel: Vorgabe 25 %, ein Speicherort (einstellungen.absatzAnteilProzent), bleibt erhalten, Grenzen 1 bis 100 %, Ereignis mit Quelle",
+        vorgabe === 25 && UI.ABSATZANTEIL_VORGABE === 25 && gesetzt === 40 && gelesen === 40 && imSpeicher === 40 && zuKlein === 1 && zuGross === 100 && quatsch === 25 &&
+          gemeldet.length === 4 && gemeldet[0].wert === 40 && gemeldet[0].quelle === "craften" && UI.ABSATZANTEIL_EVENT === "albion:absatzanteil",
+        JSON.stringify({ vorgabe, gesetzt, gelesen, zuKlein, zuGross, quatsch, n: gemeldet.length })
+      );
+      // Eine Aenderung wirkt ohne Neuladen in allen drei Reitern: jeder rechnet mit UI.einstellungenLesen().
+      const sp = (p) => ({ sell: { preis: p, kein: false, datum: "" }, buy: { preis: p, kein: false, datum: "" } });
+      const kC = CRAFTEN.kandidaten({ warengruppen: ["sword"], tiers: [5], stufen: [0], artefakte: true }).find((k) => k.item === "T5_MAIN_SWORD");
+      const datC = [{ stadt: "Lymhurst", preiseRoh: { T5_METALBAR: sp(100), T5_LEATHER: sp(200) }, produktJeQ: { T5_MAIN_SWORD: { 1: sp(3000) } }, absatz: { T5_MAIN_SWORD: { 1: { stueckJeTag: 8 } } } }];
+      const kV = VEREDELN.kandidaten({ rohstoffe: ["fiber"], tiers: [4], stufen: [0] });
+      const datV = [{ stadt: "Lymhurst", preiseRoh: { T4_FIBER: sp(100), T3_CLOTH: sp(200), T4_CLOTH: sp(400) }, absatz: { T4_CLOTH: { 1: { stueckJeTag: 1000 } } } }];
+      const kG = GELEGENHEITEN.kandidaten(GELEGENHEITEN.einstellungenBereinigen({ warengruppen: ["sword"], rohstoffe: [], tiers: [5], stufen: [0] })).filter((x) => x.schluessel === "c:T5_MAIN_SWORD");
+      const leser = {
+        preis: (s, id) => (s === "Lymhurst" && datC[0].preiseRoh[id] ? Object.assign({ abgerufenAm: 1 }, datC[0].preiseRoh[id]) : null),
+        alleQ: (s, id) => (s === "Lymhurst" && id === "T5_MAIN_SWORD" ? { abgerufenAm: 1, jeQ: { 1: Object.assign({ abgerufenAm: 1 }, sp(3000)) } } : null),
+        absatz: (s, id) => (s === "Lymhurst" && id === "T5_MAIN_SWORD" ? { abgerufenAm: 1, jeQ: { 1: { stueckJeTag: 8 } } } : null),
+      };
+      const dreimal = () => {
+        const e = UI.einstellungenLesen();
+        return [
+          CRAFTEN.zeilenRechnen([kC], datC, CRAFTEN.einstellungenBereinigen({ warengruppen: ["sword"] }), e)[0].gewinnJeTag,
+          VEREDELN.zeilenRechnen(kV, datV, VEREDELN.einstellungenBereinigen({}), e)[0].gewinnJeTag,
+          GELEGENHEITEN.zeilenRechnen(kG, GELEGENHEITEN.einstellungenBereinigen({ warengruppen: ["sword"], rohstoffe: [], tiers: [5], stufen: [0] }), e, leser, 2)[0].gewinnJeTag,
+        ];
+      };
+      UI.absatzAnteilSetzen(25, "craften");
+      const bei25 = dreimal();
+      UI.absatzAnteilSetzen(50, "veredeln");
+      const bei50 = dreimal();
+      pruefe(
+        "o4 Anteil am Tageshandel: eine Aenderung (25 auf 50 %) verdoppelt den Gewinn/Tag in Craften, Veredeln und Gelegenheiten ohne Neuladen",
+        kG.length === 1 && bei25.every((x) => typeof x === "number" && x !== 0) && bei25.every((x, i) => Math.abs(bei50[i] - 2 * x) < 1e-6),
+        JSON.stringify({ bei25, bei50 })
+      );
+    } finally {
+      document.removeEventListener(UI.ABSATZANTEIL_EVENT, horcher);
+      try {
+        if (vorher == null) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, vorher);
+      } catch (e) { /* ignorieren */ }
+    }
+  })();
+
   // ---- rechenkern: opts.nurDirekteEbene (Grundlage der Reiter "Craften: Gewinn" und "Veredeln leveln") ----
   (function () {
     // Stoff ist am Markt teuer (5.000), Faser dagegen billig. Ueber den ganzen

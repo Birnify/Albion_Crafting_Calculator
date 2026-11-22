@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.17.0 · Optimierungsrunde O3: Reiter „Gelegenheiten“ mit Hintergrundscan
+Stand: 2026-11-22 · Version: v3.18.0 · Optimierungsrunde O4: Gewinn/Tag und Mehrgewinn je Fokuspunkt
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -73,6 +73,59 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.18.0 (22.11.2026): Optimierungsrunde, Paket O4 „Gewinn je Einsatz“
+
+Zwei neue Kennzahlen je Zeile in „Gelegenheiten“, „Craften: Gewinn“ und
+„Veredeln leveln“, gesetzt von `VEREDELN.kennzahlenSetzen()`:
+
+- **Gewinn/Tag** (`gewinnJeTag`) = Gewinn/Stück × erreichbare Stück/Tag.
+  Erreichbar = Anteil × verkauft/Tag der gewählten Verkaufsstadt; rechnet
+  die Zeile mit Fokus und ist Premium aktiv, zusätzlich höchstens 10.000 /
+  Fokus je Stück (`tagGrenze` „absatz“ oder „fokus“). Ohne Premium ist kein
+  Tagesbudget belegt, dann keine Fokusgrenze (Tooltip sagt es). Kein
+  erfasster Handel: leer, sortiert ans Ende. **Neue Vorgabe der Sortierung**
+  in allen drei Reitern; gespeichertes „marge“ wird einmalig umgestellt
+  (Merker `sortTagUmgestellt`), eine spätere bewusste Wahl bleibt.
+- **Anteil ist eine Annahme, kein Spielwert:** gemeinsame Einstellung
+  `einstellungen.absatzAnteilProzent` (Vorgabe 25, 1 bis 100), Feld
+  „Annahme: Anteil %“ in jedem der drei Reiter, `UI.absatzAnteilSetzen()`,
+  Ereignis `albion:absatzanteil`.
+- **Mehrgewinn je Fokuspunkt** (`mehrgewinnJeFokus`) = (Gewinn/Stück mit
+  Fokus − ohne Fokus) / Fokus je Stück, unabhängig vom Fokus-Schalter;
+  leer, wenn der Vorgang keinen Fokus kennt. `RECHENKERN.kosten` wird je
+  Zeile einmal gerufen und liefert beide Varianten in `alleWege`;
+  `rechenkern.js` und `regeln.js` unverändert.
+- **„Gewinn je eingesetztem Silber“ nicht als eigene Spalte:** das ist die
+  Marge; ihr Tooltip sagt es jetzt.
+- Zeilen ohne Wert sortieren bei allen Schlüsseln ans Ende.
+- **Geprüft:** Umsetzer, 4.614 Zeilen vor und nach dem Umbau in 18 Feldern
+  bytegleich. `rechenkern-pruefer`: kein Rechenbefund; Leder T6.1 in
+  Martlock (mit Fokus, Fokusgrenze greift, 81.475,94 je Tag) und Tasche T4.0
+  in Lymhurst in Python und Node identisch; Rindfleischeintopf T8.3 bei FCE
+  34.242: 219,2 Fokus je Stück, 2.192 je Charge, Gebühr 2.462 je Charge, wie
+  im Spiel abgelesen.
+- Selbsttest **807/807** grün (769 + 38).
+
+**Offen aus O4:**
+- **Gewinn/Tag begrenzt nur die Verkaufsseite.** Bei Massenware mit dünner
+  Marge (Kunstvoller Stoff T5.0: 4,3 %, 107.883 verkauft/Tag) rechnet die
+  Kennzahl mit rund 27.000 Stück je Tag und unterstellt, dass sich dafür
+  rund 81.000 Zutaten zum Bestpreis kaufen lassen. Das verletzt „Markttiefe
+  beachten“ (`CLAUDE.md`, Modellierung). Abhilfe heute: Anteil senken.
+  Sauber wäre eine Begrenzung über das Tagesvolumen der Zutaten (eigener
+  Volumenabruf je Zutat, eigenes Paket).
+- Jede Zeile setzt das volle Fokusbudget an; Gewinn/Tag mehrerer
+  Fokus-Zeilen ist nicht summierbar.
+- Tabellenbreite bei 1440 px: in „Craften: Gewinn“ liegen „Mehrgewinn je
+  Fokus“ und „Gewinn gesamt“ hinter waagerechtem Scrollen im Rahmen, in
+  „Veredeln leveln“ ist die letzte Spalte 32 px angeschnitten.
+- Alter Fehler, auch am neuen Feld: Zahl eintippen und direkt auf einen
+  Tabellenkopf klicken verliert den Klick (Neuzeichnen beim Verlassen des
+  Felds), ebenso bei Menge und Mind. verkauft/Tag.
+- Die Root-`CLAUDE.md` (eine Ebene höher) nennt im Spielerprofil noch den
+  überholten Stand „2.353 je Charge, 1.022 FCE“; die Kopie im Repo ist seit
+  19.09.2026 korrigiert. Abgleich steht aus.
 
 ## Nachtrag v3.17.0 (22.11.2026): Optimierungsrunde, Paket O3, Reiter „Gelegenheiten“
 

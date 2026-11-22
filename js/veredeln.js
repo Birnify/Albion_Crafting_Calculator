@@ -85,7 +85,14 @@ const VEREDELN = (function () {
   const TAGE_FENSTER = 7;
   const SPEICHER_KEY = "albion_kostenrechner_veredeln_v1";
   // Sortierschluessel der Tabellenkoepfe; Kosten aufsteigend, alle anderen absteigend.
-  const SORTIERUNGEN = ["kosten", "stueck", "marge", "gesamt"];
+  // v3.18.0 (O4): "tag" = Gewinn/Tag (neue Vorgabe), "jefokus" = Mehrgewinn je Fokuspunkt.
+  const SORTIERUNGEN = ["kosten", "stueck", "marge", "gesamt", "tag", "jefokus"];
+  // Fokusbudget mit Premium: 10.000 Punkte je 24 Stunden (CLAUDE.md, "Fokusbudget").
+  // Ohne Premium ist kein Tagesbudget belegt, dort wird nicht begrenzt.
+  const FOKUS_JE_TAG_PREMIUM = 10000;
+  // Anteil am erfassten Tageshandel, den man selbst verkauft: ANNAHME, kein
+  // Spielwert. Gemeinsame Einstellung (einstellungen.absatzAnteilProzent, UI.absatzAnteilSetzen).
+  const ANTEIL_VORGABE_PROZENT = 25;
 
   function standardEinstellungen() {
     return {
@@ -102,9 +109,25 @@ const VEREDELN = (function () {
       menge: 1000,
       verlusteZeigen: false,
       zusatzbonusProzent: 0,
-      sortierung: "marge",
+      sortierung: "tag",
+      sortTagUmgestellt: true, // v3.18.0: Merker der einmaligen Umstellung, s. sortierungBereinigen()
       preisUeberschreibungen: {}, // Stadt -> Markt-ID -> Silber je Stueck (> 0), s. Modulkommentar
     };
+  }
+
+  /**
+   * Sortierung aus dem gespeicherten Stand (v3.18.0, O4). Neue Vorgabe ist
+   * Gewinn/Tag. Wer noch die alte Vorgabe "marge" gespeichert hat, wird
+   * EINMALIG umgestellt: der Merker sortTagUmgestellt fehlt im alten Stand
+   * und steht danach immer im Speicher, eine spaetere bewusste Wahl von
+   * "marge" bleibt deshalb erhalten. Andere gespeicherte Sortierungen bleiben.
+   * Auch von CRAFTEN und GELEGENHEITEN benutzt.
+   */
+  function sortierungBereinigen(roh, gueltig, vorgabe) {
+    const s = roh ? roh.sortierung : null;
+    if (!gueltig(s)) return vorgabe;
+    if (s === "marge" && !roh.sortTagUmgestellt) return vorgabe;
+    return s;
   }
 
   /** Icon vom offiziellen Albion-Bildserver; doppelte Pixelzahl fuer scharfe Darstellung. */
@@ -237,7 +260,8 @@ const VEREDELN = (function () {
       menge: isFinite(Number(roh.menge)) && Number(roh.menge) > 0 ? Number(roh.menge) : basis.menge,
       verlusteZeigen: !!roh.verlusteZeigen,
       zusatzbonusProzent: isFinite(Number(roh.zusatzbonusProzent)) && Number(roh.zusatzbonusProzent) > 0 ? Number(roh.zusatzbonusProzent) : 0,
-      sortierung: SORTIERUNGEN.indexOf(roh.sortierung) !== -1 ? roh.sortierung : basis.sortierung,
+      sortierung: sortierungBereinigen(roh, (x) => SORTIERUNGEN.indexOf(x) !== -1, basis.sortierung),
+      sortTagUmgestellt: true,
       preisUeberschreibungen: ueberschreibungenBereinigen(roh.preisUeberschreibungen),
     };
   }
@@ -457,16 +481,158 @@ const VEREDELN = (function () {
     return "verlust";
   }
 
-  /** Sortieren nach Tabellenkopf: Kosten/Stueck aufsteigend, Gewinn/Stueck, Marge, Gewinn gesamt absteigend. */
+  // -----------------------------------------------------------------------
+  // v3.18.0 (O4): Gewinn/Tag und Mehrgewinn je Fokuspunkt
+  // -----------------------------------------------------------------------
+
+  /** Angenommener Anteil am Tageshandel als Bruch (0,01 bis 1), Vorgabe 0,25. */
+  function anteilVon(einstellungen) {
+    const w = einstellungen ? einstellungen.absatzAnteilProzent : null;
+    const n = Number(w);
+    if (w === "" || w == null || !isFinite(n)) return ANTEIL_VORGABE_PROZENT / 100;
+    return Math.min(100, Math.max(1, n)) / 100;
+  }
+
+  /**
+   * Haengt die Kennzahlen des Pakets O4 an eine fertige Zeile. Keine eigene
+   * Kostenformel: craftMit und craftOhne sind die Craft-Kandidaten desselben
+   * Vorgangs aus RECHENKERN.kosten(), einmal mit und einmal ohne Fokus, bei
+   * denselben Preisen; der Erloes ist der der Zeile.
+   *
+   * Mehrgewinn je Fokuspunkt (unabhaengig vom Fokus-Schalter):
+   *   (Gewinn/Stueck mit Fokus - Gewinn/Stueck ohne Fokus) / Fokus je Stueck
+   * Fokus je Stueck ist craftMit.fokus, so wie der Rechenkern ihn liefert
+   * (nach FCE; craftingfocus gilt je Stueck, s. CLAUDE.md "Bezugsgroesse").
+   * Leer, wenn der Vorgang keinen Fokus kennt (craftingfocus 0).
+   *
+   * Gewinn/Tag (Untergrenze, weil verkauft/Tag eine ist):
+   *   Gewinn/Stueck der Zeile x erreichbare Stueck/Tag
+   *   erreichbar = Anteil x verkauft/Tag der gewaehlten Verkaufsstadt;
+   *   rechnet die Zeile mit Fokus, kostet sie Fokus und ist Premium aktiv,
+   *   hoechstens 10.000 / Fokus je Stueck. Ohne Premium ist kein Tagesbudget
+   *   belegt: keine Fokusgrenze. Ohne erfassten Handel leer (nicht 0).
+   *
+   * @param ctx {mitFokus:boolean, premium:boolean, anteil:number (Bruch)}
+   */
+  function kennzahlenSetzen(z, craftMit, craftOhne, ctx) {
+    const gueltig = (c) => !!c && !c.gesperrt && c.silber != null;
+    z.absatzAnteil = ctx.anteil;
+    z.fokusJeStueck = gueltig(craftMit) && craftMit.fokus > 0 ? craftMit.fokus : null;
+    z.gewinnMitFokus = z.fokusJeStueck != null && z.erloes != null ? z.erloes - craftMit.silber : null;
+    z.gewinnOhneFokus = gueltig(craftOhne) && z.erloes != null ? z.erloes - craftOhne.silber : null;
+    z.mehrgewinnJeFokus = z.gewinnMitFokus != null && z.gewinnOhneFokus != null ? (z.gewinnMitFokus - z.gewinnOhneFokus) / z.fokusJeStueck : null;
+    z.stueckJeTagErreichbar = null;
+    z.fokusStueckJeTag = null; // so viele Stueck gibt das Fokusbudget je Tag her (nur mit Fokus und Premium)
+    z.tagGrenze = null; // "absatz" | "fokus"
+    z.fokusBudgetBelegt = null; // false: Zeile rechnet mit Fokus, aber ohne Premium ist kein Tagesbudget belegt
+    z.gewinnJeTag = null;
+    if (z.gewinn == null || !(z.stueckJeTag > 0)) return z;
+    let stueck = ctx.anteil * z.stueckJeTag;
+    z.tagGrenze = "absatz";
+    if (ctx.mitFokus && z.fokusJeStueck != null) {
+      z.fokusBudgetBelegt = !!ctx.premium;
+      if (ctx.premium) {
+        z.fokusStueckJeTag = FOKUS_JE_TAG_PREMIUM / z.fokusJeStueck;
+        if (z.fokusStueckJeTag < stueck) {
+          stueck = z.fokusStueckJeTag;
+          z.tagGrenze = "fokus";
+        }
+      }
+    }
+    z.stueckJeTagErreichbar = stueck;
+    z.gewinnJeTag = z.gewinn * stueck;
+    return z;
+  }
+
+  const zahlText = (n, stellen) => n.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: stellen == null ? 0 : stellen });
+  const stueckText = (n) => zahlText(n, n >= 100 ? 0 : 1);
+
+  /** Gewinn/Tag als Zelltext: ganze Silber mit Tausenderpunkt, leer ohne erfassten Handel. */
+  function tagText(z) {
+    return z.gewinnJeTag == null || !isFinite(z.gewinnJeTag) ? "" : zahlText(Math.round(z.gewinnJeTag), 0);
+  }
+
+  /** Tooltip der Zelle Gewinn/Tag: die eingesetzten Zahlen. */
+  function tagTitel(z) {
+    if (z.gewinnJeTag == null) return z.gewinn == null ? "" : "Kein erfasster Handel in der Verkaufsstadt, deshalb keine Angabe.";
+    const anteil = zahlText(z.absatzAnteil * 100, 1) + " %";
+    const absatz = anteil + " von " + stueckText(z.stueckJeTag) + " verkauft/Tag";
+    const ergebnis = " = " + tagText(z) + " Silber/Tag (Untergrenze)";
+    const gewinn = zahlText(z.gewinn, Math.abs(z.gewinn) < 100 ? 1 : 0) + " Silber";
+    if (z.tagGrenze === "fokus") {
+      return (
+        gewinn + " × " + stueckText(z.fokusStueckJeTag) + " Stück/Tag (10.000 Fokus / " + zahlText(z.fokusJeStueck, 1) + " Fokus je Stück)" + ergebnis +
+        "; der Fokus begrenzt, der Absatz ließe " + stueckText(z.absatzAnteil * z.stueckJeTag) + " Stück zu (" + absatz + ")"
+      );
+    }
+    let fokus = "";
+    if (z.fokusBudgetBelegt === true) fokus = "; Fokus begrenzt nicht (10.000 Fokus reichen für " + stueckText(z.fokusStueckJeTag) + " Stück)";
+    else if (z.fokusBudgetBelegt === false) fokus = "; ohne Premium ist kein Tagesbudget an Fokus belegt, deshalb nicht durch Fokus begrenzt";
+    return gewinn + " × " + absatz + " (" + stueckText(z.stueckJeTagErreichbar) + " Stück)" + ergebnis + fokus;
+  }
+
+  /** Mehrgewinn je Fokuspunkt als Zelltext: eine Nachkommastelle, unter 1 zwei; leer ohne Fokus. */
+  function jeFokusText(z) {
+    const w = z.mehrgewinnJeFokus;
+    return w == null || !isFinite(w) ? "" : w.toLocaleString("de-DE", Math.abs(w) < 1 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  }
+
+  /** Tooltip der Zelle Mehrgewinn je Fokuspunkt: die eingesetzten Zahlen. */
+  function jeFokusTitel(z) {
+    if (z.mehrgewinnJeFokus == null) return z.fokusJeStueck == null && z.gewinn != null ? "Dieser Vorgang kennt keinen Fokus." : "";
+    const g = (n) => zahlText(n, Math.abs(n) < 100 ? 1 : 0);
+    return (
+      "Gewinn je Stück mit Fokus " + g(z.gewinnMitFokus) + ", ohne Fokus " + g(z.gewinnOhneFokus) + " Silber: Unterschied " + g(z.gewinnMitFokus - z.gewinnOhneFokus) + " / " +
+      zahlText(z.fokusJeStueck, 1) + " Fokus je Stück = " + jeFokusText(z) + " Silber je Fokuspunkt"
+    );
+  }
+
+  const KOPF_TITEL = {
+    tag: (anteilProzent) =>
+      "Untergrenze: Gewinn je Stück mal erreichbare Stück je Tag. Erreichbar ist mein Anteil am erfassten Handel der Verkaufsstadt (Annahme: " +
+      zahlText(anteilProzent, 1) + " % von verkauft/Tag, das selbst eine Untergrenze ist). Mit Fokus und Premium höchstens so viele Stück, wie 10.000 Fokus je Tag hergeben; " +
+      "ohne Premium ist kein Tagesbudget belegt, dann begrenzt der Fokus nicht. Ohne erfassten Handel leer. Klicken sortiert absteigend.",
+    jefokus:
+      "Mehrgewinn je Fokuspunkt: Gewinn je Stück mit Fokus minus Gewinn je Stück ohne Fokus, geteilt durch den Fokus je Stück, bei denselben Preisen. " +
+      "Zeigt, wo ein Fokuspunkt am meisten bringt, unabhängig vom Fokus-Schalter. Leer bei Vorgängen ohne Fokus. Klicken sortiert absteigend.",
+    marge: "Gewinn bezogen auf die eigenen Kosten, also der Gewinn je eingesetztem Silber. Klicken sortiert absteigend.",
+    anteil:
+      "Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. " +
+      "Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.",
+  };
+
+  /** Die beiden Zellen (Gewinn/Tag, Mehrgewinn je Fokuspunkt) als HTML; esc maskiert Attributwerte. */
+  function kennzahlZellenHtml(z, esc) {
+    return (
+      "<td class='num vd-wert vd-tag-zelle' title='" + esc(tagTitel(z)) + "'>" + tagText(z) +
+      (z.tagGrenze === "fokus" ? "<div class='vd-klein'>Fokus begrenzt</div>" : "") + "</td>" +
+      "<td class='num vd-jefokus-zelle' title='" + esc(jeFokusTitel(z)) + "'>" + jeFokusText(z) + "</td>"
+    );
+  }
+
+  /**
+   * Vergleich fuer die Tabellenkoepfe: Zeilen ohne Wert (kein erfasster
+   * Handel, kein Fokus) stehen immer am Ende, egal in welcher Richtung.
+   */
+  function vergleiche(x, y, auf) {
+    const xl = x == null || isNaN(x);
+    const yl = y == null || isNaN(y);
+    if (xl || yl) return xl - yl;
+    return auf ? x - y : y - x;
+  }
+
+  /** Sortieren nach Tabellenkopf: Kosten/Stueck aufsteigend, alle anderen absteigend; ohne Wert ans Ende. */
   function sortiere(zeilen, schluessel) {
     const wert = {
       kosten: (z) => z.silber,
       stueck: (z) => z.gewinn,
       marge: (z) => z.marge,
       gesamt: (z) => z.gewinnGesamt,
+      tag: (z) => z.gewinnJeTag,
+      jefokus: (z) => z.mehrgewinnJeFokus,
     }[SORTIERUNGEN.indexOf(schluessel) !== -1 ? schluessel : "marge"];
     const auf = schluessel === "kosten";
-    return zeilen.slice().sort((a, b) => (auf ? wert(a) - wert(b) : wert(b) - wert(a)));
+    return zeilen.slice().sort((a, b) => vergleiche(wert(a), wert(b), auf));
   }
 
   /** Nur Zeilen mit Ergebnis; ohne verlusteZeigen nur Gewinn und etwa Null. Sortiert nach opts.sortierung (Vorgabe Marge absteigend). */
@@ -570,7 +736,10 @@ const VEREDELN = (function () {
       stationssaetze: einstellungen.stationssaetze || {},
       fce: einstellungen.fce,
       fceUeberschreibungen: fceUeb,
-      fokusAus: !auswahl.mitFokus,
+      // v3.18.0 (O4): der Rechenkern liefert immer beide Varianten (mit und
+      // ohne Fokus) in alleWege; die Zeile nimmt die zum Schalter passende,
+      // die andere dient dem Mehrgewinn je Fokuspunkt.
+      fokusAus: false,
       fokusRegelJeKategorie: {},
       fokusUebersteuerungJeKnoten: {},
       fokuswert: 0,
@@ -580,6 +749,7 @@ const VEREDELN = (function () {
       nurDirekteEbene: true,
     };
     const erloesOpts = { verkaufsweg: auswahl.verkaufsweg, premium: einstellungen.premium, maxPreisAlterMin, jetzt: zeit };
+    const kennzahlCtx = { mitFokus: !!auswahl.mitFokus, premium: einstellungen.premium !== false, anteil: anteilVon(einstellungen) };
     const wahl = {};
     const einkaufVon = (id) => {
       if (!(id in wahl)) {
@@ -599,11 +769,10 @@ const VEREDELN = (function () {
         herkunft[id] = w;
         if (w.eintrag) preise[id] = w.eintrag;
       });
-      const craft = craftKandidatAus(
-        RECHENKERN.kosten(k.item, k.stufe, 1, Object.assign({}, optsBasis, { preise })),
-        k.rezeptIndex,
-        auswahl.mitFokus
-      );
+      const kostenErgebnis = RECHENKERN.kosten(k.item, k.stufe, 1, Object.assign({}, optsBasis, { preise }));
+      const craftMit = craftKandidatAus(kostenErgebnis, k.rezeptIndex, true);
+      const craftOhne = craftKandidatAus(kostenErgebnis, k.rezeptIndex, false);
+      const craft = auswahl.mitFokus ? craftMit : craftOhne;
       const vk =
         verkaufWaehlen(verkaufDaten.map((d) => ({ stadt: d.stadt, eintrag: d.preiseRoh[k.marktId] })), erloesOpts) ||
         { stadt: null, erloes: { netto: null, grund: "keine Verkaufsstadt angehakt" } };
@@ -611,6 +780,7 @@ const VEREDELN = (function () {
       const zeile = zeileBauen(k, fertigung, craft, vk.erloes, ((vkDaten.absatz || {})[k.marktId] || {})[1], Object.assign({}, auswahl, { herkunft }));
       zeile.vkStadt = vk.stadt;
       zeile.vkAlle = vk.alle || null;
+      kennzahlenSetzen(zeile, craftMit, craftOhne, kennzahlCtx);
       return zeile;
     });
   }
@@ -660,7 +830,7 @@ const VEREDELN = (function () {
       "einstellungenBereinigen: Unbekanntes faellt weg, Fehlendes kommt aus dem Standard",
       (function () {
         const e = einstellungenBereinigen({ einkaufStaedte: ["Lymhurst", "Atlantis"], tiers: [4, 9], kaufweg: "quatsch", toleranzProzent: -3, sortierung: "quatsch" });
-        return e.einkaufStaedte.join() === "Lymhurst" && e.sortierung === "marge" && e.tiers.join() === "4" && e.kaufweg === "sofort" && e.toleranzProzent === 0 && e.rohstoffe.length === 5;
+        return e.einkaufStaedte.join() === "Lymhurst" && e.sortierung === "tag" && e.tiers.join() === "4" && e.kaufweg === "sofort" && e.toleranzProzent === 0 && e.rohstoffe.length === 5;
       })(),
       JSON.stringify(einstellungenBereinigen({ einkaufStaedte: ["Lymhurst", "Atlantis"], tiers: [4, 9] }))
     );
@@ -1082,6 +1252,184 @@ const VEREDELN = (function () {
       iconUrl("T4_FIBER_LEVEL2", 30)
     );
 
+
+    // ---- v3.18.0 (O4): Gewinn/Tag und Mehrgewinn je Fokuspunkt ----
+    (function () {
+      // Feste Zahlen: Erloes 500; mit Fokus Kosten 300 (Gewinn 200) bei 50
+      // Fokus je Stueck; ohne Fokus Kosten 359 (Gewinn 141).
+      const mit = { silber: 300, fokus: 50, gesperrt: false };
+      const ohne = { silber: 359, fokus: 0, gesperrt: false };
+      const zeile = (mitFokus, stueckJeTag) => ({ erloes: 500, gewinn: 500 - (mitFokus ? 300 : 359), stueckJeTag });
+      const k = (mitFokus, stueckJeTag, premium, anteil) => kennzahlenSetzen(zeile(mitFokus, stueckJeTag), mit, ohne, { mitFokus, premium, anteil: anteil == null ? 0.25 : anteil });
+
+      const a = k(false, 26810, true);
+      pruefe(
+        "o4 Gewinn/Tag ohne Fokus: 141 x 25 % von 26.810 = 945.052,5, keine Fokusgrenze",
+        Math.abs(a.gewinnJeTag - 945052.5) < 1e-6 && a.stueckJeTagErreichbar === 6702.5 && a.tagGrenze === "absatz" && a.fokusStueckJeTag === null && a.fokusBudgetBelegt === null && tagText(a) === "945.053",
+        a.gewinnJeTag + " / " + tagText(a)
+      );
+      pruefe(
+        "o4 Gewinn/Tag: Zelltooltip nennt die eingesetzten Zahlen und die Untergrenze",
+        tagTitel(a) === "141 Silber × 25 % von 26.810 verkauft/Tag (6.703 Stück) = 945.053 Silber/Tag (Untergrenze)",
+        tagTitel(a)
+      );
+      const b = k(true, 26810, true);
+      pruefe(
+        "o4 Gewinn/Tag mit Fokus, das Fokusbudget begrenzt: 10.000 / 50 = 200 Stueck statt 6.702,5; 200 x 200 = 40.000",
+        b.gewinnJeTag === 40000 && b.stueckJeTagErreichbar === 200 && b.fokusStueckJeTag === 200 && b.tagGrenze === "fokus" && b.fokusBudgetBelegt === true && /der Fokus begrenzt/.test(tagTitel(b)),
+        b.gewinnJeTag + " / " + tagTitel(b)
+      );
+      const c = k(true, 400, true);
+      pruefe(
+        "o4 Gewinn/Tag mit Fokus, der Absatz begrenzt: 25 % von 400 = 100 Stueck (Fokus reichte fuer 200); 200 x 100 = 20.000",
+        c.gewinnJeTag === 20000 && c.stueckJeTagErreichbar === 100 && c.fokusStueckJeTag === 200 && c.tagGrenze === "absatz" && /Fokus begrenzt nicht/.test(tagTitel(c)),
+        c.gewinnJeTag + " / " + tagTitel(c)
+      );
+      const dd = k(true, 26810, false);
+      pruefe(
+        "o4 Gewinn/Tag ohne Premium: kein belegtes Tagesbudget, keine Fokusgrenze (200 x 6.702,5 = 1.340.500), Tooltip sagt es",
+        dd.gewinnJeTag === 1340500 && dd.tagGrenze === "absatz" && dd.fokusStueckJeTag === null && dd.fokusBudgetBelegt === false && /ohne Premium ist kein Tagesbudget an Fokus belegt/.test(tagTitel(dd)),
+        dd.gewinnJeTag + " / " + tagTitel(dd)
+      );
+      const e0 = k(false, null, true);
+      const e1 = k(false, 0, true);
+      pruefe(
+        "o4 Gewinn/Tag ohne erfassten Handel: leer (null, nicht 0), Zelle leer, Tooltip nennt den Grund",
+        e0.gewinnJeTag === null && e1.gewinnJeTag === null && tagText(e0) === "" && tagText(e1) === "" && /Kein erfasster Handel/.test(tagTitel(e0)),
+        e0.gewinnJeTag + " / " + e1.gewinnJeTag
+      );
+      pruefe(
+        "o4 Sortierung Gewinn/Tag absteigend: Zeilen ohne erfassten Handel stehen am Ende, auch hinter negativen Werten",
+        sortiere([{ id: 1, gewinnJeTag: null }, { id: 2, gewinnJeTag: 5 }, { id: 3, gewinnJeTag: -7 }, { id: 4, gewinnJeTag: 900 }, { id: 5 }], "tag").map((z) => z.id).join() === "4,2,3,1,5",
+        sortiere([{ id: 1, gewinnJeTag: null }, { id: 2, gewinnJeTag: 5 }, { id: 3, gewinnJeTag: -7 }, { id: 4, gewinnJeTag: 900 }, { id: 5 }], "tag").map((z) => z.id).join()
+      );
+      pruefe(
+        "o4 Anteil: 50 % verdoppelt, 100 % vervierfacht den Gewinn/Tag gegenueber 25 %",
+        k(false, 1000, true, 0.5).gewinnJeTag === 2 * k(false, 1000, true, 0.25).gewinnJeTag && k(false, 1000, true, 1).gewinnJeTag === 141000,
+        k(false, 1000, true, 0.5).gewinnJeTag
+      );
+      pruefe(
+        "o4 anteilVon: Vorgabe 25 %, Grenzen 1 und 100 %",
+        anteilVon({}) === 0.25 && anteilVon(null) === 0.25 && anteilVon({ absatzAnteilProzent: "" }) === 0.25 && anteilVon({ absatzAnteilProzent: 40 }) === 0.4 &&
+          anteilVon({ absatzAnteilProzent: 0 }) === 0.01 && anteilVon({ absatzAnteilProzent: 250 }) === 1 && anteilVon({ absatzAnteilProzent: "x" }) === 0.25,
+        [anteilVon({}), anteilVon({ absatzAnteilProzent: 0 }), anteilVon({ absatzAnteilProzent: 250 })].join()
+      );
+      // Handrechnung: (200 - 141) / 50 = 1,18 Silber je Fokuspunkt.
+      pruefe(
+        "o4 Mehrgewinn je Fokuspunkt: (200 - 141) / 50 = 1,18, unabhaengig vom Fokus-Schalter; Anzeige mit einer Nachkommastelle",
+        Math.abs(a.mehrgewinnJeFokus - 1.18) < 1e-12 && Math.abs(b.mehrgewinnJeFokus - 1.18) < 1e-12 && a.fokusJeStueck === 50 && a.gewinnMitFokus === 200 && a.gewinnOhneFokus === 141 && jeFokusText(a) === "1,2" &&
+          jeFokusTitel(a) === "Gewinn je Stück mit Fokus 200, ohne Fokus 141 Silber: Unterschied 59 / 50 Fokus je Stück = 1,2 Silber je Fokuspunkt",
+        a.mehrgewinnJeFokus + " / " + jeFokusTitel(a)
+      );
+      const ohneFokus = kennzahlenSetzen(zeile(true, 1000), { silber: 300, fokus: 0, gesperrt: false }, { silber: 300, fokus: 0, gesperrt: false }, { mitFokus: true, premium: true, anteil: 0.25 });
+      pruefe(
+        "o4 Vorgang ohne Fokus (craftingfocus 0): Mehrgewinn leer, Gewinn/Tag ohne Fokusgrenze, sortiert ans Ende",
+        ohneFokus.mehrgewinnJeFokus === null && ohneFokus.fokusJeStueck === null && jeFokusText(ohneFokus) === "" && ohneFokus.gewinnJeTag === 200 * 250 && ohneFokus.tagGrenze === "absatz" &&
+          sortiere([ohneFokus, a], "jefokus")[0] === a,
+        JSON.stringify({ m: ohneFokus.mehrgewinnJeFokus, t: ohneFokus.gewinnJeTag })
+      );
+      pruefe(
+        "o4 Mehrgewinn je Fokuspunkt: kleine Werte mit zwei Nachkommastellen, Tausenderpunkt bei grossen",
+        jeFokusText({ mehrgewinnJeFokus: 0.456 }) === "0,46" && jeFokusText({ mehrgewinnJeFokus: 1234.56 }) === "1.234,6" && jeFokusText({ mehrgewinnJeFokus: -3.21 }) === "-3,2",
+        [jeFokusText({ mehrgewinnJeFokus: 0.456 }), jeFokusText({ mehrgewinnJeFokus: 1234.56 })].join(" | ")
+      );
+
+      // Integration: Guter Stoff T4.0 in Lymhurst, Weber 0, FCE 0, Sofortkauf
+      // (Faser 100, T3-Stoff 200), Sofortverkauf 300 mit 4 % Steuer = 288.
+      // Ohne Fokus 400 / 1,58 = 253,16; mit Fokus 400 / 2,17 = 184,33;
+      // Fokus 54 je Stueck. 1.000 verkauft/Tag.
+      const pr = { T4_FIBER: roh(100, 90), T3_CLOTH: roh(200, 180), T4_CLOTH: roh(320, 300) };
+      const dat = [{ stadt: "Lymhurst", preiseRoh: pr, absatz: { T4_CLOTH: { 1: { stueckJeTag: 1000 } } } }];
+      const e2 = { stationssaetze: { Weber: 0 }, fce: 0, premium: true, maxPreisAlterMin: null };
+      const zr = (aus, e) => zeilenRechnen(k4, dat, einstellungenBereinigen(Object.assign({ kaufweg: "sofort", verkaufsweg: "sofort" }, aus)), e || e2)[0];
+      const zo = zr({ mitFokus: false });
+      const zm = zr({ mitFokus: true });
+      const mehr = (400 / 1.58 - 400 / 2.17) / 54;
+      pruefe(
+        "o4 zeilenRechnen (Veredeln): Mehrgewinn je Fokuspunkt = (400 / 1,58 - 400 / 2,17) / 54 = 1,2747, mit und ohne Fokus-Schalter gleich",
+        Math.abs(zo.mehrgewinnJeFokus - mehr) < 1e-9 && Math.abs(zm.mehrgewinnJeFokus - mehr) < 1e-9 && Math.abs(zo.fokusJeStueck - 54) < 1e-9 && Math.abs(mehr - 1.2747) < 1e-4,
+        zo.mehrgewinnJeFokus + " / " + zm.mehrgewinnJeFokus
+      );
+      pruefe(
+        "o4 zeilenRechnen (Veredeln): Gewinn/Tag ohne Fokus (288 - 253,16) x 250 = 8.708,86; mit Fokus begrenzt das Budget auf 10.000 / 54 = 185,19 Stueck: (288 - 184,33) x 185,19 = 19.197,82",
+        Math.abs(zo.gewinnJeTag - (288 - 400 / 1.58) * 250) < 1e-6 && zo.tagGrenze === "absatz" && Math.abs(zm.gewinnJeTag - ((288 - 400 / 2.17) * 10000) / 54) < 1e-6 && zm.tagGrenze === "fokus" &&
+          Math.abs(zo.gewinnJeTag - 8708.86) < 0.01 && Math.abs(zm.gewinnJeTag - 19197.82) < 0.01,
+        zo.gewinnJeTag + " / " + zm.gewinnJeTag
+      );
+      const zmOhnePremium = zr({ mitFokus: true }, Object.assign({}, e2, { premium: false }));
+      pruefe(
+        "o4 zeilenRechnen (Veredeln): ohne Premium (8 % Steuer) keine Fokusgrenze: (276 - 184,33) x 250",
+        Math.abs(zmOhnePremium.gewinnJeTag - (276 - 400 / 2.17) * 250) < 1e-6 && zmOhnePremium.tagGrenze === "absatz" && zmOhnePremium.fokusBudgetBelegt === false,
+        zmOhnePremium.gewinnJeTag
+      );
+      const zHalb = zr({ mitFokus: false }, Object.assign({}, e2, { absatzAnteilProzent: 50 }));
+      pruefe("o4 zeilenRechnen (Veredeln): gemeinsamer Anteil 50 % verdoppelt den Gewinn/Tag", Math.abs(zHalb.gewinnJeTag - 2 * zo.gewinnJeTag) < 1e-6 && zHalb.absatzAnteil === 0.5, zHalb.gewinnJeTag);
+      const zLeer = zeilenRechnen(k4, [{ stadt: "Lymhurst", preiseRoh: pr, absatz: {} }], einstellungenBereinigen({ kaufweg: "sofort", verkaufsweg: "sofort" }), e2)[0];
+      pruefe("o4 zeilenRechnen (Veredeln): ohne erfassten Handel bleibt Gewinn/Tag leer, der Gewinn/Stueck steht trotzdem", zLeer.gewinnJeTag === null && zLeer.gewinn != null && zLeer.mehrgewinnJeFokus != null, zLeer.gewinnJeTag);
+
+      // Bisherige Zahlen unveraendert: die Zeile ohne Fokus entspricht
+      // zeichengleich der bisherigen Rechnung mit fokusAus, die Zeile mit
+      // Fokus der bisherigen ohne fokusAus (alle Faser- und Erzvorgaenge T4 bis T8).
+      const alle = kandidaten({ rohstoffe: ["fiber", "ore", "rock"], tiers: [4, 5, 6, 7, 8], stufen: [0, 1, 2, 3, 4] });
+      const prAlle = {};
+      benoetigteMarktIds(alle).forEach((id, i) => (prAlle[id] = roh(100 + ((i * 37) % 211), 90 + ((i * 37) % 211))));
+      const datAlle = [{ stadt: "Lymhurst", preiseRoh: prAlle, absatz: {} }];
+      const e3 = { stationssaetze: { Weber: 400, Schmelze: 350, Steinmetz: 300 }, fce: 12000, premium: true, maxPreisAlterMin: null, tagesbonus: { ore: "silber" } };
+      const abweichend = [];
+      [false, true].forEach((mitFokus) => {
+        const aus = einstellungenBereinigen({ kaufweg: "sofort", verkaufsweg: "sofort", mitFokus });
+        const neu = zeilenRechnen(alle, datAlle, aus, e3);
+        alle.forEach((kk, i) => {
+          const preise = {};
+          kk.zutaten.forEach((zt) => (preise[marktIdVon(zt.n, zt.stufe)] = REGELN.preiseZuOptsFormat(prAlle)[marktIdVon(zt.n, zt.stufe)]));
+          const alt = craftKandidatAus(
+            RECHENKERN.kosten(kk.item, kk.stufe, 1, {
+              preise, eigenpreise: {}, kaufweg: "sofort", stadt: "Lymhurst", stationssaetze: e3.stationssaetze, fce: e3.fce, fceUeberschreibungen: {}, fokusAus: !mitFokus,
+              fokusRegelJeKategorie: {}, fokusUebersteuerungJeKnoten: {}, fokuswert: 0, tagesbonus: e3.tagesbonus, zusatzProduktionsbonus: 0, maxPreisAlterMin: null, nurDirekteEbene: true,
+            }),
+            kk.rezeptIndex,
+            mitFokus
+          );
+          const z = neu[i];
+          const erl = REGELN.erloesJeStueck(prAlle[kk.marktId], { verkaufsweg: "sofort", premium: true, maxPreisAlterMin: null }).netto;
+          if (!alt || String(z.silber) !== String(alt.silber) || String(z.gewinn) !== String(erl - alt.silber) || String(z.marge) !== String((erl - alt.silber) / alt.silber) || String(z.fokusJeVorgang) !== String((alt.fokus || 0) * kk.menge))
+            abweichend.push(kk.marktId + "#" + kk.rezeptIndex + (mitFokus ? "+F" : ""));
+        });
+      });
+      pruefe(
+        "o4 bisherige Zahlen unveraendert: Kosten, Gewinn/Stueck, Marge und Fokus je Vorgang zeichengleich zur Rechnung vor dem Umbau (" + alle.length + " Vorgaenge, mit und ohne Fokus)",
+        alle.length > 50 && abweichend.length === 0,
+        abweichend.slice(0, 5).join(", ")
+      );
+
+      // Einmalige Umstellung der Sortierung.
+      const alt1 = einstellungenBereinigen({ sortierung: "marge" });
+      const bewusst = einstellungenBereinigen(Object.assign({}, alt1, { sortierung: "marge" }));
+      pruefe(
+        "o4 Sortierung: Vorgabe Gewinn/Tag; gespeichertes \"marge\" wird einmalig umgestellt, danach bewusst gewaehltes \"marge\" bleibt, gespeichertes \"gesamt\" bleibt",
+        standardEinstellungen().sortierung === "tag" && alt1.sortierung === "tag" && alt1.sortTagUmgestellt === true && bewusst.sortierung === "marge" &&
+          einstellungenBereinigen(JSON.parse(JSON.stringify(bewusst))).sortierung === "marge" && einstellungenBereinigen({ sortierung: "gesamt" }).sortierung === "gesamt" &&
+          einstellungenBereinigen({ sortierung: "jefokus" }).sortierung === "jefokus" && einstellungenBereinigen({}).sortierung === "tag",
+        [alt1.sortierung, bewusst.sortierung, einstellungenBereinigen({ sortierung: "gesamt" }).sortierung].join()
+      );
+      pruefe(
+        "o4 Spaltentooltips: Gewinn/Tag nennt Untergrenze und Annahme, Marge den Gewinn je eingesetztem Silber",
+        /Untergrenze/.test(KOPF_TITEL.tag(25)) && /Annahme: 25 %/.test(KOPF_TITEL.tag(25)) && /ohne Premium ist kein Tagesbudget belegt/.test(KOPF_TITEL.tag(25)) &&
+          /Gewinn je eingesetztem Silber/.test(KOPF_TITEL.marge) && /Annahme/.test(KOPF_TITEL.anteil) && /Leer bei Vorgängen ohne Fokus/.test(KOPF_TITEL.jefokus),
+        KOPF_TITEL.tag(25)
+      );
+      pruefe(
+        "o4 Zellen: Gewinn/Tag und Mehrgewinn je Fokuspunkt als zwei Zahlenzellen mit Tooltip, Hinweis nur wenn der Fokus begrenzt",
+        (function () {
+          const esc = (s) => String(s).replace(/'/g, "&#39;");
+          const h1 = kennzahlZellenHtml(a, esc);
+          const h2 = kennzahlZellenHtml(b, esc);
+          return (h1.match(/<td /g) || []).length === 2 && />945\.053</.test(h1) && />1,2</.test(h1) && !/Fokus begrenzt<\/div>/.test(h1) && />40\.000<div class='vd-klein'>Fokus begrenzt<\/div>/.test(h2);
+        })(),
+        kennzahlZellenHtml(b, (s) => s)
+      );
+    })();
+
     return ergebnisse;
   }
 
@@ -1221,6 +1569,7 @@ const VEREDELN = (function () {
     const ausgabeEl = el("vdAusgabe");
     const stationenEl = el("vdStationen");
     const preiseResetEl = el("vdPreiseReset");
+    const anteilEl = el("vdAnteil");
 
     let auswahl = standardEinstellungen();
     let letzteZeilen = null;
@@ -1396,7 +1745,14 @@ const VEREDELN = (function () {
       mehrTextEl.textContent = "(Etwa-Null-Grenze " + String(auswahl.toleranzProzent).replace(".", ",") + " %, Zusatzbonus " + String(auswahl.zusatzbonusProzent).replace(".", ",") + " %)";
     }
 
+    /** Gemeinsame Annahme "Anteil am Tageshandel" ins Feld schreiben (v3.18.0). */
+    function anteilSetzen() {
+      if (!anteilEl) return;
+      anteilEl.value = UI.einstellungenLesen().absatzAnteilProzent;
+    }
+
     function felderSetzen() {
+      anteilSetzen();
       toleranzEl.value = auswahl.toleranzProzent;
       mengeEl.value = auswahl.menge;
       verlusteEl.checked = auswahl.verlusteZeigen;
@@ -1451,6 +1807,13 @@ const VEREDELN = (function () {
     }
 
     wurzel.addEventListener("change", (ev) => {
+      // v3.18.0: Anteil am Tageshandel, gemeinsam mit den anderen Gewinn-Reitern.
+      if (anteilEl && ev.target === anteilEl) {
+        UI.absatzAnteilSetzen(anteilEl.value, "veredeln");
+        anteilSetzen();
+        rechnen();
+        return;
+      }
       // v3.9.0: eigener Einkaufspreis je Zutat. Leer oder <= 0 setzt zurueck.
       const preisEl = ev.target.closest("input[data-vd-markt]");
       if (preisEl) {
@@ -1559,6 +1922,12 @@ const VEREDELN = (function () {
       schalterSetzen();
       rechnen();
     });
+    // Anteil am Tageshandel in einem anderen Gewinn-Reiter geaendert (v3.18.0).
+    document.addEventListener(UI.ABSATZANTEIL_EVENT, (ev) => {
+      if (ev.detail && ev.detail.quelle === "veredeln") return;
+      anteilSetzen();
+      rechnen();
+    });
 
     function alterText(min) {
       if (min == null || !isFinite(min)) return "";
@@ -1654,10 +2023,12 @@ const VEREDELN = (function () {
       return (
         "<thead><tr><th>Produkt</th><th>Einkauf je Vorgang</th><th>Verkauf</th>" +
         sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
-        "<th class='num' title='Kosten je Stück mal der eingestellten Menge: so viel Silber kostet die ganze Menge, Material nach Rückgewinnung plus Stationsgebühr.'>Kosten gesamt</th>" +
+        "<th class='num' title='Kosten je Stück mal der eingestellten Menge: so viel Silber kostet die ganze Menge, Material nach Rückgewinnung plus Stationsgebühr.'>Kosten<br>gesamt</th>" +
         sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
-        sortTh("marge", "Marge", "Gewinn bezogen auf die eigenen Kosten. Klicken sortiert absteigend.") +
-        sortTh("gesamt", "Gewinn gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
+        sortTh("marge", "Marge", KOPF_TITEL.marge) +
+        sortTh("tag", "Gewinn/Tag", KOPF_TITEL.tag(kontext.anteilProzent)) +
+        sortTh("jefokus", "Mehrgewinn<br>je Fokus", KOPF_TITEL.jefokus) +
+        sortTh("gesamt", "Gewinn<br>gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
         "</tr></thead>"
       );
     }
@@ -1709,6 +2080,7 @@ const VEREDELN = (function () {
             "<td class='num'>" + fmt(z.kostenGesamt) + "</td>" +
             "<td class='num vd-wert' title='" + einstufung + "'>" + fmt(z.gewinn) + "</td>" +
             "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
+            kennzahlZellenHtml(z, esc) +
             "<td class='num vd-wert'>" + fmt(z.gewinnGesamt) + "</td>" +
             "</tr>"
           );
@@ -1731,6 +2103,7 @@ const VEREDELN = (function () {
           verkaufsweg: auswahl.verkaufsweg,
           mehrEk: schilderZeigen(auswahl.einkaufStaedte),
           mehrVk: schilderZeigen(auswahl.verkaufStaedte),
+          anteilProzent: anteilVon(einstellungen) * 100,
         },
       };
       neuBewerten();
@@ -1839,6 +2212,17 @@ const VEREDELN = (function () {
     hoechstpreis,
     zeilenRechnen,
     SORTIERUNGEN,
+    FOKUS_JE_TAG_PREMIUM,
+    sortierungBereinigen,
+    anteilVon,
+    kennzahlenSetzen,
+    tagText,
+    tagTitel,
+    jeFokusText,
+    jeFokusTitel,
+    KOPF_TITEL,
+    kennzahlZellenHtml,
+    vergleiche,
     iconUrl,
     schilderZeigen,
     veredelBonusVon,

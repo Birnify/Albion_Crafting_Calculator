@@ -210,6 +210,11 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 .vd-max.vd-verlust{color:var(--bad)}
 .vd-erloes{font-weight:700}
 .vd-tabelle .vd-wert{font-weight:800}
+/* v3.18.0: zwei Kennzahlspalten mehr; alle Zahlenspalten etwas enger und der zweizeilige Kopf rechtsbuendig, damit die Tabellen bei 1440 px im Rahmen bleiben */
+.vd-tabelle th.num,.vd-tabelle td.num{padding-left:7px;padding-right:7px}
+.vd-tabelle th.num:last-child,.vd-tabelle td.num:last-child{padding-right:12px}
+:is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) button.vd-sortk{text-align:right;line-height:1.25}
+.vd-tabelle th{vertical-align:bottom}
 tr.vd-gewinn .vd-wert,tr.vd-gewinn .vd-wert2{color:var(--good)}
 tr.vd-null .vd-wert,tr.vd-null .vd-wert2{color:var(--warn)}
 tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
@@ -1240,6 +1245,8 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
         <button type="button" class="vd-tgl" role="switch" aria-checked="false" aria-labelledby="glLblPremium" data-gl-schalter="premium" title="Steuer beim Verkauf. Dieselbe Einstellung wie im Kostenrechner."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
       <div class="vd-gruppe"><label class="vd-lbl" for="glMinAbsatz" title="Pflichtfilter: Zeilen mit weniger erfasstem Handel je Tag (Mittel der letzten 7 Tage) werden ausgeblendet, ebenso Zeilen ganz ohne erfassten Handel. Die Zahl ist eine Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.">Mind. verkauft/Tag</label>
         <input type="number" id="glMinAbsatz" min="0" step="1"></div>
+      <div class="vd-gruppe"><label class="vd-lbl" for="glAnteil" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.">Annahme: Anteil %</label>
+        <input type="number" id="glAnteil" min="1" max="100" step="1" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln."></div>
       <div class="vd-gruppe"><span class="vd-lbl" id="glLblArt" title="Filtert die Rangliste. Der Scan läuft für den ganzen Scanumfang weiter.">Art</span>
         <div id="glArt" class="vd-chip-reihe" role="radiogroup" aria-labelledby="glLblArt"></div></div>
     </div>
@@ -1349,6 +1356,8 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
         <button type="button" class="vd-tgl" role="switch" aria-checked="true" aria-labelledby="cgLblPremium" data-cg-schalter="premium" title="Steuer beim Verkauf. Dieselbe Einstellung wie im Kostenrechner."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
       <div class="vd-gruppe"><label class="vd-lbl" for="cgMinAbsatz" title="Pflichtfilter: Zeilen mit weniger erfasstem Handel je Tag (Mittel der letzten 7 Tage) werden ausgeblendet, ebenso Zeilen ganz ohne erfassten Handel. Die Zahl ist eine Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.">Mind. verkauft/Tag</label>
         <input type="number" id="cgMinAbsatz" min="0" step="1"></div>
+      <div class="vd-gruppe"><label class="vd-lbl" for="cgAnteil" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.">Annahme: Anteil %</label>
+        <input type="number" id="cgAnteil" min="1" max="100" step="1" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln."></div>
       <div class="vd-gruppe"><span class="vd-lbl" id="cgLblVol">Volumen</span>
         <button type="button" class="vd-tgl" role="switch" aria-checked="true" aria-labelledby="cgLblVol" data-cg-schalter="volumen" title="Alle Qualitäten: der erfasste Handel aller Qualitätsstufen zusammen. Nur Normal: nur der Handel in Normal. Gerechnet wird in beiden Fällen mit dem Preis der niedrigsten Stufe."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
     </div>
@@ -1438,6 +1447,8 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
         <button type="button" class="vd-tgl" role="switch" aria-checked="true" aria-labelledby="vdLblPremium" data-vd-schalter="premium" title="Steuer beim Verkauf. Dieselbe Einstellung wie im Kostenrechner."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
       <div class="vd-gruppe"><label class="vd-lbl" for="vdMenge" title="Geplante Menge in Stück Produkt, für die Spalte Gewinn gesamt.">Menge (Stück)</label>
         <input type="number" id="vdMenge" min="1" step="1"></div>
+      <div class="vd-gruppe"><label class="vd-lbl" for="vdAnteil" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.">Annahme: Anteil %</label>
+        <input type="number" id="vdAnteil" min="1" max="100" step="1" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) verkaufe ich selbst, 1 bis 100 %. Bestimmt die Spalte Gewinn/Tag. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln."></div>
     </div>
     <div class="vd-gruppe">
       <span class="vd-lbl" title="Täglich wechselnder Bonus auf die Rückgewinnung, +10 % oder +20 %, gilt in allen Städten gleich. Über keine Schnittstelle abrufbar, deshalb im Spiel ablesen. Dieselbe Einstellung wie im Kostenrechner.">Tagesbonus (gilt in allen Städten)</span>
@@ -1532,24 +1543,24 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 
 </div>
 
-<script src="rezepte.js?v=3.17.0"></script>
-<script src="item-namen.js?v=3.17.0"></script>
-<script src="js/preise.js?v=3.17.0"></script>
-<script src="js/regeln.js?v=3.17.0"></script>
-<script src="js/rechenkern.js?v=3.17.0"></script>
-<script src="js/ui.js?v=3.17.0"></script>
-<script src="js/eintopf-daten.js?v=3.17.0"></script>
-<script src="js/eintopf-preise.js?v=3.17.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.17.0"></script>
-<script src="js/eintopf-ui.js?v=3.17.0"></script>
-<script src="js/tabs.js?v=3.17.0"></script>
-<script src="js/preisvergleich.js?v=3.17.0"></script>
-<script src="js/veredeln.js?v=3.17.0"></script>
-<script src="js/craften.js?v=3.17.0"></script>
-<script src="js/gelegenheiten.js?v=3.17.0"></script>
+<script src="rezepte.js?v=3.18.0"></script>
+<script src="item-namen.js?v=3.18.0"></script>
+<script src="js/preise.js?v=3.18.0"></script>
+<script src="js/regeln.js?v=3.18.0"></script>
+<script src="js/rechenkern.js?v=3.18.0"></script>
+<script src="js/ui.js?v=3.18.0"></script>
+<script src="js/eintopf-daten.js?v=3.18.0"></script>
+<script src="js/eintopf-preise.js?v=3.18.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.18.0"></script>
+<script src="js/eintopf-ui.js?v=3.18.0"></script>
+<script src="js/tabs.js?v=3.18.0"></script>
+<script src="js/preisvergleich.js?v=3.18.0"></script>
+<script src="js/veredeln.js?v=3.18.0"></script>
+<script src="js/craften.js?v=3.18.0"></script>
+<script src="js/gelegenheiten.js?v=3.18.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.17.0"></script>
-<script src="js/karte.js?v=3.17.0"></script>
+<script src="js/karte-daten.js?v=3.18.0"></script>
+<script src="js/karte.js?v=3.18.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

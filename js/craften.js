@@ -47,7 +47,8 @@ const CRAFTEN = (function () {
   const STUFEN = [0, 1, 2, 3, 4];
   const TAGE_FENSTER = 7;
   const SPEICHER_KEY = "albion_kostenrechner_craften_v1";
-  const SORTIERUNGEN = ["kosten", "stueck", "marge", "volumen", "gesamt"];
+  // v3.18.0 (O4): "tag" = Gewinn/Tag (neue Vorgabe), "jefokus" = Mehrgewinn je Fokuspunkt, s. VEREDELN.kennzahlenSetzen().
+  const SORTIERUNGEN = ["kosten", "stueck", "marge", "volumen", "gesamt", "tag", "jefokus"];
 
   // Warengruppen = craftingcategory des Dumps, gruppiert nach Gebaeude
   // (REGELN.gebaeudeVonKategorie). Veredeln und Tierhaltung fehlen bewusst:
@@ -110,7 +111,8 @@ const CRAFTEN = (function () {
       menge: 10,
       verlusteZeigen: false,
       zusatzbonusProzent: 0,
-      sortierung: "marge",
+      sortierung: "tag",
+      sortTagUmgestellt: true, // v3.18.0: Merker der einmaligen Umstellung, s. VEREDELN.sortierungBereinigen()
       preisUeberschreibungen: {},
       plan: {}, // v3.12.0: Markt-ID des Produkts -> geplante Stueckzahl (Einkaufsliste)
     };
@@ -138,7 +140,8 @@ const CRAFTEN = (function () {
       menge: isFinite(Number(roh.menge)) && Number(roh.menge) > 0 ? Number(roh.menge) : basis.menge,
       verlusteZeigen: !!roh.verlusteZeigen,
       zusatzbonusProzent: isFinite(Number(roh.zusatzbonusProzent)) && Number(roh.zusatzbonusProzent) > 0 ? Number(roh.zusatzbonusProzent) : 0,
-      sortierung: SORTIERUNGEN.indexOf(roh.sortierung) !== -1 ? roh.sortierung : basis.sortierung,
+      sortierung: V.sortierungBereinigen(roh, (x) => SORTIERUNGEN.indexOf(x) !== -1, basis.sortierung),
+      sortTagUmgestellt: true,
       preisUeberschreibungen: V.ueberschreibungenBereinigen(roh.preisUeberschreibungen),
       plan: planBereinigen(roh.plan),
     };
@@ -380,7 +383,10 @@ const CRAFTEN = (function () {
       stationssaetze: einstellungen.stationssaetze || {},
       fce: einstellungen.fce,
       fceUeberschreibungen: fceUeb,
-      fokusAus: !auswahl.mitFokus,
+      // v3.18.0 (O4): der Rechenkern liefert immer beide Varianten (mit und
+      // ohne Fokus) in alleWege; die Zeile nimmt die zum Schalter passende,
+      // die andere dient dem Mehrgewinn je Fokuspunkt.
+      fokusAus: false,
       fokusRegelJeKategorie: {},
       fokusUebersteuerungJeKnoten: {},
       fokuswert: 0,
@@ -390,6 +396,7 @@ const CRAFTEN = (function () {
       nurDirekteEbene: true,
     };
     const erloesOpts = { verkaufsweg: auswahl.verkaufsweg, premium: einstellungen.premium, maxPreisAlterMin, jetzt: zeit };
+    const kennzahlCtx = { mitFokus: !!auswahl.mitFokus, premium: einstellungen.premium !== false, anteil: V.anteilVon(einstellungen) };
     const wahl = {};
     const einkaufVon = (id) => {
       if (!(id in wahl)) {
@@ -411,11 +418,12 @@ const CRAFTEN = (function () {
           if (w.eintrag) preise[id] = w.eintrag;
         })
       );
-      const craft = besterCraft(
-        RECHENKERN.kosten(k.item, k.stufe, 1, Object.assign({}, optsBasis, { preise })),
-        k.rezepte.map((r) => r.rezeptIndex),
-        auswahl.mitFokus
-      );
+      // Je Variante das billigere marktfaehige Rezept (wie bisher fuer die Zeile).
+      const kostenErgebnis = RECHENKERN.kosten(k.item, k.stufe, 1, Object.assign({}, optsBasis, { preise }));
+      const rezeptIndizes = k.rezepte.map((r) => r.rezeptIndex);
+      const craftMit = besterCraft(kostenErgebnis, rezeptIndizes, true);
+      const craftOhne = besterCraft(kostenErgebnis, rezeptIndizes, false);
+      const craft = auswahl.mitFokus ? craftMit : craftOhne;
       const rezept = (craft && craft.weg && k.rezepte.find((r) => r.rezeptIndex === craft.weg.rezeptIndex)) || k.rezepte[0];
       const kandidat = Object.assign({}, k, { rezeptIndex: rezept.rezeptIndex, menge: rezept.menge, zutaten: rezept.zutaten });
       const vkEintraege = verkaufDaten.map((d) => ({ stadt: d.stadt, eintrag: produktEintrag(d.produktJeQ[k.marktId], maxPreisAlterMin, zeit) }));
@@ -431,10 +439,13 @@ const CRAFTEN = (function () {
       zeile.sellQualitaet = vkEintrag ? vkEintrag.sellQualitaet : null;
       zeile.vkStadt = vk.stadt;
       zeile.vkAlle = vk.alle || null;
+      // Nach dem Volumen: Gewinn/Tag nutzt dieselbe Zahl, die die Zeile als verkauft/Tag zeigt.
+      V.kennzahlenSetzen(zeile, craftMit, craftOhne, kennzahlCtx);
       return zeile;
     });
   }
 
+  /** Kosten/Stueck aufsteigend, alle anderen absteigend; Zeilen ohne Wert (z. B. Gewinn/Tag ohne erfassten Handel) ans Ende. */
   function sortiere(zeilen, schluessel) {
     const wert = {
       kosten: (z) => z.silber,
@@ -442,9 +453,11 @@ const CRAFTEN = (function () {
       marge: (z) => z.marge,
       volumen: (z) => z.stueckJeTag || 0,
       gesamt: (z) => z.gewinnGesamt,
+      tag: (z) => z.gewinnJeTag,
+      jefokus: (z) => z.mehrgewinnJeFokus,
     }[SORTIERUNGEN.indexOf(schluessel) !== -1 ? schluessel : "marge"];
     const auf = schluessel === "kosten";
-    return zeilen.slice().sort((a, b) => (auf ? wert(a) - wert(b) : wert(b) - wert(a)));
+    return zeilen.slice().sort((a, b) => V.vergleiche(wert(a), wert(b), auf));
   }
 
   /**
@@ -745,6 +758,117 @@ const CRAFTEN = (function () {
         einkaufslisteText({ posten: [barren] }, (n) => n + "-Name")
       );
     })();
+
+    // ---- v3.18.0 (O4): Gewinn/Tag und Mehrgewinn je Fokuspunkt ----
+    (function () {
+      // Breitschwert T5.0 in Lymhurst wie oben: Kosten ohne Fokus 3.200 / 1,33,
+      // mit Fokus 3.200 / 1,92, Erloes 2.900 x 0,935 = 2.711,5; Fokus je Stueck
+      // aus dem Dump (FCE 0); 8 verkauft/Tag.
+      const F = g.items.T5_MAIN_SWORD.r[0].f;
+      const erl = 2900 * 0.935;
+      const ohne = zeilenRechnen([kBreit], stadtDaten, auswahl, einst)[0];
+      const mit = zeilenRechnen([kBreit], stadtDaten, Object.assign({}, auswahl, { mitFokus: true }), einst)[0];
+      const mehr = (3200 / 1.33 - 3200 / 1.92) / F;
+      pruefe(
+        "o4 zeilenRechnen: Mehrgewinn je Fokuspunkt = (3.200 / 1,33 - 3.200 / 1,92) / Fokus je Stueck, mit und ohne Fokus-Schalter gleich",
+        F > 0 && Math.abs(ohne.mehrgewinnJeFokus - mehr) < 1e-9 && Math.abs(mit.mehrgewinnJeFokus - mehr) < 1e-9 && Math.abs(ohne.fokusJeStueck - F) < 1e-9 &&
+          Math.abs(ohne.gewinnOhneFokus - ohne.gewinn) < 1e-9 && Math.abs(mit.gewinnMitFokus - mit.gewinn) < 1e-9,
+        ohne.mehrgewinnJeFokus + " / " + mehr + " / F " + F
+      );
+      pruefe(
+        "o4 zeilenRechnen: Gewinn/Tag ohne Fokus = (2.711,5 - 3.200 / 1,33) x 25 % von 8 verkauft/Tag = 610,97",
+        Math.abs(ohne.gewinnJeTag - (erl - 3200 / 1.33) * 2) < 1e-6 && Math.abs(ohne.gewinnJeTag - 610.97) < 0.01 && ohne.tagGrenze === "absatz" && ohne.stueckJeTagErreichbar === 2,
+        ohne.gewinnJeTag
+      );
+      // Mit Fokus: 10.000 / F Stueck je Tag. Bei 8 verkauft/Tag begrenzt der
+      // Absatz (2 Stueck), bei 8.000 verkauft/Tag der Fokus.
+      const viel = [Object.assign({}, stadtDaten[0], { absatz: { T5_MAIN_SWORD: { 1: { stueckJeTag: 8000 } } } })];
+      const mitViel = zeilenRechnen([kBreit], viel, Object.assign({}, auswahl, { mitFokus: true }), einst)[0];
+      const fokusStueck = 10000 / F;
+      pruefe(
+        "o4 zeilenRechnen: mit Fokus begrenzt je nach Lage der Absatz (25 % von 8 = 2 Stueck) oder das Fokusbudget (10.000 / Fokus je Stueck)",
+        fokusStueck > 2 && fokusStueck < 2000 && Math.abs(mit.gewinnJeTag - (erl - 3200 / 1.92) * 2) < 1e-6 && mit.tagGrenze === "absatz" &&
+          Math.abs(mitViel.gewinnJeTag - (erl - 3200 / 1.92) * fokusStueck) < 1e-6 && mitViel.tagGrenze === "fokus" && Math.abs(mitViel.stueckJeTagErreichbar - fokusStueck) < 1e-9,
+        mit.gewinnJeTag + " / " + mitViel.gewinnJeTag + " / " + fokusStueck
+      );
+      const ohnePremium = zeilenRechnen([kBreit], viel, Object.assign({}, auswahl, { mitFokus: true }), Object.assign({}, einst, { premium: false }))[0];
+      pruefe(
+        "o4 zeilenRechnen: ohne Premium keine Fokusgrenze (kein belegtes Tagesbudget): Gewinn/Stueck x 25 % von 8.000",
+        ohnePremium.tagGrenze === "absatz" && ohnePremium.fokusBudgetBelegt === false && Math.abs(ohnePremium.gewinnJeTag - ohnePremium.gewinn * 2000) < 1e-6,
+        ohnePremium.gewinnJeTag
+      );
+      const keinHandel = zeilenRechnen([kBreit], [Object.assign({}, stadtDaten[0], { absatz: {} })], auswahl, einst)[0];
+      const nurGut = zeilenRechnen([kBreit], [Object.assign({}, stadtDaten[0], { absatz: { T5_MAIN_SWORD: { 2: { stueckJeTag: 9 } } } })], Object.assign({}, auswahl, { volumenAlleQualitaeten: false }), einst)[0];
+      pruefe(
+        "o4 zeilenRechnen: ohne erfassten Handel (auch 0 in Normal bei \"nur Normal\") bleibt Gewinn/Tag leer und sortiert ans Ende",
+        keinHandel.gewinnJeTag === null && keinHandel.gewinn != null && nurGut.stueckJeTag === 0 && nurGut.gewinnJeTag === null &&
+          sortiere([keinHandel, ohne, nurGut], "tag")[0] === ohne && filtereUndSortiere([keinHandel, ohne], { minAbsatz: 0, sortierung: "tag" }).map((x) => x.gewinnJeTag).join() === ohne.gewinnJeTag + ",",
+        keinHandel.gewinnJeTag + " / " + nurGut.gewinnJeTag
+      );
+      const halb = zeilenRechnen([kBreit], stadtDaten, auswahl, Object.assign({}, einst, { absatzAnteilProzent: 50 }))[0];
+      pruefe("o4 zeilenRechnen: gemeinsamer Anteil 50 % verdoppelt den Gewinn/Tag", Math.abs(halb.gewinnJeTag - 2 * ohne.gewinnJeTag) < 1e-6, halb.gewinnJeTag);
+
+      // Vorgang ohne Fokus im Dump (craftingfocus 0): Mehrgewinn leer.
+      const alleSpeisen = kandidaten({ warengruppen: ["food"], tiers: [8], stufen: [0], artefakte: true });
+      const ohneF = alleSpeisen.find((k) => k.rezepte.every((r) => !(REGELN.rezepteFuerStufe(g.items[k.item], k.stufe)[r.rezeptIndex].f > 0)));
+      pruefe(
+        "o4 zeilenRechnen: Craft ohne Fokus im Dump (" + (ohneF ? ohneF.item : "keiner gefunden") + ") hat keinen Mehrgewinn je Fokuspunkt, aber einen Gewinn/Tag",
+        (function () {
+          if (!ohneF) return false;
+          const preiseRoh = {};
+          ohneF.rezepte.forEach((r) => r.zutaten.forEach((zt) => (preiseRoh[marktIdVon(zt.n, zt.stufe)] = sp(10))));
+          const dat = [{ stadt: "Lymhurst", preiseRoh, produktJeQ: { [ohneF.marktId]: { 1: sp(1000000) } }, absatz: { [ohneF.marktId]: { 1: { stueckJeTag: 40 } } } }];
+          const z1 = zeilenRechnen([ohneF], dat, Object.assign({}, auswahl, { warengruppen: ["food"], mitFokus: true }), Object.assign({}, einst, { stationssaetze: { Kueche: 0 } }))[0];
+          return z1.gewinn > 0 && z1.mehrgewinnJeFokus === null && z1.fokusJeStueck === null && Math.abs(z1.gewinnJeTag - z1.gewinn * 10) < 1e-6 && z1.tagGrenze === "absatz" && z1.fokusBudgetBelegt === null;
+        })(),
+        ohneF ? ohneF.marktId : ""
+      );
+
+      // Bisherige Zahlen unveraendert: zeichengleich zur Rechnung vor dem
+      // Umbau (fokusAus je nach Schalter, bester Craft dieser Variante).
+      const viele = kandidaten({ warengruppen: ["sword", "bow", "cloth_helmet", "bag"], tiers: [4, 5, 6], stufen: [0, 1, 2], artefakte: true });
+      const ids = benoetigteMarktIds(viele);
+      const prZ = {};
+      ids.zutaten.forEach((id, i) => (prZ[id] = sp(60 + ((i * 53) % 307))));
+      const prP = {};
+      ids.produkte.forEach((id, i) => (prP[id] = { 1: sp(20000 + ((i * 131) % 9001)) }));
+      const datV = [{ stadt: "Lymhurst", preiseRoh: prZ, produktJeQ: prP, absatz: {} }];
+      const e3 = { premium: true, stationssaetze: { Kriegerschmiede: 400, Jaegerhuette: 300, Magierturm: 350, Werkzeugmacher: 250 }, fce: 9000, tagesbonus: { bow: "gold" }, maxPreisAlterMin: null };
+      const abweichend = [];
+      [false, true].forEach((mitFokus) => {
+        const neu = zeilenRechnen(viele, datV, Object.assign({}, auswahl, { mitFokus }), e3);
+        viele.forEach((k, i) => {
+          const alt = besterCraft(
+            RECHENKERN.kosten(k.item, k.stufe, 1, {
+              preise: REGELN.preiseZuOptsFormat(prZ), eigenpreise: {}, kaufweg: "sofort", stadt: "Lymhurst", stationssaetze: e3.stationssaetze, fce: e3.fce, fceUeberschreibungen: {}, fokusAus: !mitFokus,
+              fokusRegelJeKategorie: {}, fokusUebersteuerungJeKnoten: {}, fokuswert: 0, tagesbonus: e3.tagesbonus, zusatzProduktionsbonus: 0, maxPreisAlterMin: null, nurDirekteEbene: true,
+            }),
+            k.rezepte.map((r) => r.rezeptIndex),
+            mitFokus
+          );
+          const zz = neu[i];
+          const erloes = REGELN.erloesJeStueck(prP[k.marktId][1], { verkaufsweg: "order", premium: true, maxPreisAlterMin: null }).netto;
+          if (!alt || String(zz.silber) !== String(alt.silber) || String(zz.gewinn) !== String(erloes - alt.silber) || String(zz.marge) !== String((erloes - alt.silber) / alt.silber) || zz.rezeptIndex !== alt.weg.rezeptIndex)
+            abweichend.push(k.marktId + (mitFokus ? "+F" : ""));
+        });
+      });
+      pruefe(
+        "o4 bisherige Zahlen unveraendert: Kosten, Gewinn/Stueck, Marge und gewaehltes Rezept zeichengleich zur Rechnung vor dem Umbau (" + viele.length + " Crafts, mit und ohne Fokus)",
+        viele.length > 100 && abweichend.length === 0,
+        abweichend.slice(0, 5).join(", ")
+      );
+
+      const alt1 = einstellungenBereinigen({ sortierung: "marge" });
+      const bewusst = einstellungenBereinigen(Object.assign({}, alt1, { sortierung: "marge" }));
+      pruefe(
+        "o4 Sortierung: Vorgabe Gewinn/Tag; gespeichertes \"marge\" wird einmalig umgestellt, danach bewusst gewaehltes \"marge\" bleibt, gespeichertes \"gesamt\" und \"volumen\" bleiben",
+        standardEinstellungen().sortierung === "tag" && alt1.sortierung === "tag" && alt1.sortTagUmgestellt === true && bewusst.sortierung === "marge" &&
+          einstellungenBereinigen(JSON.parse(JSON.stringify(bewusst))).sortierung === "marge" && einstellungenBereinigen({ sortierung: "gesamt" }).sortierung === "gesamt" &&
+          einstellungenBereinigen({ sortierung: "volumen" }).sortierung === "volumen" && einstellungenBereinigen({ sortierung: "quatsch" }).sortierung === "tag",
+        [alt1.sortierung, bewusst.sortierung].join()
+      );
+    })();
+
     return ergebnisse;
   }
 
@@ -834,6 +958,7 @@ const CRAFTEN = (function () {
     const stationenEl = el("cgStationen");
     const preiseResetEl = el("cgPreiseReset");
     const umfangEl = el("cgUmfang");
+    const anteilEl = el("cgAnteil");
 
     let auswahl = standardEinstellungen();
     let letzteZeilen = null;
@@ -1022,7 +1147,14 @@ const CRAFTEN = (function () {
         "(Etwa-Null-Grenze " + String(auswahl.toleranzProzent).replace(".", ",") + " %, Zusatzbonus " + String(auswahl.zusatzbonusProzent).replace(".", ",") + " %, Menge " + auswahl.menge + ")";
     }
 
+    /** Gemeinsame Annahme "Anteil am Tageshandel" ins Feld schreiben (v3.18.0). */
+    function anteilSetzen() {
+      if (!anteilEl) return;
+      anteilEl.value = UI.einstellungenLesen().absatzAnteilProzent;
+    }
+
     function felderSetzen() {
+      anteilSetzen();
       toleranzEl.value = auswahl.toleranzProzent;
       mengeEl.value = auswahl.menge;
       minAbsatzEl.value = auswahl.minAbsatz;
@@ -1080,6 +1212,13 @@ const CRAFTEN = (function () {
     }
 
     wurzel.addEventListener("change", (ev) => {
+      // v3.18.0: Anteil am Tageshandel, gemeinsam mit den anderen Gewinn-Reitern.
+      if (anteilEl && ev.target === anteilEl) {
+        UI.absatzAnteilSetzen(anteilEl.value, "craften");
+        anteilSetzen();
+        rechnen();
+        return;
+      }
       const zaehlerEl = ev.target.closest(".cg-zaehler");
       if (zaehlerEl && ev.target.classList.contains("cg-zn")) {
         planSetzen(zaehlerEl.dataset.cgPlan, ev.target.value);
@@ -1211,6 +1350,12 @@ const CRAFTEN = (function () {
       schalterSetzen();
       rechnen();
     });
+    // Anteil am Tageshandel in einem anderen Gewinn-Reiter geaendert (v3.18.0).
+    document.addEventListener(UI.ABSATZANTEIL_EVENT, (ev) => {
+      if (ev.detail && ev.detail.quelle === "craften") return;
+      anteilSetzen();
+      rechnen();
+    });
 
     function alterText(min) {
       if (min == null || !isFinite(min)) return "";
@@ -1303,10 +1448,12 @@ const CRAFTEN = (function () {
         "<thead><tr><th>Produkt</th><th>Einkauf je Vorgang</th><th>Verkauf</th>" +
         sortTh("volumen", "verkauft/Tag", "Erfasster Handel des Produkts in der Verkaufsstadt, Mittel der letzten " + TAGE_FENSTER + " Tage. Klicken sortiert absteigend.") +
         sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
-        "<th class='num' title='Kosten je Stück mal der eingestellten Menge: so viel Silber kostet die ganze Menge, Material nach Rückgewinnung plus Stationsgebühr.'>Kosten gesamt</th>" +
+        "<th class='num' title='Kosten je Stück mal der eingestellten Menge: so viel Silber kostet die ganze Menge, Material nach Rückgewinnung plus Stationsgebühr.'>Kosten<br>gesamt</th>" +
         sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
-        sortTh("marge", "Marge", "Gewinn bezogen auf die eigenen Kosten. Klicken sortiert absteigend.") +
-        sortTh("gesamt", "Gewinn gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
+        sortTh("marge", "Marge", V.KOPF_TITEL.marge) +
+        sortTh("tag", "Gewinn/Tag", V.KOPF_TITEL.tag(kontext.anteilProzent)) +
+        sortTh("jefokus", "Mehrgewinn<br>je Fokus", V.KOPF_TITEL.jefokus) +
+        sortTh("gesamt", "Gewinn<br>gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
         "</tr></thead>"
       );
     }
@@ -1493,6 +1640,7 @@ const CRAFTEN = (function () {
             "<td class='num'>" + fmt(z.kostenGesamt) + "</td>" +
             "<td class='num vd-wert' title='" + einstufung + "'>" + fmt(z.gewinn) + "</td>" +
             "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
+            V.kennzahlZellenHtml(z, esc) +
             "<td class='num vd-wert'>" + fmt(z.gewinnGesamt) + "</td>" +
             "</tr>"
           );
@@ -1514,6 +1662,7 @@ const CRAFTEN = (function () {
           alleQ: auswahl.volumenAlleQualitaeten !== false,
           mehrEk: V.schilderZeigen(auswahl.einkaufStaedte),
           mehrVk: V.schilderZeigen(auswahl.verkaufStaedte),
+          anteilProzent: V.anteilVon(einstellungen) * 100,
         },
       };
       neuBewerten();
