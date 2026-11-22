@@ -558,6 +558,30 @@ Chancenpunkt entspricht 1 % Bonus in Korns Formel - Wiki "Crafting", wörtlich:
 Effekt von Fokus und Essen auf die Qualität selbst ist weiterhin nicht
 entwicklerseitig beziffert, nur unbestätigte Spielerschätzungen.
 
+**Qualitätsbonus durch Essen: Salate (22.11.2026, Client-Dump).** In
+`spells.json` tragen genau die Zauber der Salate einen Effekt
+`craftingquality` (dazu `crafttime`, schnelleres Craften); `items.json`
+ordnet sie über `@consumespell` je Verzauberungsstufe zu:
+
+| Speise | .0 | .1 | .2 | .3 |
+|---|---|---|---|---|
+| Bohnensalat (T2) | 33 | 49,5 | 66 | 82,5 |
+| Rübensalat (T4) | 66 | 82,5 | 99 | 115,5 |
+| Kartoffelsalat (T6) | 99 | 115,5 | 132 | 148,5 |
+| Flachwassertintenfischsalat (T2) | 49,5 | 74,25 | 99 | 123,75 |
+| Meeresoktopussalat (T4) | 99 | 123,75 | 148,5 | 173,25 |
+| Tiefseekalmarsalat (T6) | 148,5 | 173,25 | 198 | 222,75 |
+
+Roh gegessen: Flachwasser-Tintenfisch 16,5, Meeresoktopus 33, Tiefseekalmar
+49,5. Keine andere Speise und kein Trank trägt `craftingquality`. **Nicht
+belegt ist die Einheit:** dass diese Zahl dieselben Chancenpunkte sind wie am
+Schicksalsbrett (1 Punkt = 1 % Chance auf einen weiteren Wurf), liegt nahe
+(ein Testzauber `TEST_CRAFTQUALITY` trägt den Wert 100), ist aber nicht im
+Spiel abgelesen. Ebenso offen: die Dauer des Buffs (das Feld `@time` nennt
+120, Einheit unklar) und ob sich Essen und Schicksalsbrett addieren. Der
+Fokus trägt im Dump keinen solchen Effekt; sein Einfluss auf die Qualität
+bleibt unbeziffert.
+
 **Speisen und Tränke sind grundsätzlich nicht qualifizierbar** (Wiki: "All
 consumables can not be qualified. Consumables are foods, and potions."),
 **ebenso Werkzeuge außer der Angelrute** (Wiki: "All the tools except fishing
