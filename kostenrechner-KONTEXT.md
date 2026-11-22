@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.19.1 · Optimierungsrunde O6, Teil 1: Kontextdatei verschlankt
+Stand: 2026-11-22 · Version: v3.19.1 · Optimierungsrunde O1 bis O6 abgeschlossen
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -55,7 +55,8 @@ der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
 ## Aktueller Stand
 
 **Optimierungsrunde O1 bis O5 abgeschlossen (v3.15.0 bis v3.19.0, alle
-22.11.2026), O6 Teil 1 erledigt (v3.19.1, nur Doku).** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
+22.11.2026), O6 Teil 1 erledigt (v3.19.1, nur Doku), Teil 2 entfällt.
+Die Runde ist damit abgeschlossen.** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
 Fund zum Einkauf, Potenzialerkennung ohne Vorauswahl, Performance nur wo
 nötig. Einzelheiten je Version: Historie, Nachträge v3.15.0 bis v3.19.0.
 Selbsttest zuletzt **829/829** grün.
@@ -232,9 +233,11 @@ Aus dem Eintopf- und dem Pizza-Projekt übernommen, dort mehrfach bestätigt.
 Alle offenen Punkte, Stand v3.19.0. In Klammern die Version, in deren
 Nachtrag die Einzelheiten stehen (Historie); „Backlog alt“ meint dort den
 Abschnitt „Backlog / Mögliche nächste Schritte“ im Block vom 22.11.2026.
-O6, Teil 2 (`js/ui.js` aufteilen) ist nicht begonnen: die Hauptsitzung rät
-davon ab (kaum Tests für das Rendering, gemeinsamer Zustand im Startblock,
-kein Nutzen für die Ziele der Runde), die Entscheidung des Nutzers steht aus.
+**Die Optimierungsrunde ist abgeschlossen.** O6, Teil 2 (`js/ui.js`
+aufteilen) entfällt: Nutzer-Entscheidung vom 22.11.2026 auf Rat der
+Hauptsitzung (kaum Tests für das Rendering, gemeinsamer Zustand im
+Startblock, kein Nutzen für die Ziele der Runde). Nicht erneut vorschlagen,
+solange sich daran nichts ändert.
 
 **Rechnung und Daten**
 
