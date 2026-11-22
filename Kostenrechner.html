@@ -724,6 +724,53 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 .ka-dlg-knoepfe{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line)}
 .ka-dlg-knoepfe .links{margin-right:auto}
 #kaLoeschen{background:var(--red);border-color:var(--red);color:#fff}
+
+/* Reiter "Lootsplit" (js/lootsplit.js, v3.20.0). Karten wie in "Ancient
+   Lands" (--r-card). Eingaben und Ergebnisse je Mitglied in einer Zeile. */
+.ls-karte{background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:var(--r-card);
+  padding:16px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ls-karte h2{margin:0;padding:0;border:0;font-size:16px}
+.ls-kopf{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.ls-kopf h2{margin-right:auto}
+#tab-lootsplit label.ls-gilde{display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap;cursor:help}
+#tab-lootsplit input{min-height:36px;border-radius:var(--r);font-weight:600;font-size:14px}
+#tab-lootsplit #lsProzent{width:72px;text-align:right}
+#tab-lootsplit input.ls-falsch{border-color:var(--red);box-shadow:0 0 0 3px oklch(0.62 0.19 25 / .18)}
+.ls-knoepfe{display:flex;flex-wrap:wrap;gap:8px}
+#tab-lootsplit :is(#lsNeu,#lsPlus,#lsKopieren){min-height:36px;border-radius:var(--r);white-space:nowrap}
+#tab-lootsplit :is(.mini,button.ls-weg,#lsKopieren):focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.ls-warnung{padding:8px 12px;border:1px solid var(--warn);border-radius:var(--r-tag);background:var(--warn-bg);color:var(--warn);font-size:13px;font-weight:800}
+.ls-warnung[hidden],.ls-keine[hidden]{display:none}
+/* position:relative: sonst weitet das absolut gesetzte .sr-only im Tabellenkopf die Seite statt des Rahmens. */
+.ls-tabrahmen{position:relative;overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.ls-tabelle{min-width:860px;font-size:14px}
+.ls-tabelle :is(th,td){padding:6px 8px}
+.ls-tabelle th.ls-trenn,.ls-tabelle td.ls-anspruch,.ls-tabelle tfoot td.ls-trenn{border-left:1px solid var(--line-strong);padding-left:14px}
+.ls-tabelle tbody tr:hover{background:transparent}
+.ls-tabelle input.ls-name{min-width:140px}
+.ls-tabelle input.ls-zahl{width:132px;text-align:right;font-variant-numeric:tabular-nums}
+.ls-tabelle td.ls-saldo{font-weight:700;min-width:150px}
+.ls-tabelle td.ls-zahlt{color:var(--gold)}
+.ls-tabelle td.ls-bekommt{color:var(--green)}
+.ls-tabelle td.ls-glatt{color:var(--dim);font-weight:500}
+.ls-tabelle tr.ls-leer td{cursor:help}
+.ls-tabelle tfoot td{border-bottom:0;border-top:1px solid var(--line-strong);color:var(--dim);font-weight:700}
+.ls-tabelle td.ls-weg-zelle{width:40px;padding-left:0}
+button.ls-weg{width:28px;height:28px;padding:0;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2);color:var(--dim);font:700 16px/26px "Manrope",sans-serif}
+button.ls-weg:hover{border-color:var(--red);color:var(--red);filter:none}
+.ls-unten{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;margin-top:16px;align-items:start}
+.ls-rechnung{display:flex;flex-direction:column}
+.ls-rz{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px;color:var(--dim)}
+.ls-rz[title]{cursor:help}
+.ls-rz:last-child{border-bottom:0}
+.ls-rz b{color:var(--text)}
+.ls-rz-summe{color:var(--text);font-weight:700}
+.ls-rz-summe b{color:var(--gold)}
+.ls-rz-warn,.ls-rz-warn b{color:var(--warn);font-weight:800}
+ol.ls-ueberweisungen{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+ol.ls-ueberweisungen:empty{display:none}
+ol.ls-ueberweisungen b{color:var(--gold)}
+.ls-keine{color:var(--dim);font-size:13px}
 </style>
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css?v=1.9.4">
 </head>
@@ -746,6 +793,7 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
   <button type="button" id="tabbtn-craften" class="tabbtn" data-tab="craften" role="tab" aria-selected="false" aria-controls="tab-craften">Craften: Gewinn</button>
   <button type="button" id="tabbtn-veredeln" class="tabbtn" data-tab="veredeln" role="tab" aria-selected="false" aria-controls="tab-veredeln">Veredeln leveln</button>
   <button type="button" id="tabbtn-karte" class="tabbtn" data-tab="karte" role="tab" aria-selected="false" aria-controls="tab-karte">Ancient Lands</button>
+  <button type="button" id="tabbtn-lootsplit" class="tabbtn" data-tab="lootsplit" role="tab" aria-selected="false" aria-controls="tab-lootsplit">Lootsplit</button>
   <span id="abrufStatus" class="abruf-status" role="status" aria-live="off" data-zustand="ruht" tabindex="0"><span class="punkt" aria-hidden="true"></span><span id="abrufStatusText">Abrufe: ruht · 0 offen · 0,0 MB</span></span>
 </div>
 
@@ -1576,26 +1624,84 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 
 </div><!-- /tab-karte -->
 
+<div id="tab-lootsplit" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-lootsplit" style="display:none">
+
+<section class="ls-karte" aria-labelledby="lsK1">
+  <div class="ls-kopf">
+    <h2 id="lsK1">Lootsplit</h2>
+    <label class="ls-gilde" for="lsProzent" title="Anteil der Gildenkasse in Prozent, 0 bis 100. Er wird vom Rest nach Regear genommen, nicht vom ganzen Topf: erst wird das Regear erstattet, dann bekommt die Gilde ihren Teil vom Überschuss, der Rest wird gleich geteilt.">Gildenkasse %
+      <input type="text" id="lsProzent" inputmode="decimal" autocomplete="off" placeholder="0"></label>
+    <div class="ls-knoepfe">
+      <button type="button" class="mini" id="lsNeu" title="Leert Lootwert, Geldbeutel und Regear aller Mitglieder. Namen und Gildenkasse bleiben.">Neuer Split</button>
+      <button type="button" id="lsKopieren" title="Kopiert das Ergebnis als Klartext, zum Einfügen in Discord.">Ergebnis kopieren</button>
+    </div>
+  </div>
+  <div id="lsWarnung" class="ls-warnung" role="status" hidden></div>
+  <div class="ls-tabrahmen">
+    <table class="ls-tabelle">
+      <thead><tr>
+        <th class="l" scope="col" title="Leer gelassen heißt die Zeile „Mitglied 1“ usw. Eine ganz leere Zeile (kein Name, keine Werte) zählt nicht als Mitglied.">Name</th>
+        <th scope="col" title="Geschätzter Wert der Beute, die dieses Mitglied gerade hält, in Silber. Wer Beute hält und sie nicht verkauft, zahlt den Ausgleich in Silber. Eingabe auch als 250k oder 1,5m.">Lootwert</th>
+        <th scope="col" title="Silber aus Geldbeuteln, das dieses Mitglied eingesammelt hat. Eingabe auch als 250k oder 1,5m.">Geldbeutel</th>
+        <th scope="col" title="Kosten der Ausrüstung, die dieses Mitglied verloren hat. Wird vorab aus dem Topf erstattet. Eingabe auch als 250k oder 1,5m.">Regear</th>
+        <th scope="col" class="ls-trenn" title="Was dem Mitglied zusteht: sein Regear plus der gleiche Anteil für alle.">Anspruch</th>
+        <th scope="col" title="Was das Mitglied gerade hat: Lootwert plus Geldbeutel.">Hält</th>
+        <th scope="col" title="Hält minus Anspruch. „zahlt“: das Mitglied hält mehr, als ihm zusteht, und gibt die Differenz in Silber ab. „bekommt“: ihm fehlt noch etwas. Der Lootwert ist geschätzt; wer Beute hält und sie nicht verkauft, zahlt den Ausgleich in Silber.">Saldo</th>
+        <th scope="col"><span class="sr-only">Entfernen</span></th>
+      </tr></thead>
+      <tbody id="lsZeilen"></tbody>
+      <tfoot><tr>
+        <td class="l">Summe</td>
+        <td class="num" id="lsSumLoot"></td>
+        <td class="num" id="lsSumBeutel"></td>
+        <td class="num" id="lsSumRegear"></td>
+        <td class="num ls-trenn" id="lsSumAnspruch"></td>
+        <td class="num" id="lsSumHaelt" title="Der Topf: alles, was die Gruppe hält."></td>
+        <td class="num" id="lsSumSaldo"></td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+  </div>
+  <div class="ls-knoepfe">
+    <button type="button" class="mini" id="lsPlus" title="Neue Zeile. Geht auch mit Enter im Regear-Feld der letzten Zeile.">Mitglied hinzufügen</button>
+  </div>
+</section>
+
+<div class="ls-unten">
+  <section class="ls-karte" aria-labelledby="lsK2">
+    <h2 id="lsK2">Zusammenfassung</h2>
+    <div id="lsRechnung" class="ls-rechnung"></div>
+  </section>
+  <section class="ls-karte" aria-labelledby="lsK3">
+    <h2 id="lsK3" title="Möglichst wenige Zahlungen: der größte Schuldner zahlt an den größten Gläubiger, bis alles ausgeglichen ist. Die Gildenkasse ist ein Empfänger.">Überweisungen</h2>
+    <ol id="lsUeberweisungen" class="ls-ueberweisungen"></ol>
+    <div id="lsKeine" class="ls-keine" hidden></div>
+  </section>
 </div>
 
-<script src="rezepte.js?v=3.19.0"></script>
-<script src="item-namen.js?v=3.19.0"></script>
-<script src="js/preise.js?v=3.19.0"></script>
-<script src="js/regeln.js?v=3.19.0"></script>
-<script src="js/rechenkern.js?v=3.19.0"></script>
-<script src="js/ui.js?v=3.19.0"></script>
-<script src="js/eintopf-daten.js?v=3.19.0"></script>
-<script src="js/eintopf-preise.js?v=3.19.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.19.0"></script>
-<script src="js/eintopf-ui.js?v=3.19.0"></script>
-<script src="js/tabs.js?v=3.19.0"></script>
-<script src="js/preisvergleich.js?v=3.19.0"></script>
-<script src="js/veredeln.js?v=3.19.0"></script>
-<script src="js/craften.js?v=3.19.0"></script>
-<script src="js/gelegenheiten.js?v=3.19.0"></script>
+</div><!-- /tab-lootsplit -->
+
+</div>
+
+<script src="rezepte.js?v=3.20.0"></script>
+<script src="item-namen.js?v=3.20.0"></script>
+<script src="js/preise.js?v=3.20.0"></script>
+<script src="js/regeln.js?v=3.20.0"></script>
+<script src="js/rechenkern.js?v=3.20.0"></script>
+<script src="js/ui.js?v=3.20.0"></script>
+<script src="js/eintopf-daten.js?v=3.20.0"></script>
+<script src="js/eintopf-preise.js?v=3.20.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.20.0"></script>
+<script src="js/eintopf-ui.js?v=3.20.0"></script>
+<script src="js/tabs.js?v=3.20.0"></script>
+<script src="js/preisvergleich.js?v=3.20.0"></script>
+<script src="js/veredeln.js?v=3.20.0"></script>
+<script src="js/craften.js?v=3.20.0"></script>
+<script src="js/gelegenheiten.js?v=3.20.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.19.0"></script>
-<script src="js/karte.js?v=3.19.0"></script>
+<script src="js/karte-daten.js?v=3.20.0"></script>
+<script src="js/karte.js?v=3.20.0"></script>
+<script src="js/lootsplit.js?v=3.20.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,
@@ -1610,6 +1716,7 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
     ["PREISVERGLEICH", "js/preisvergleich.js"], ["VEREDELN", "js/veredeln.js"], ["CRAFTEN", "js/craften.js"],
     ["GELEGENHEITEN", "js/gelegenheiten.js"],
     ["L", "vendor/leaflet/leaflet.js"], ["KARTE_DATEN", "js/karte-daten.js"], ["KARTE", "js/karte.js"],
+    ["LOOTSPLIT", "js/lootsplit.js"],
   ];
   const fehlend = module.filter(function (m) {
     try { return new Function("return typeof " + m[0])() === "undefined"; } catch (e) { return true; }

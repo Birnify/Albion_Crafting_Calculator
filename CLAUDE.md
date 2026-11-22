@@ -903,6 +903,7 @@ dort) - der Git-Commit bleibt dort trotzdem Pflicht.
 | `js/craften.js` | Reiter „Craften: Gewinn" (seit v3.11.0, ersetzt „Schnelles Geld"): lohnende Crafts aus eingekauftem Material, mit Volumenfilter |
 | `js/veredeln.js` | Reiter „Veredeln leveln": Veredeln mit Gewinn oder etwa Null; Einkaufs- und Verkaufsstädte mehrfach, eine Fertigungsstadt (seit v3.10.0) |
 | `js/karte.js` | Reiter „Ancient Lands“: Karte, Lauf-Tracker, eigene Marker (seit v3.14.0) |
+| `js/lootsplit.js` | Reiter „Lootsplit“ (seit v3.20.0): Beute einer Gruppe aufteilen, Regear vorab, Gildenkasse in % |
 | `build_karte.py` | Erzeugt `assets/ancient-lands.webp` und `js/karte-daten.js` aus dem Client-Dump |
 | `vendor/leaflet/` | Leaflet 1.9.4, lokal statt CDN |
 | `rezepte.js`, `item-namen.js` | Von `build_graph.py` erzeugt, nicht von Hand bearbeiten |

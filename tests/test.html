@@ -75,6 +75,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 <script src="../js/gelegenheiten.js"></script>
 <script src="../js/karte-daten.js"></script>
 <script src="../js/karte.js"></script>
+<script src="../js/lootsplit.js"></script>
 <script src="../js/eintopf-daten.js"></script>
 <script src="../js/eintopf-preise.js"></script>
 <script src="../js/eintopf-rechenkern.js"></script>
@@ -107,6 +108,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   // ---- js/gelegenheiten.js (Reiter "Gelegenheiten", v3.17.0, OPTIMIERUNG-PLAN.md O3) ----
   GELEGENHEITEN.selbsttest().forEach((e) => pruefe("gelegenheiten: " + e.name, e.ok, e.details));
   KARTE.selbsttest().forEach((e) => pruefe("karte: " + e.name, e.ok, e.details));
+  // ---- js/lootsplit.js (Reiter "Lootsplit", v3.20.0) ----
+  LOOTSPLIT.selbsttest().forEach((e) => pruefe("lootsplit: " + e.name, e.ok, e.details));
   // ---- v3.19.0 (O5): Schutz gegen den verlorenen Klick (VEREDELN.nachZeiger), mit nachgebildeten Mausereignissen ----
   (function () {
     const kiste = document.createElement("div");

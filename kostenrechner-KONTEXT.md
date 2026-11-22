@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.19.1 · Optimierungsrunde O1 bis O6 abgeschlossen
+Stand: 2026-11-22 · Version: v3.20.0 · Neuer Reiter „Lootsplit“
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -17,7 +17,7 @@ Stand: 2026-11-22 · Version: v3.19.1 · Optimierungsrunde O1 bis O6 abgeschloss
 ## Was ist das?
 
 „Albion Werkzeuge“ (sichtbarer Titel; Ordner und Repo heißen bewusst weiter
-`Kostenrechner`): eine Seite `Kostenrechner.html` mit **sieben Bereichen**,
+`Kostenrechner`): eine Seite `Kostenrechner.html` mit **acht Bereichen**,
 umgeschaltet über die Reiterleiste (`js/tabs.js`). Läuft per Doppelklick aus
 `file://`, ohne Build-Werkzeug. Jeder Bereich hat eigenen Zustand; gemeinsam
 sind die Preisschicht (`js/preise.js`) und einige Einstellungen (s. unten).
@@ -48,6 +48,11 @@ Reihenfolge wie in der Reiterleiste:
 7. **Ancient Lands** (`js/karte.js`, `js/karte-daten.js`, seit v3.14.0):
    interaktive Karte (Leaflet) mit festen Punkten aus dem Client-Dump,
    Lauf-Tracker und eigenen Markern.
+8. **Lootsplit** (`js/lootsplit.js`, seit v3.20.0): Beute einer Gruppe
+   aufteilen. Je Mitglied Lootwert, Geldbeutel und Regear; Regear wird vorab
+   erstattet, ein Prozentsatz für die Gildenkasse abgezogen, der Rest gleich
+   geteilt; Ergebnis sind Anspruch, Saldo und die Überweisungen. Keine
+   Abrufe, kein Bezug zu den anderen Bereichen.
 
 Die bisherige Langfassung dieses Abschnitts (Entstehung, App-Fusion) steht in
 der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
@@ -59,7 +64,7 @@ der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
 Die Runde ist damit abgeschlossen.** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
 Fund zum Einkauf, Potenzialerkennung ohne Vorauswahl, Performance nur wo
 nötig. Einzelheiten je Version: Historie, Nachträge v3.15.0 bis v3.19.0.
-Selbsttest zuletzt **829/829** grün.
+Selbsttest zuletzt **868/868** grün.
 
 - **O1, v3.15.0, gemeinsamer Preisbestand.** Preise und Handelsvolumen von
   `js/preise.js` liegen in IndexedDB (`albion_kostenrechner_bestand`), mit
@@ -113,6 +118,31 @@ Selbsttest zuletzt **829/829** grün.
   200). `VEREDELN.nachZeiger()` behebt den verlorenen ersten Klick nach
   einer Zahleneingabe. Tabellen bei 1440 px ohne waagerechtes Scrollen.
 
+**Lootsplit, v3.20.0 (22.11.2026, nach der Runde).** Wunsch des Nutzers:
+Lootwert, Geldbeutel, Regear getrennt je Partymitglied; seine Entscheidungen:
+alle drei je Mitglied, Regear vorab erstatten, Gildenkasse in % vorher
+abziehen. `LOOTSPLIT.rechnen(mitglieder, prozent)` in ganzen Silber (BigInt):
+
+```
+Topf = Summe Lootwert + Summe Geldbeutel;  Rest = Topf − Summe Regear
+Gildenkasse = abrunden(Rest × %)           (nur wenn Rest > 0)
+Anteil = abrunden((Rest − Gildenkasse) / n)
+Anspruch(i) = Regear(i) + Anteil;  Saldo(i) = Hält(i) − Anspruch(i)
+```
+
+Der Rundungsrest geht an die Gildenkasse (ohne Gildenanteil an das erste
+Mitglied). Reicht der Topf nicht fürs Regear, wird es anteilig erstattet
+(Hinweis in Warnfarbe). `ueberweisungen()` bildet die Zahlungsliste, die
+Gildenkasse ist ein Empfänger. **Festlegungen der Hauptsitzung bzw. des
+Umsetzers, vom Nutzer noch nicht bestätigt:** Gildenanteil vom Rest NACH
+Regear (nicht vom ganzen Topf); eine ganz leere Zeile (kein Name, alle
+Werte 0) zählt nicht als Mitglied, ein Mitglied ohne Beute und ohne Regear
+braucht also einen Namen. Eingabe versteht `250k`, `1,5m`; „Ergebnis
+kopieren“ liefert Klartext für Discord; „Neuer Split“ behält Namen und
+Gildenkasse. Von der Hauptsitzung nachgerechnet: zwei eigene Fälle (vier
+Mitglieder mit 7,5 % und Rundungsrest 2; Topf reicht nicht) stimmen.
+Ungeprüft: echte Zwischenablage, Touch, Firefox.
+
 **Gemeinsame Einstellungen** (gelten in Kostenrechner und allen
 Gewinn-Reitern, gespeichert in `albion_kostenrechner_einstellungen`): jede
 Änderung läuft über eine `UI`-Funktion, die speichert und ein Ereignis
@@ -139,6 +169,7 @@ meldet; die anderen Reiter ziehen nach.
 | `albion_kostenrechner_eintopf_preise_v1`, `..._eintopf_einstellungen_v1` | Preise und Einstellungen des Eintopf-Rechners | `js/eintopf-preise.js`, `js/eintopf-ui.js` |
 | `albion_kostenrechner_preisvergleich_v1`, `..._preisvergleich_staedte_v1` | Itemliste und Städte des Preisvergleichs | `js/preisvergleich.js` |
 | `albion_kostenrechner_karte_v1` | Ebenen, Lauf, eigene Marker | `js/karte.js` |
+| `albion_kostenrechner_lootsplit_v1` | Mitglieder mit Werten, Gildenkasse % | `js/lootsplit.js` |
 
 ## Dateistruktur
 
@@ -148,7 +179,7 @@ der Änderungsgeschichte je Datei steht in der Historie, Block „Ausgelagert am
 
 | Datei | Zweck |
 |---|---|
-| `Kostenrechner.html` | Die App: Markup und CSS aller sieben Reiter, bindet alle Skripte mit `?v=<Version>` ein |
+| `Kostenrechner.html` | Die App: Markup und CSS aller acht Reiter, bindet alle Skripte mit `?v=<Version>` ein |
 | `js/tabs.js` | Reiterumschaltung, füllt die Statusanzeige des Abrufplaners |
 | `js/regeln.js` | Belegte Spielregeln als reine Funktionen (`REGELN`): ItemValue, Rückgewinnung, Stationsgebühr, Fokus und FCE, Steuer, Qualität, Tabellen Kategorie zu Gebäude und Stadtbonus |
 | `js/rechenkern.js` | `RECHENKERN.kosten(item, stufe, menge, opts)`: günstigster Weg über den Rezeptbaum, rein, ohne DOM und ohne Abruf |
@@ -160,12 +191,13 @@ der Änderungsgeschichte je Datei steht in der Historie, Block „Ausgelagert am
 | `js/preisvergleich.js` | Reiter „Preisvergleich“, eigene Abrufschicht, bewusst ohne gemeinsamen Code mit `preise.js` |
 | `js/eintopf-daten.js`, `js/eintopf-preise.js`, `js/eintopf-rechenkern.js`, `js/eintopf-ui.js` | Reiter „Eintopf-Rechner“: feste Rezeptdaten, eigene Abrufschicht, Rechenkern, Oberfläche |
 | `js/karte.js` | Reiter „Ancient Lands“: Leaflet-Karte, Lauf-Tracker, eigene Marker |
+| `js/lootsplit.js` | Reiter „Lootsplit“ (`LOOTSPLIT`): Aufteilung, Überweisungen, ohne Abrufe |
 | `js/karte-daten.js` | **Erzeugt** von `build_karte.py`, nicht von Hand bearbeiten |
 | `rezepte.js`, `item-namen.js` | **Erzeugt** von `build_graph.py`, nicht von Hand bearbeiten: Rezeptgraph, Namen aller Items |
 | `assets/ancient-lands.webp` | **Erzeugt** von `build_karte.py`: Kartenbild |
 | `build_graph.py` | Baut `rezepte.js` und `item-namen.js` aus dem Client-Dump (`--refresh`) |
 | `build_karte.py` | Baut Kartenbild und `js/karte-daten.js` aus dem Client-Dump |
-| `tests/test.html` | Selbsttest aller Module, 829 Tests |
+| `tests/test.html` | Selbsttest aller Module, 868 Tests |
 | `vendor/leaflet/` | Leaflet 1.9.4 lokal (js, css, LICENSE) |
 | `assets/lymhurst-bg.jpg`, `assets/radiantwilds-bg.jpg` | Banner; das zweite ist bisher unbenutzt |
 | `design.md` | Verbindliche Design-Spezifikation |
@@ -205,7 +237,7 @@ Außerhalb des Repos, eine Ebene höher: `Kostenrechner öffnen.bat`,
   ungeprüft übernehmen, immer selbst nachlaufen lassen.
   **Die Seite ist erst fertig bei
   `document.body.dataset.testsFertig === "1"`** (ein Teil der Tests läuft
-  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 829/829.
+  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 868/868.
 - **Nach jeder Änderung im Browser gegenprüfen**, nicht nur den Code lesen. Im
   Eintopf-Projekt fielen mehrere Fehler erst in der gerenderten Seite auf.
 - **Rechenergebnisse unabhängig nachziehen** (kurzes Python-Skript im Scratchpad).
@@ -291,6 +323,11 @@ solange sich daran nichts ändert.
 
 **Oberfläche**
 
+- Lootsplit: Entfernen einer Zeile fragt nicht nach und lässt sich nicht
+  rückgängig machen; bei 390 px liegen Geldbeutel, Regear und die
+  Ergebnisspalten hinter waagerechtem Scrollen im Rahmen; nicht gebaut sind
+  gewichtete Anteile, Reparaturkosten, Bewertung der Beute über Marktpreise
+  und eine Historie (v3.20.0).
 - Wortlaut „gesperrt“: Alternative wie „kein bei AODP erfasster Preis“ nie
   gefragt und nicht umgesetzt (Backlog alt, Punkt 2, v1.7.0).
 - Bei 390 px liegen in den Gewinn-Reitern Gewinn und Marge sowie die Summen
