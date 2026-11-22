@@ -1,11 +1,12 @@
 // js/preise.js
 //
 // Preisschicht des Kostenrechners: Markt-ID-Bildung, ID-Sammler ueber den
-// Rezeptgraphen, gedrosselter Abruf gegen die Albion Data API, gemeinsamer
+// Rezeptgraphen, Abrufplaner (eine Warteschlange fuer alle Abrufe gegen die
+// Albion Data API, seit v3.16.0, s. Abschnitt "Abrufplaner"), gemeinsamer
 // Preis- und Volumenbestand (seit v3.15.0 in IndexedDB mit Arbeitskopie im
 // Speicher, Rueckfall localStorage, s. Abschnitt "Bestand"), Eigenpreis-Ablage
-// fuer nicht handelbare Zutaten (unveraendert localStorage). Reine JS-Datei ohne DOM-Abhaengigkeit (kein
-// document.*), per <script src="js/preise.js"></script> einbindbar.
+// fuer nicht handelbare Zutaten (unveraendert localStorage). Reine JS-Datei ohne Oberflaeche: vom
+// document wird nur die Sichtbarkeit des Tabs gelesen (Abrufplaner). Per <script src="js/preise.js"></script> einbindbar.
 // Muss NACH rezepte.js geladen werden, sammleMarktIds() und marktId()
 // lesen aus dem globalen REZEPTGRAPH.
 //
@@ -73,8 +74,24 @@ const PREISE = (function () {
   const SCHREIB_BLOCK = 5000; // Eintraege je Schreibtransaktion
 
   const BLOCKGROESSE = 50; // im Eintopf-Rechner erprobt
-  const PAUSE_MS = 1500; // Pause zwischen Bloecken
-  const MAX_VERSUCHE = 5;
+  const PAUSE_MS = 1500; // Pause zwischen zwei Abrufen. NICHT ohne eigene Messung verkuerzen (OPTIMIERUNG-PLAN.md O2).
+  const MAX_VERSUCHE = 5; // je Abruf bei Netz- oder Serverfehlern; HTTP 429 zaehlt nicht mit, s. Abrufplaner
+  // Dokumentiertes Leselimit der API (https://www.albion-online-data.com/api):
+  // 180 Anfragen je Minute, 300 je 5 Minuten. Der Abrufplaner bleibt mit
+  // Abstand darunter. Bei PAUSE_MS = 1500 sind ohnehin hoechstens 40 je
+  // Minute moeglich; das Budget greift erst, falls die Pause je verkuerzt wird.
+  const LIMIT_JE_MINUTE = 180;
+  const LIMIT_JE_5_MINUTEN = 300;
+  const BUDGET_JE_MINUTE = 120;
+  const BUDGET_JE_5_MINUTEN = 240;
+  const BACKOFF_MAX_MS = 5 * 60 * 1000; // laengste Pause der Schlange nach wiederholter HTTP 429 (Rueckfall ohne Reset-Zeit)
+  // Die API nennt bei HTTP 429 im Antworttext, wann die Drossel endet. Belegt
+  // am 22.11.2026 (Realm europe), Wortlaut: "Throttled, be nice to the server,
+  // use compression (gzip, deflate, etc)! Throttle resets at 2026-11-22
+  // 11:10:00 +0000!". Der Planer wartet bis dahin plus Sicherheitsmarge.
+  const LIMIT_RESET_MARGE_MS = 2000;
+  const LIMIT_RESET_MAX_MS = 10 * 60 * 1000; // eine Reset-Zeit weiter in der Zukunft gilt als unglaubwuerdig
+  const MAX_429_VORDERGRUND = 3; // so viele 429 in Folge, dann gibt ein Vordergrundauftrag auf; Hintergrund wiederholt unbegrenzt
   let pauseMs = PAUSE_MS; // nur von testEinstellen() veraendert (Tests mit nachgebildetem fetch)
   let abrufe = 0; // gezaehlte HTTP-Anfragen dieser Sitzung, s. abrufZaehler()
 
@@ -519,13 +536,17 @@ const PREISE = (function () {
   /**
    * Nur fuer Tests: Bestand auf eine eigene Datenbank umstellen (die echte
    * bleibt unberuehrt, alle file://-Seiten teilen sich eine Herkunft) und die
-   * Pause zwischen Bloecken verkuerzen. Ohne Argument: zurueck zum echten
-   * Bestand und zur echten Pause. Liefert ein Promise auf bestandInfo().
+   * Pause zwischen Abrufen verkuerzen. Ohne Argument: zurueck zum echten
+   * Bestand und zur echten Pause. Setzt den Abrufplaner zurueck (Fenster,
+   * Sperren, Schalter); o.jetzt, o.warte und o.verborgen tauschen dessen
+   * Uhr, Wartefunktion und Tab-Sichtbarkeit aus (Tests ohne echtes Warten).
+   * Liefert ein Promise auf bestandInfo().
    */
   async function testEinstellen(o) {
     await bestand.bereit;
     await bestand.geschrieben();
     bestand.schliessen();
+    planer.testZuruecksetzen(o);
     if (!o) {
       pauseMs = PAUSE_MS;
       bestand = bestandAnlegen();
@@ -640,7 +661,34 @@ const PREISE = (function () {
   }
 
   // ---------------------------------------------------------------------
-  // Abruf gegen die API: sequenziell, gedrosselt, mit Backoff bei 429
+  // Abrufplaner (v3.16.0, OPTIMIERUNG-PLAN.md O2)
+  //
+  // EINE Warteschlange fuer alle HTTP-Abrufe dieser Preisschicht
+  // (Kostenrechner, "Craften: Gewinn", "Veredeln leveln"). Preisvergleich und
+  // Eintopf-Rechner haben eigene Abrufschichten und laufen NICHT hierueber;
+  // ihre Abrufe zaehlen im Budget deshalb nicht mit.
+  //
+  // - Ein Auftrag ist genau ein HTTP-Abruf (eine URL). Abrufe laufen strikt
+  //   nacheinander, mit mindestens pauseMs zwischen Ende des einen und Start
+  //   des naechsten.
+  // - Zwei Prioritaeten: "vordergrund" (vom Nutzer ausgeloest, Vorgabe)
+  //   ueberholt "hintergrund" (spaeterer Scan, O3). Innerhalb einer
+  //   Prioritaet gilt die Reihenfolge des Einreihens.
+  // - Budget als gleitendes Fenster (BUDGET_JE_MINUTE, BUDGET_JE_5_MINUTEN),
+  //   mit Abstand unter dem dokumentierten Leselimit der API.
+  // - HTTP 429: die GANZE Schlange pausiert mit wachsender Wartezeit
+  //   (PAUSE_MS * 2^n, hoechstens BACKOFF_MAX_MS) und setzt selbst fort; der
+  //   betroffene Abruf wird wiederholt, nicht verworfen. Nennt der
+  //   Antworttext die Reset-Zeit, wartet die Schlange bis dahin plus
+  //   LIMIT_RESET_MARGE_MS statt zu raten. Hintergrundauftraege wiederholen
+  //   beliebig oft, ein Vordergrundauftrag gibt nach MAX_429_VORDERGRUND
+  //   429 in Folge mit einem verstaendlichen Fehler auf. Andere Fehler (Netz, HTTP 5xx): hoechstens MAX_VERSUCHE Versuche
+  //   mit wachsender Wartezeit, dann wird der Auftrag mit Fehler beendet.
+  // - Hintergrundauftraege lassen sich pausieren, fortsetzen und abbrechen
+  //   und ruhen, solange der Browser-Tab verborgen ist (abschaltbar ueber
+  //   einstellen({hintergrundAuchVerborgen: true})). Vordergrund laeuft immer.
+  // - Uhr, Wartefunktion und Sichtbarkeit sind fuer Tests austauschbar
+  //   (testEinstellen), damit kein Test real sekundenlang wartet.
   // ---------------------------------------------------------------------
 
   function bloecke(arr, n) {
@@ -653,59 +701,480 @@ const PREISE = (function () {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function holeBlock(ids, stadt, qualitaet) {
-    const q = qualitaet == null ? QUALITAET : qualitaet;
-    const url = `${API_BASE}/prices/${ids.join(",")}.json?locations=${stadt}&qualities=${q}`;
-    let letzterFehler = null;
-    for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
-      try {
-        abrufe++;
-        const antwort = await fetch(url);
-        if (antwort.status === 429) {
-          await warte(PAUSE_MS * Math.pow(2, versuch + 1));
-          continue;
+  /**
+   * Liest die Reset-Zeit aus dem Antworttext einer HTTP 429 ("Throttle
+   * resets at JJJJ-MM-TT HH:MM:SS +0000!"). Rein, offline testbar.
+   * @returns {?number} Millisekunden seit Epoch, null wenn nichts Verwertbares im Text steht
+   */
+  function limitResetAusText(text) {
+    const m = /resets at (\d{4}-\d\d-\d\d)[ T](\d\d:\d\d:\d\d) ?([+-]\d\d):?(\d\d)/i.exec(String(text || ""));
+    if (!m) return null;
+    const ms = Date.parse(m[1] + "T" + m[2] + m[3] + ":" + m[4]);
+    return isFinite(ms) ? ms : null;
+  }
+
+  /** "HH:MM" in Ortszeit. */
+  function uhrzeitText(ms) {
+    return new Date(ms).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  const planer = (function () {
+    const schlangen = { vordergrund: [], hintergrund: [] };
+    const hoerer = [];
+    let naechsteId = 1;
+    let aktiv = null; // der gerade laufende Auftrag
+    let laeuft = false; // Schleife lauf() aktiv
+    let hintergrundPausiert = false;
+    let auchVerborgen = false;
+    let letztesEnde = -Infinity; // Ende des letzten Abrufs (Uhr des Planers)
+    let sperreBis = -Infinity; // Pause der ganzen Schlange nach HTTP 429
+    let fehlerBis = -Infinity; // Wartezeit nach einem anderen Fehler
+    let folge429 = 0; // 429-Antworten in Folge, bestimmt die Wartezeit im Rueckfall
+    let limitResetUm = null; // von der API genannte Reset-Zeit der laufenden Drossel, null im Rueckfall
+    let starts = []; // Startzeiten der Abrufe im 5-Minuten-Fenster
+    let bytes = 0; // geladene Antwortzeichen dieser Sitzung
+    let warteGrund = null; // "limit" | "takt" waehrend einer Wartezeit
+    let wartetBis = null;
+    let uhr;
+    let warteFn;
+    let verborgenFn;
+
+    function standardUmgebung() {
+      uhr = () => Date.now();
+      warteFn = warte;
+      verborgenFn = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+    }
+    standardUmgebung();
+
+    function hintergrundDarf() {
+      return !hintergrundPausiert && (auchVerborgen || !verborgenFn());
+    }
+
+    function imFenster(jetzt, ms) {
+      let n = 0;
+      for (let i = starts.length - 1; i >= 0 && jetzt - starts[i] < ms; i--) n++;
+      return n;
+    }
+
+    /**
+     * Zustand der Schlange.
+     * zustand: "ruht" (nichts offen) | "laeuft" | "pausiert" (nur
+     * Hintergrundauftraege offen, die pausiert sind oder wegen des verborgenen
+     * Tabs ruhen) | "limit" (wartet wegen HTTP 429 oder wegen des Budgets).
+     */
+    function status() {
+      const istV = aktiv && aktiv.prioritaet === "vordergrund" ? 1 : 0;
+      const istH = aktiv && aktiv.prioritaet === "hintergrund" ? 1 : 0;
+      const offenVordergrund = schlangen.vordergrund.length + istV;
+      const offenHintergrund = schlangen.hintergrund.length + istH;
+      const offen = offenVordergrund + offenHintergrund;
+      let zustand;
+      if (!offen) zustand = "ruht";
+      else if (!aktiv && !offenVordergrund && !hintergrundDarf()) zustand = "pausiert";
+      else if (warteGrund === "limit") zustand = "limit";
+      else zustand = "laeuft";
+      const jetzt = uhr();
+      return {
+        zustand,
+        offen,
+        offenVordergrund,
+        offenHintergrund,
+        hintergrundPausiert,
+        hintergrundAuchVerborgen: auchVerborgen,
+        verborgen: !!verborgenFn(),
+        wartetBis: zustand === "limit" ? wartetBis : null,
+        // Von der API genannte Reset-Zeit (ms seit Epoch), solange die Sperre nach HTTP 429 laeuft; sonst null.
+        limitResetUm: limitResetUm != null && sperreBis > jetzt ? limitResetUm : null,
+        abrufe,
+        bytes,
+        mb: bytes / (1024 * 1024),
+        abrufeLetzteMinute: imFenster(jetzt, 60000),
+        abrufeLetzte5Minuten: imFenster(jetzt, 300000),
+      };
+    }
+
+    function melden() {
+      if (!hoerer.length) return;
+      const s = status();
+      hoerer.slice().forEach((fn) => {
+        try {
+          fn(s);
+        } catch (e) {
+          /* ein fehlerhafter Zuhoerer darf die Schlange nicht anhalten */
         }
-        if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
-        return await antwort.json();
-      } catch (e) {
-        letzterFehler = e;
-        if (versuch < MAX_VERSUCHE - 1) await warte(PAUSE_MS * Math.pow(2, versuch + 1));
+      });
+    }
+
+    function naechster() {
+      if (schlangen.vordergrund.length) return schlangen.vordergrund[0];
+      if (schlangen.hintergrund.length && hintergrundDarf()) return schlangen.hintergrund[0];
+      return null;
+    }
+
+    /** Millisekunden, die das Budget noch verlangt (0 = frei). */
+    function budgetWarteMs(jetzt) {
+      while (starts.length && jetzt - starts[0] >= 300000) starts.shift();
+      let w = 0;
+      if (starts.length >= BUDGET_JE_5_MINUTEN) w = Math.max(w, starts[starts.length - BUDGET_JE_5_MINUTEN] + 300000 - jetzt);
+      const inMinute = imFenster(jetzt, 60000);
+      if (inMinute >= BUDGET_JE_MINUTE) w = Math.max(w, starts[starts.length - BUDGET_JE_MINUTE] + 60000 - jetzt);
+      return w;
+    }
+
+    async function lauf() {
+      if (laeuft) return;
+      laeuft = true;
+      try {
+        for (;;) {
+          const a = naechster();
+          if (!a) break;
+          const jetzt = uhr();
+          const wLimit = Math.max(sperreBis - jetzt, budgetWarteMs(jetzt));
+          const wTakt = Math.max(letztesEnde + pauseMs - jetzt, fehlerBis - jetzt);
+          const w = Math.max(wLimit, wTakt);
+          if (w > 0) {
+            warteGrund = wLimit > 0 && wLimit >= wTakt ? "limit" : "takt";
+            wartetBis = jetzt + w;
+            melden();
+            await warteFn(w);
+            warteGrund = null;
+            wartetBis = null;
+            continue; // neu waehlen: inzwischen kann ein Vordergrundauftrag gekommen sein
+          }
+          const schlange = schlangen[a.prioritaet];
+          schlange.splice(schlange.indexOf(a), 1);
+          aktiv = a;
+          a.versuche++;
+          starts.push(jetzt);
+          abrufe++;
+          melden();
+          let daten = null;
+          let fehler = null;
+          let limit = false;
+          let limitText = "";
+          try {
+            const antwort = await fetch(a.url);
+            if (antwort.status === 429) {
+              limit = true;
+              try {
+                if (typeof antwort.text === "function") limitText = await antwort.text();
+              } catch (e) {
+                limitText = "";
+              }
+            } else if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
+            else if (typeof antwort.text === "function") {
+              const text = await antwort.text();
+              bytes += text.length;
+              daten = JSON.parse(text);
+            } else {
+              daten = await antwort.json(); // nachgebildetes fetch ohne text()
+            }
+          } catch (e) {
+            fehler = e;
+          }
+          letztesEnde = uhr();
+          aktiv = null;
+          if (limit) {
+            folge429++;
+            a.folge429++;
+            // Reset-Zeit aus dem Antworttext; fehlt sie, liegt sie in der
+            // Vergangenheit oder zu weit in der Zukunft: wachsende Wartezeit.
+            const reset = limitResetAusText(limitText);
+            if (reset != null && reset > letztesEnde && reset - letztesEnde <= LIMIT_RESET_MAX_MS) {
+              limitResetUm = reset;
+              sperreBis = reset + LIMIT_RESET_MARGE_MS;
+            } else {
+              limitResetUm = null;
+              sperreBis = letztesEnde + Math.min(BACKOFF_MAX_MS, PAUSE_MS * Math.pow(2, folge429));
+            }
+            a.versuche--; // eine 429 ist kein Fehlversuch, der Abruf wird wiederholt
+            if (a.abgebrochen) {
+              /* nichts: das Versprechen ist schon abgelehnt */
+            } else if (a.prioritaet === "vordergrund" && a.folge429 >= MAX_429_VORDERGRUND) {
+              // Eine Suche soll nicht unbegrenzt haengen. Die Sperre der
+              // Schlange bleibt bestehen, der naechste Auftrag wartet sie ab.
+              const e = new Error(`Die Preis-API drosselt gerade (Limit bis ${uhrzeitText(limitResetUm != null ? limitResetUm : sperreBis)}). Bitte danach erneut suchen.`);
+              e.gedrosselt = true;
+              e.limitBis = sperreBis;
+              a.reject(e);
+            } else schlange.unshift(a);
+          } else if (fehler) {
+            if (a.versuche < MAX_VERSUCHE && !a.abgebrochen) {
+              fehlerBis = letztesEnde + PAUSE_MS * Math.pow(2, a.versuche);
+              schlange.unshift(a);
+            } else if (!a.abgebrochen) {
+              a.reject(new Error(`${a.bezeichnung} fehlgeschlagen nach ${a.versuche} Versuchen: ${fehler}`));
+            }
+          } else {
+            folge429 = 0;
+            limitResetUm = null;
+            a.resolve(daten); // auch nach abbrechen() folgenlos, das Versprechen ist dann schon abgelehnt
+          }
+          melden();
+        }
+      } finally {
+        laeuft = false;
+        warteGrund = null;
+        wartetBis = null;
+        melden();
       }
     }
-    throw new Error(`Preisabruf fehlgeschlagen nach ${MAX_VERSUCHE} Versuchen: ${letzterFehler}`);
+
+    /**
+     * Reiht einen Abruf ein.
+     * @param {string} url
+     * @param {object} [o]
+     * @param {"vordergrund"|"hintergrund"} [o.prioritaet="vordergrund"]
+     * @param {string} [o.gruppe]        frei waehlbare Kennung, um zusammengehoerige Auftraege gemeinsam abzubrechen
+     * @param {string} [o.bezeichnung]   fuer die Fehlermeldung
+     * @returns {Promise<*>} geparste JSON-Antwort; traegt zusaetzlich auftragId.
+     *   Wird der Auftrag abgebrochen, lehnt das Versprechen mit einem Error
+     *   ab, dessen Feld abgebrochen === true ist.
+     */
+    function einreihen(url, o) {
+      o = o || {};
+      const a = {
+        id: naechsteId++,
+        url,
+        prioritaet: o.prioritaet === "hintergrund" ? "hintergrund" : "vordergrund",
+        gruppe: o.gruppe || null,
+        bezeichnung: o.bezeichnung || "Abruf",
+        versuche: 0,
+        folge429: 0,
+        abgebrochen: false,
+      };
+      const versprechen = new Promise((resolve, reject) => {
+        a.resolve = resolve;
+        a.reject = reject;
+      });
+      versprechen.auftragId = a.id;
+      schlangen[a.prioritaet].push(a);
+      melden();
+      lauf();
+      return versprechen;
+    }
+
+    /**
+     * Bricht wartende Auftraege ab. Ein gerade laufender Abruf wird nicht
+     * unterbrochen; sein Ergebnis wird verworfen, wenn er zum Filter passt.
+     * @param {number|number[]|{gruppe?:string, prioritaet?:string}} [filter]
+     *   Auftragsnummer(n) oder Filter; ohne Angabe alle Hintergrundauftraege.
+     * @returns {number} Zahl der abgebrochenen Auftraege
+     */
+    function abbrechen(filter) {
+      let passt;
+      if (typeof filter === "number") passt = (a) => a.id === filter;
+      else if (Array.isArray(filter)) passt = (a) => filter.indexOf(a.id) !== -1;
+      else if (filter && (filter.gruppe || filter.prioritaet)) {
+        passt = (a) => (!filter.gruppe || a.gruppe === filter.gruppe) && (!filter.prioritaet || a.prioritaet === filter.prioritaet);
+      } else passt = (a) => a.prioritaet === "hintergrund";
+      let n = 0;
+      const ablehnen = (a) => {
+        a.abgebrochen = true;
+        const e = new Error(`${a.bezeichnung} abgebrochen`);
+        e.abgebrochen = true;
+        a.reject(e);
+        n++;
+      };
+      ["vordergrund", "hintergrund"].forEach((p) => {
+        const bleibt = [];
+        schlangen[p].forEach((a) => (passt(a) ? ablehnen(a) : bleibt.push(a)));
+        schlangen[p].length = 0;
+        bleibt.forEach((a) => schlangen[p].push(a));
+      });
+      if (aktiv && !aktiv.abgebrochen && passt(aktiv)) ablehnen(aktiv);
+      if (n) melden();
+      return n;
+    }
+
+    /** Hintergrundauftraege anhalten (ein laufender Abruf endet noch). Vordergrund laeuft weiter. */
+    function pausieren() {
+      hintergrundPausiert = true;
+      melden();
+    }
+
+    function fortsetzen() {
+      hintergrundPausiert = false;
+      melden();
+      lauf();
+    }
+
+    /** @param {{hintergrundAuchVerborgen?: boolean}} o */
+    function einstellen(o) {
+      if (o && o.hintergrundAuchVerborgen != null) auchVerborgen = !!o.hintergrundAuchVerborgen;
+      melden();
+      lauf();
+    }
+
+    /** Meldet jede Zustandsaenderung an fn(status). Liefert eine Funktion zum Abmelden. */
+    function beiAenderung(fn) {
+      hoerer.push(fn);
+      return () => {
+        const i = hoerer.indexOf(fn);
+        if (i !== -1) hoerer.splice(i, 1);
+      };
+    }
+
+    /** Sichtbarkeit des Tabs hat sich geaendert (auch von Tests aufgerufen). */
+    function sichtbarkeitGeaendert() {
+      melden();
+      lauf();
+    }
+
+    /** Nur fuer Tests: Fenster, Sperren und Schalter zuruecksetzen, Umgebung austauschen. */
+    function testZuruecksetzen(o) {
+      o = o || {};
+      starts = [];
+      letztesEnde = -Infinity;
+      sperreBis = -Infinity;
+      fehlerBis = -Infinity;
+      folge429 = 0;
+      limitResetUm = null;
+      hintergrundPausiert = false;
+      auchVerborgen = false;
+      standardUmgebung();
+      if (typeof o.jetzt === "function") uhr = o.jetzt;
+      if (typeof o.warte === "function") warteFn = o.warte;
+      if (typeof o.verborgen === "function") verborgenFn = o.verborgen;
+      melden();
+    }
+
+    if (typeof document !== "undefined" && document.addEventListener) {
+      document.addEventListener("visibilitychange", sichtbarkeitGeaendert);
+    }
+
+    return {
+      einreihen,
+      abbrechen,
+      pausieren,
+      fortsetzen,
+      einstellen,
+      status,
+      beiAenderung,
+      sichtbarkeitGeaendert,
+      testZuruecksetzen,
+    };
+  })();
+
+  /** Planer-Optionen aus den Optionen einer Abruffunktion. */
+  function planOptionen(opts, bezeichnung) {
+    return { prioritaet: opts.prioritaet, gruppe: opts.gruppe, bezeichnung };
+  }
+
+  /**
+   * Reiht alle URLs ein (die Statusanzeige nennt damit sofort die ganze Zahl
+   * offener Abrufe) und verarbeitet die Antworten in Reihenfolge. Scheitert
+   * einer oder wird abgebrochen, werden die uebrigen Auftraege dieses Aufrufs
+   * zurueckgezogen und der Fehler weitergereicht; schon verarbeitete Bloecke
+   * bleiben im Bestand.
+   */
+  async function blockweiseAbrufen(urls, planOpts, jeAntwort) {
+    const versprechen = urls.map((url) => {
+      const p = planer.einreihen(url, planOpts);
+      p.catch(() => {}); // Fehler wird unten ueber await behandelt, keine "unhandled rejection"
+      return p;
+    });
+    try {
+      for (let i = 0; i < versprechen.length; i++) jeAntwort(await versprechen[i], i);
+    } catch (e) {
+      planer.abbrechen(versprechen.map((p) => p.auftragId));
+      throw e;
+    }
+  }
+
+  /**
+   * Staedte eines Abrufs aus den Optionen: opts.staedte (Liste, Ergebnis je
+   * Stadt) oder opts.stadt (eine Stadt, Ergebnis wie bis v3.15.0).
+   */
+  function staedteAusOptionen(opts) {
+    if (Array.isArray(opts.staedte)) return { staedte: Array.from(new Set(opts.staedte)), mehrere: true };
+    return { staedte: [opts.stadt || STADT_DEFAULT], mehrere: false };
+  }
+
+  /**
+   * Ordnet den Stadtnamen einer Antwortzeile (prices/: "city", history/:
+   * "location") der angefragten Stadt zu. Gleichheit ohne Ruecksicht auf
+   * Gross-/Kleinschreibung und Leerzeichen; eine Zeile fuer eine nicht
+   * angefragte Stadt wird verworfen (null). Bei genau einer angefragten
+   * Stadt gilt wie bis v3.15.0 jede Zeile fuer diese Stadt.
+   */
+  function stadtZuordner(staedte) {
+    if (staedte.length === 1) return () => staedte[0];
+    const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z]/g, "");
+    const karte = {};
+    staedte.forEach((s) => {
+      karte[norm(s)] = s;
+    });
+    return (name) => karte[norm(name)] || null;
+  }
+
+  /** Zeilen einer Antwort nach angefragter Stadt gruppieren. feld: "city" oder "location". */
+  function zeilenJeStadt(zeilen, staedte, feld) {
+    const zuordnen = stadtZuordner(staedte);
+    const out = {};
+    staedte.forEach((s) => {
+      out[s] = [];
+    });
+    (zeilen || []).forEach((zeile) => {
+      const s = zeile && zuordnen(zeile[feld]);
+      if (s) out[s].push(zeile);
+    });
+    return out;
+  }
+
+  /** Staedte fuer den URL-Parameter locations: je Stadt kodiert ("Fort Sterling" -> "Fort%20Sterling"), Komma als Trenner. */
+  function staedteParameter(staedte) {
+    return staedte.map((s) => encodeURIComponent(s)).join(",");
+  }
+
+  function preisUrl(ids, staedte, qualitaet) {
+    const q = qualitaet == null ? QUALITAET : qualitaet;
+    return `${API_BASE}/prices/${ids.join(",")}.json?locations=${staedteParameter(staedte)}&qualities=${q}`;
+  }
+
+  function historieUrl(ids, staedte) {
+    return `${API_BASE}/history/${ids.join(",")}.json?locations=${staedteParameter(staedte)}&time-scale=24`;
   }
 
   /**
    * Ruft Preise fuer die gegebenen Markt-IDs ab. Bereits frische Eintraege
-   * im Bestand (s. Abschnitt "Bestand") werden nicht neu abgerufen. Der Rest wird sequenziell in
-   * 50er-Bloecken mit Pause geholt, bei HTTP 429 mit wachsender Wartezeit
-   * wiederholt (1,5s * 2^n).
+   * im Bestand (s. Abschnitt "Bestand") werden nicht neu abgerufen. Der Rest
+   * laeuft in 50er-Bloecken ueber den Abrufplaner (nacheinander, mit Pause,
+   * bei HTTP 429 pausiert die ganze Schlange).
+   *
+   * Seit v3.16.0 mehrere Staedte in EINEM Abruf je ID-Block
+   * (opts.staedte): prices/ liefert mit locations=A,B,... alle Staedte
+   * vollstaendig und wertgleich zum Einzelabruf (OPTIMIERUNG-PLAN.md,
+   * Abschnitt 2). Abgerufen werden die IDs, die in mindestens einer Stadt
+   * fehlen oder zu alt sind, und zwar fuer genau die Staedte, in denen das
+   * so ist. Die Bestandsschluessel bleiben je Stadt.
    *
    * @param {string[]} ids                          Markt-IDs, z.B. von sammleMarktIds()
    * @param {object} [opts]
-   * @param {string} [opts.stadt=STADT_DEFAULT]      Craft-Stadt, s. ui.js Einstellung "Stadt". Bestimmt sowohl den
-   *                                                  API-Abfrageort als auch den Cache-Schluessel (s. cacheSchluessel()) -
-   *                                                  ein Wechsel der Stadt darf niemals mit dem Cache-Eintrag einer
-   *                                                  anderen Stadt beantwortet werden.
-   * @param {number} [opts.cacheMaxAlterMin=30]      ab wann ein Cache-Eintrag erneut abgerufen wird
-   * @param {boolean} [opts.erzwingen=false]         Cache ignorieren, alles neu abrufen
+   * @param {string} [opts.stadt=STADT_DEFAULT]      eine Stadt. Bestimmt Abfrageort und Bestandsschluessel
+   *                                                  (s. cacheSchluessel()); ein Wechsel der Stadt darf niemals
+   *                                                  mit dem Eintrag einer anderen Stadt beantwortet werden.
+   * @param {string[]} [opts.staedte]                mehrere Staedte in einem Abruf; hat Vorrang vor opts.stadt
+   *                                                  und aendert die Form des Ergebnisses (s. unten)
+   * @param {number} [opts.cacheMaxAlterMin=30]      ab wann ein Eintrag erneut abgerufen wird
+   * @param {boolean} [opts.erzwingen=false]         Bestand ignorieren, alles neu abrufen
    * @param {number} [opts.qualitaet=1]              API-Qualitaet 1..5 (1=Normal..5=Meisterwerk,
-   *                                                  s. REGELN.QUALITAETEN Index+1). Feature
-   *                                                  "Qualitaetsstufen": normalerweise weggelassen
-   *                                                  (Normal-Preise fuer den ganzen Baum), nur fuer
-   *                                                  die kleine Liste aus sammleQualitaetsMarktIds()
-   *                                                  mit der gewaehlten Zielqualitaet aufgerufen.
+   *                                                  s. REGELN.QUALITAETEN Index+1). Normalerweise weggelassen
+   *                                                  (Normal-Preise fuer den ganzen Baum), nur fuer die kleine
+   *                                                  Liste aus sammleQualitaetsMarktIds() gesetzt.
+   * @param {"vordergrund"|"hintergrund"} [opts.prioritaet="vordergrund"]  s. Abrufplaner
+   * @param {string} [opts.gruppe]                   Kennung fuer planer.abbrechen({gruppe})
    * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
    *
-   * @returns {Promise<Object<string, {sell:{preis:?number,datum:string,kein:boolean}, buy:{preis:?number,datum:string,kein:boolean}, abgerufenAm:number}|null>>}
-   *   Eintrag je Markt-ID (unpraefigiert, ohne Stadt - die Antwort gilt ohnehin
-   *   ausschliesslich fuer die angefragte Stadt UND Qualitaet). null = nie
-   *   abgefragt (auch nicht im Cache). sell.preis/buy.preis === null bedeutet
+   * @returns {Promise<Object>} mit opts.stadt: Eintrag je Markt-ID,
+   *   {sell:{preis,datum,kein}, buy:{preis,datum,kein}, abgerufenAm} oder
+   *   null = nie abgefragt (auch nicht im Bestand). Mit opts.staedte:
+   *   Stadt -> (Markt-ID -> Eintrag). sell.preis/buy.preis === null bedeutet
    *   "kein Angebot", NIEMALS 0.
    */
   async function preiseAbrufen(ids, opts) {
     opts = opts || {};
-    const stadt = opts.stadt || STADT_DEFAULT;
+    const { staedte, mehrere } = staedteAusOptionen(opts);
     const qualitaet = opts.qualitaet != null ? opts.qualitaet : QUALITAET;
     const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : CACHE_GUELTIG_MIN_DEFAULT;
     const erzwingen = !!opts.erzwingen;
@@ -715,43 +1184,55 @@ const PREISE = (function () {
     await b.bereit;
     const eindeutigeIds = Array.from(new Set(ids));
 
-    const zuHolen = erzwingen
-      ? eindeutigeIds
-      : eindeutigeIds.filter((id) => !istFrisch(b.preise.get(cacheSchluessel(stadt, id, qualitaet)), maxAlterMin));
-
     const ergebnis = {};
-    eindeutigeIds.forEach((id) => {
-      ergebnis[id] = b.preise.get(cacheSchluessel(stadt, id, qualitaet)) || null;
+    const fehlt = new Set();
+    const holStaedte = [];
+    staedte.forEach((stadt) => {
+      ergebnis[stadt] = {};
+      let stadtFehlt = false;
+      eindeutigeIds.forEach((id) => {
+        const da = b.preise.get(cacheSchluessel(stadt, id, qualitaet));
+        ergebnis[stadt][id] = da || null;
+        if (erzwingen || !istFrisch(da, maxAlterMin)) {
+          fehlt.add(id);
+          stadtFehlt = true;
+        }
+      });
+      if (stadtFehlt) holStaedte.push(stadt);
     });
+    const zuHolen = eindeutigeIds.filter((id) => fehlt.has(id));
+    const fertig = () => (mehrere ? ergebnis : ergebnis[staedte[0]] || {});
 
     const gesamt = eindeutigeIds.length;
     let erledigt = gesamt - zuHolen.length;
     aufFortschritt(erledigt, gesamt);
 
-    if (!zuHolen.length) return ergebnis;
+    if (!zuHolen.length || !holStaedte.length) return fertig();
 
-    for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
-      const zeilen = await holeBlock(block, stadt, qualitaet);
-      const gesehen = new Set();
-      const neu = [];
-      (zeilen || []).forEach((zeile) => {
-        const eintrag = normalisierePreisZeile(zeile);
-        neu.push([cacheSchluessel(stadt, eintrag.id, qualitaet), eintrag]);
-        ergebnis[eintrag.id] = eintrag;
-        gesehen.add(eintrag.id);
-      });
-      b.schreiben(STORE_PREISE, neu);
-      // IDs, die die API nicht in der Antwort mitliefert (statt einer
-      // Nullzeile), bleiben "nie abgefragt" statt faelschlich "kein Angebot".
-      block.forEach((id) => {
-        if (!gesehen.has(id) && !ergebnis[id]) ergebnis[id] = null;
-      });
-      erledigt += block.length;
-      aufFortschritt(erledigt, gesamt);
-      await warte(pauseMs);
-    }
+    const blockListe = bloecke(zuHolen, BLOCKGROESSE);
+    await blockweiseAbrufen(
+      blockListe.map((block) => preisUrl(block, holStaedte, qualitaet)),
+      planOptionen(opts, "Preisabruf"),
+      (zeilen, i) => {
+        const jeStadt = zeilenJeStadt(zeilen, holStaedte, "city");
+        const neu = [];
+        holStaedte.forEach((stadt) => {
+          jeStadt[stadt].forEach((zeile) => {
+            const eintrag = normalisierePreisZeile(zeile);
+            neu.push([cacheSchluessel(stadt, eintrag.id, qualitaet), eintrag]);
+            ergebnis[stadt][eintrag.id] = eintrag;
+          });
+        });
+        b.schreiben(STORE_PREISE, neu);
+        // IDs, die die API nicht in der Antwort mitliefert (statt einer
+        // Nullzeile), bleiben "nie abgefragt" statt faelschlich "kein
+        // Angebot": ergebnis[stadt][id] behaelt dann den Wert von oben.
+        erledigt += blockListe[i].length;
+        aufFortschritt(erledigt, gesamt);
+      }
+    );
 
-    return ergebnis;
+    return fertig();
   }
 
   /**
@@ -774,21 +1255,24 @@ const PREISE = (function () {
   }
 
   /**
-   * Preise in allen fuenf Qualitaeten, ein Abruf je 50er-Block (dieselbe
-   * Anzahl Anfragen wie preiseAbrufen, nur groessere Antworten), gleiche
-   * Drossel-Disziplin. Seit v3.15.0 aus dem Bestand, soweit der Merker
-   * alleQSchluessel() frisch ist; opts.erzwingen holt alles neu.
+   * Preise in allen fuenf Qualitaeten, ein Abruf je 50er-Block ueber den
+   * Abrufplaner. Seit v3.15.0 aus dem Bestand, soweit der Merker
+   * alleQSchluessel() frisch ist; opts.erzwingen holt alles neu. Seit
+   * v3.16.0 mehrere Staedte in einem Abruf (opts.staedte), s. preiseAbrufen().
    * @param {string[]} ids
    * @param {object} [opts]
    * @param {string} [opts.stadt=STADT_DEFAULT]
+   * @param {string[]} [opts.staedte]  mehrere Staedte; Ergebnis dann Stadt -> id -> qualitaet -> Eintrag
    * @param {number} [opts.cacheMaxAlterMin=30]
    * @param {boolean} [opts.erzwingen=false]
+   * @param {"vordergrund"|"hintergrund"} [opts.prioritaet="vordergrund"]
+   * @param {string} [opts.gruppe]
    * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
    * @returns {Promise<Object<string, Object<number, object>>>} id -> qualitaet -> Eintrag ({} = nichts geliefert)
    */
   async function preiseAlleQualitaetenAbrufen(ids, opts) {
     opts = opts || {};
-    const stadt = opts.stadt || STADT_DEFAULT;
+    const { staedte, mehrere } = staedteAusOptionen(opts);
     const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : CACHE_GUELTIG_MIN_DEFAULT;
     const erzwingen = !!opts.erzwingen;
     const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
@@ -796,38 +1280,64 @@ const PREISE = (function () {
     await b.bereit;
     const eindeutigeIds = Array.from(new Set(ids));
     const ergebnis = {};
-    const zuHolen = [];
-    eindeutigeIds.forEach((id) => {
-      const merker = erzwingen ? null : b.preise.get(alleQSchluessel(stadt, id));
-      if (!istFrisch(merker, maxAlterMin)) {
-        zuHolen.push(id);
-        return;
-      }
-      const jeQ = {};
-      (merker.qualitaeten || []).forEach((q) => {
-        const e = b.preise.get(cacheSchluessel(stadt, id, q));
-        if (e) jeQ[q] = e;
+    const fehlt = new Set();
+    const faellig = {};
+    const holStaedte = [];
+    staedte.forEach((stadt) => {
+      ergebnis[stadt] = {};
+      faellig[stadt] = new Set();
+      let stadtFehlt = false;
+      eindeutigeIds.forEach((id) => {
+        const merker = erzwingen ? null : b.preise.get(alleQSchluessel(stadt, id));
+        if (!istFrisch(merker, maxAlterMin)) {
+          fehlt.add(id);
+          faellig[stadt].add(id);
+          stadtFehlt = true;
+          return;
+        }
+        const jeQ = {};
+        (merker.qualitaeten || []).forEach((q) => {
+          const e = b.preise.get(cacheSchluessel(stadt, id, q));
+          if (e) jeQ[q] = e;
+        });
+        ergebnis[stadt][id] = jeQ;
       });
-      ergebnis[id] = jeQ;
+      if (stadtFehlt) holStaedte.push(stadt);
     });
+    const zuHolen = eindeutigeIds.filter((id) => fehlt.has(id));
     let erledigt = eindeutigeIds.length - zuHolen.length;
     aufFortschritt(erledigt, eindeutigeIds.length);
-    for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
-      const teil = preiseJeQualitaetAusAntwort(await holeBlock(block, stadt, "1,2,3,4,5"));
-      const jetzt = Date.now();
-      const neu = [];
-      block.forEach((id) => {
-        const jeQ = teil[id] || {};
-        ergebnis[id] = jeQ;
-        Object.keys(jeQ).forEach((q) => neu.push([cacheSchluessel(stadt, id, Number(q)), jeQ[q]]));
-        neu.push([alleQSchluessel(stadt, id), { alleQ: true, qualitaeten: Object.keys(jeQ).map(Number), abgerufenAm: jetzt }]);
-      });
-      b.schreiben(STORE_PREISE, neu);
-      erledigt += block.length;
-      aufFortschritt(erledigt, eindeutigeIds.length);
-      await warte(pauseMs);
-    }
-    return ergebnis;
+    const blockListe = bloecke(zuHolen, BLOCKGROESSE);
+    await blockweiseAbrufen(
+      blockListe.map((block) => preisUrl(block, holStaedte, "1,2,3,4,5")),
+      planOptionen(opts, "Preisabruf"),
+      (zeilen, i) => {
+        const jeStadt = zeilenJeStadt(zeilen, holStaedte, "city");
+        const jetzt = Date.now();
+        const neu = [];
+        holStaedte.forEach((stadt) => {
+          const teil = preiseJeQualitaetAusAntwort(jeStadt[stadt]);
+          // Liefert die Antwort fuer eine Stadt gar keine Zeile, weder Merker
+          // noch "nichts da" ablegen: sonst gaelten alle Produkte des Blocks
+          // dort 30 Minuten lang als "kein Angebot".
+          const stadtGeliefert = jeStadt[stadt].length > 0;
+          blockListe[i].forEach((id) => {
+            // Nur was fuer DIESE Stadt faellig war; ein frischer Eintrag einer
+            // anderen Stadt im selben Abruf bleibt unberuehrt.
+            if (!faellig[stadt].has(id)) return;
+            const jeQ = teil[id] || {};
+            ergebnis[stadt][id] = jeQ;
+            if (!stadtGeliefert) return;
+            Object.keys(jeQ).forEach((q) => neu.push([cacheSchluessel(stadt, id, Number(q)), jeQ[q]]));
+            neu.push([alleQSchluessel(stadt, id), { alleQ: true, qualitaeten: Object.keys(jeQ).map(Number), abgerufenAm: jetzt }]);
+          });
+        });
+        b.schreiben(STORE_PREISE, neu);
+        erledigt += blockListe[i].length;
+        aufFortschritt(erledigt, eindeutigeIds.length);
+      }
+    );
+    return mehrere ? ergebnis : ergebnis[staedte[0]] || {};
   }
 
   // ---------------------------------------------------------------------
@@ -846,27 +1356,6 @@ const PREISE = (function () {
   // Sitzung im Speicher gehalten; seit v3.15.0 im Volumenbestand mit
   // Abrufzeit, gueltig VOLUMEN_GUELTIG_MIN Minuten.
   // ---------------------------------------------------------------------
-
-  async function holeHistorieBlock(ids, stadt) {
-    const url = `${API_BASE}/history/${ids.join(",")}.json?locations=${stadt}&time-scale=24`;
-    let letzterFehler = null;
-    for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
-      try {
-        abrufe++;
-        const antwort = await fetch(url);
-        if (antwort.status === 429) {
-          await warte(PAUSE_MS * Math.pow(2, versuch + 1));
-          continue;
-        }
-        if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
-        return await antwort.json();
-      } catch (e) {
-        letzterFehler = e;
-        if (versuch < MAX_VERSUCHE - 1) await warte(PAUSE_MS * Math.pow(2, versuch + 1));
-      }
-    }
-    throw new Error(`Handelsvolumen-Abruf fehlgeschlagen nach ${MAX_VERSUCHE} Versuchen: ${letzterFehler}`);
-  }
 
   /**
    * Wertet die Antwort von /stats/gold.json aus und liefert den juengsten
@@ -936,21 +1425,11 @@ const PREISE = (function () {
     const o = opts || {};
     const anzahl = o.anzahl != null ? o.anzahl : 2;
     const url = `${API_BASE}/gold.json?count=${anzahl}`;
-    for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
-      try {
-        abrufe++;
-        const antwort = await fetch(url);
-        if (antwort.status === 429) {
-          await warte(PAUSE_MS * Math.pow(2, versuch + 1));
-          continue;
-        }
-        if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
-        return normalisiereGoldAntwort(await antwort.json());
-      } catch (e) {
-        if (versuch < MAX_VERSUCHE - 1) await warte(PAUSE_MS * Math.pow(2, versuch + 1));
-      }
+    try {
+      return normalisiereGoldAntwort(await planer.einreihen(url, planOptionen(o, "Goldpreis-Abruf")));
+    } catch (e) {
+      return null;
     }
-    return null;
   }
 
   /**
@@ -993,6 +1472,9 @@ const PREISE = (function () {
    * @param {string[]} ids Markt-IDs, typischerweise die aktuell gesperrten Kaufen-Knoten im Bauplan-Baum
    * @param {object} [opts]
    * @param {string} [opts.stadt=STADT_DEFAULT]
+   * @param {string[]} [opts.staedte]  mehrere Staedte in einem Abruf; Ergebnis dann Stadt -> (Ergebnis wie unten)
+   * @param {"vordergrund"|"hintergrund"} [opts.prioritaet="vordergrund"]
+   * @param {string} [opts.gruppe]
    * @param {number} [opts.tageFenster=7]
    * @param {number} [opts.cacheMaxAlterMin=VOLUMEN_GUELTIG_MIN]
    * @param {boolean} [opts.erzwingen=false]
@@ -1002,7 +1484,7 @@ const PREISE = (function () {
    */
   async function volumenAbrufen(ids, opts) {
     opts = opts || {};
-    const stadt = opts.stadt || STADT_DEFAULT;
+    const { staedte, mehrere } = staedteAusOptionen(opts);
     const tageFenster = opts.tageFenster || 7;
     const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : VOLUMEN_GUELTIG_MIN;
     const erzwingen = !!opts.erzwingen;
@@ -1013,40 +1495,62 @@ const PREISE = (function () {
     const eindeutigeIds = Array.from(new Set(ids));
     const ergebnis = {};
     const gesamt = eindeutigeIds.length;
-    const zuHolen = [];
-    eindeutigeIds.forEach((id) => {
-      const da = erzwingen ? null : b.volumen.get(volumenSchluessel("v", stadt, id, tageFenster));
-      if (istFrisch(da, maxAlterMin)) ergebnis[id] = da.wert;
-      else zuHolen.push(id);
-    });
-    let erledigt = gesamt - zuHolen.length;
-    aufFortschritt(erledigt, gesamt);
-    if (!zuHolen.length) return ergebnis;
-
-    for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
-      const zeilen = await holeHistorieBlock(block, stadt);
-      const jetzt = Date.now();
-      const teil = {};
-      (zeilen || []).forEach((zeile) => {
-        const eintrag = normalisiereHistorieZeile(zeile, tageFenster);
-        if (eintrag) {
-          eintrag.abgerufenAm = jetzt;
-          teil[eintrag.id] = eintrag;
+    const fehlt = new Set();
+    const faellig = {};
+    const holStaedte = [];
+    staedte.forEach((stadt) => {
+      ergebnis[stadt] = {};
+      faellig[stadt] = new Set();
+      let stadtFehlt = false;
+      eindeutigeIds.forEach((id) => {
+        const da = erzwingen ? null : b.volumen.get(volumenSchluessel("v", stadt, id, tageFenster));
+        if (istFrisch(da, maxAlterMin)) ergebnis[stadt][id] = da.wert;
+        else {
+          fehlt.add(id);
+          faellig[stadt].add(id);
+          stadtFehlt = true;
         }
       });
-      const neu = [];
-      block.forEach((id) => {
-        ergebnis[id] = teil[id] || null;
-        neu.push([volumenSchluessel("v", stadt, id, tageFenster), { abgerufenAm: jetzt, wert: ergebnis[id] }]);
-      });
-      // Eine ganz leere Antwort (HTTP 200 ohne Zeilen) nicht als "kein Handel" merken:
-      // sonst fiele der ganze Block 60 Minuten lang durch den Volumenfilter.
-      if (zeilen && zeilen.length) b.schreiben(STORE_VOLUMEN, neu);
-      erledigt += block.length;
-      aufFortschritt(erledigt, gesamt);
-      await warte(pauseMs);
-    }
-    return ergebnis;
+      if (stadtFehlt) holStaedte.push(stadt);
+    });
+    const zuHolen = eindeutigeIds.filter((id) => fehlt.has(id));
+    let erledigt = gesamt - zuHolen.length;
+    aufFortschritt(erledigt, gesamt);
+
+    const blockListe = bloecke(zuHolen, BLOCKGROESSE);
+    await blockweiseAbrufen(
+      blockListe.map((block) => historieUrl(block, holStaedte)),
+      planOptionen(opts, "Handelsvolumen-Abruf"),
+      (zeilen, i) => {
+        const jeStadt = zeilenJeStadt(zeilen, holStaedte, "location"); // history/ nennt die Stadt "location"
+        const jetzt = Date.now();
+        holStaedte.forEach((stadt) => {
+          const teil = {};
+          jeStadt[stadt].forEach((zeile) => {
+            const eintrag = normalisiereHistorieZeile(zeile, tageFenster);
+            if (eintrag) {
+              eintrag.abgerufenAm = jetzt;
+              teil[eintrag.id] = eintrag;
+            }
+          });
+          const neu = [];
+          blockListe[i].forEach((id) => {
+            // Nur was fuer DIESE Stadt faellig war: ein frischer Wert wird
+            // nicht durch die Antwort eines fremden Anlasses ersetzt.
+            if (!faellig[stadt].has(id)) return;
+            ergebnis[stadt][id] = teil[id] || null;
+            neu.push([volumenSchluessel("v", stadt, id, tageFenster), { abgerufenAm: jetzt, wert: ergebnis[stadt][id] }]);
+          });
+          // Liefert die Antwort fuer eine Stadt gar keine Zeile, das nicht als
+          // "kein Handel" merken: sonst fiele der ganze Block 60 Minuten lang
+          // durch den Volumenfilter (wie bis v3.15.0 bei einer leeren Antwort).
+          if (jeStadt[stadt].length) b.schreiben(STORE_VOLUMEN, neu);
+        });
+        erledigt += blockListe[i].length;
+        aufFortschritt(erledigt, gesamt);
+      }
+    );
+    return mehrere ? ergebnis : ergebnis[staedte[0]] || {};
   }
 
   // ---------------------------------------------------------------------
@@ -1140,12 +1644,15 @@ const PREISE = (function () {
    * Ruft den erfassten Tagesabsatz je Qualitaet ab. Seit v3.15.0 aus dem
    * Volumenbestand, soweit der Eintrag hoechstens VOLUMEN_GUELTIG_MIN
    * Minuten alt ist (auch "nichts erfasst" wird gemerkt); gleiche
-   * Drossel-Disziplin (50er-Bloecke, 1,5 s Pause, Backoff bei 429). Jeder
+   * Drossel-Disziplin (50er-Bloecke ueber den Abrufplaner). Jeder
    * Qualitaetseintrag traegt zusaetzlich abgerufenAm.
    *
    * @param {string[]} ids Markt-IDs
    * @param {object} [opts]
    * @param {string} [opts.stadt=STADT_DEFAULT]
+   * @param {string[]} [opts.staedte]  mehrere Staedte in einem Abruf; Ergebnis dann Stadt -> (Ergebnis wie unten)
+   * @param {"vordergrund"|"hintergrund"} [opts.prioritaet="vordergrund"]
+   * @param {string} [opts.gruppe]
    * @param {number} [opts.tageFenster=7]
    * @param {number} [opts.cacheMaxAlterMin=VOLUMEN_GUELTIG_MIN]
    * @param {boolean} [opts.erzwingen=false]
@@ -1154,7 +1661,7 @@ const PREISE = (function () {
    */
   async function absatzAbrufen(ids, opts) {
     opts = opts || {};
-    const stadt = opts.stadt || STADT_DEFAULT;
+    const { staedte, mehrere } = staedteAusOptionen(opts);
     const tageFenster = opts.tageFenster || 7;
     const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : VOLUMEN_GUELTIG_MIN;
     const erzwingen = !!opts.erzwingen;
@@ -1165,40 +1672,60 @@ const PREISE = (function () {
     const eindeutigeIds = Array.from(new Set(ids));
     const ergebnis = {};
     const gesamt = eindeutigeIds.length;
-    const zuHolen = [];
-    eindeutigeIds.forEach((id) => {
-      const da = erzwingen ? null : b.volumen.get(volumenSchluessel("a", stadt, id, tageFenster));
-      if (istFrisch(da, maxAlterMin)) ergebnis[id] = da.jeQ || {};
-      else zuHolen.push(id);
+    const fehlt = new Set();
+    const faellig = {};
+    const holStaedte = [];
+    staedte.forEach((stadt) => {
+      ergebnis[stadt] = {};
+      faellig[stadt] = new Set();
+      let stadtFehlt = false;
+      eindeutigeIds.forEach((id) => {
+        const da = erzwingen ? null : b.volumen.get(volumenSchluessel("a", stadt, id, tageFenster));
+        if (istFrisch(da, maxAlterMin)) ergebnis[stadt][id] = da.jeQ || {};
+        else {
+          fehlt.add(id);
+          faellig[stadt].add(id);
+          stadtFehlt = true;
+        }
+      });
+      if (stadtFehlt) holStaedte.push(stadt);
     });
+    const zuHolen = eindeutigeIds.filter((id) => fehlt.has(id));
     let erledigt = gesamt - zuHolen.length;
     aufFortschritt(erledigt, gesamt);
-    if (!zuHolen.length) return ergebnis;
 
-    for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
-      const zeilen = await holeHistorieBlock(block, stadt);
-      const jetzt = Date.now();
-      const teil = absatzAusAntwort(zeilen, tageFenster, jetzt);
-      const neu = [];
-      block.forEach((id) => {
-        const jeQ = teil[id] || {};
-        Object.keys(jeQ).forEach((q) => {
-          jeQ[q].abgerufenAm = jetzt;
+    const blockListe = bloecke(zuHolen, BLOCKGROESSE);
+    await blockweiseAbrufen(
+      blockListe.map((block) => historieUrl(block, holStaedte)),
+      planOptionen(opts, "Handelsvolumen-Abruf"),
+      (zeilen, i) => {
+        const jeStadt = zeilenJeStadt(zeilen, holStaedte, "location"); // history/ nennt die Stadt "location"
+        const jetzt = Date.now();
+        holStaedte.forEach((stadt) => {
+          const teil = absatzAusAntwort(jeStadt[stadt], tageFenster, jetzt);
+          const neu = [];
+          blockListe[i].forEach((id) => {
+            if (!faellig[stadt].has(id)) return; // s. volumenAbrufen()
+            const jeQ = teil[id] || {};
+            Object.keys(jeQ).forEach((q) => {
+              jeQ[q].abgerufenAm = jetzt;
+            });
+            ergebnis[stadt][id] = jeQ;
+            neu.push([volumenSchluessel("a", stadt, id, tageFenster), { abgerufenAm: jetzt, jeQ }]);
+          });
+          // Liefert die Antwort fuer eine Stadt gar keine Zeile, das nicht als
+          // "kein Handel" merken: sonst fiele der ganze Block 60 Minuten lang
+          // durch den Volumenfilter (wie bis v3.15.0 bei einer leeren Antwort).
+          if (jeStadt[stadt].length) b.schreiben(STORE_VOLUMEN, neu);
         });
-        ergebnis[id] = jeQ;
-        neu.push([volumenSchluessel("a", stadt, id, tageFenster), { abgerufenAm: jetzt, jeQ }]);
-      });
-      // Eine ganz leere Antwort (HTTP 200 ohne Zeilen) nicht als "kein Handel" merken:
-      // sonst fiele der ganze Block 60 Minuten lang durch den Volumenfilter.
-      if (zeilen && zeilen.length) b.schreiben(STORE_VOLUMEN, neu);
-      erledigt += block.length;
-      aufFortschritt(erledigt, gesamt);
-      await warte(pauseMs);
-    }
-    return ergebnis;
+        erledigt += blockListe[i].length;
+        aufFortschritt(erledigt, gesamt);
+      }
+    );
+    return mehrere ? ergebnis : ergebnis[staedte[0]] || {};
   }
 
-  /** Zahl der HTTP-Anfragen dieser Sitzung (Preise, Handelsvolumen, Gold), fuer Statuszeilen und Tests. */
+  /** Zahl der HTTP-Anfragen dieser Sitzung (Preise, Handelsvolumen, Gold; jeder Versuch zaehlt), fuer Statuszeilen und Tests. */
   function abrufZaehler() {
     return abrufe;
   }
@@ -1531,6 +2058,16 @@ const PREISE = (function () {
     PREIS_GUELTIG_MIN: CACHE_GUELTIG_MIN_DEFAULT,
     VOLUMEN_GUELTIG_MIN,
     BESTAND_DB_NAME,
+    BLOCKGROESSE,
+    PAUSE_MS,
+    LIMIT_JE_MINUTE,
+    LIMIT_JE_5_MINUTEN,
+    BUDGET_JE_MINUTE,
+    BUDGET_JE_5_MINUTEN,
+    LIMIT_RESET_MARGE_MS,
+    MAX_429_VORDERGRUND,
+    limitResetAusText,
+    planer,
     cacheSchluessel,
     bestandBereit,
     bestandInfo,

@@ -251,15 +251,18 @@ const CRAFTEN = (function () {
     return { zutaten: Array.from(zutaten), produkte: Array.from(produkte) };
   }
 
-  /** Grobe Abrufzahl je Suche: je Einkaufsstadt die Zutaten, je Verkaufsstadt Preise und Handel der Produkte, 50 IDs je Abruf. */
+  /**
+   * Grobe Abrufzahl je Suche, 50 IDs je Abruf. Seit v3.16.0 alle Staedte in
+   * einem Abruf: die Zutaten einmal (fuer alle Einkaufsstaedte), Preise und
+   * Handel der Produkte je einmal (fuer alle Verkaufsstaedte).
+   */
   function abrufSchaetzung(kand, auswahl) {
     const ids = benoetigteMarktIds(kand);
     const bl = (n) => Math.ceil(n / 50);
+    const hat = (liste) => STAEDTE.some((s) => (liste || []).indexOf(s) !== -1);
     let n = 0;
-    STAEDTE.forEach((s) => {
-      if ((auswahl.einkaufStaedte || []).indexOf(s) !== -1) n += bl(ids.zutaten.length);
-      if ((auswahl.verkaufStaedte || []).indexOf(s) !== -1) n += 2 * bl(ids.produkte.length);
-    });
+    if (hat(auswahl.einkaufStaedte)) n += bl(ids.zutaten.length);
+    if (hat(auswahl.verkaufStaedte)) n += 2 * bl(ids.produkte.length);
     return { abrufe: n, produkte: ids.produkte.length, zutaten: ids.zutaten.length };
   }
 
@@ -698,10 +701,11 @@ const CRAFTEN = (function () {
       JSON.stringify(einstellungenBereinigen({ warengruppen: ["sword", "fiber"] }))
     );
     pruefe(
-      "abrufSchaetzung: Zutaten je Einkaufsstadt, Preise und Handel je Verkaufsstadt",
+      "abrufSchaetzung: Zutaten einmal fuer alle Einkaufsstaedte, Preise und Handel je einmal fuer alle Verkaufsstaedte",
       (function () {
         const a = abrufSchaetzung(breit, { einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst", "Martlock"] });
-        return a.produkte === 5 && a.abrufe === 1 + 2 * 2;
+        const nurEinkauf = abrufSchaetzung(breit, { einkaufStaedte: ["Lymhurst", "Thetford"], verkaufStaedte: [] });
+        return a.produkte === 5 && a.abrufe === 1 + 2 && nurEinkauf.abrufe === 1;
       })(),
       JSON.stringify(abrufSchaetzung(breit, { einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst", "Martlock"] }))
     );
@@ -750,8 +754,10 @@ const CRAFTEN = (function () {
 
   /**
    * Preise und Handelsvolumen der Auswahl beschaffen (v3.15.0): aus dem
-   * Preisbestand, was frisch ist, der Rest per Abruf (Staedte nacheinander,
-   * PREISE drosselt). opts.frisch erzwingt den Abruf von allem. Ohne DOM,
+   * Preisbestand, was frisch ist, der Rest per Abruf. Seit v3.16.0 alle
+   * Staedte in einem Abruf je ID-Block (PREISE, Abrufplaner): Zutatenpreise
+   * nur fuer die Einkaufsstaedte, Produktpreise und Handelsvolumen nur fuer
+   * die Verkaufsstaedte. opts.frisch erzwingt den Abruf von allem. Ohne DOM,
    * mit nachgebildetem fetch testbar.
    * @returns {Promise<{stadtDaten:Array, ids:{zutaten:string[], produkte:string[]}, abrufe:number}>}
    */
@@ -761,37 +767,43 @@ const CRAFTEN = (function () {
     const frisch = !!opts.frisch;
     const ids = benoetigteMarktIds(kand);
     const staedte = STAEDTE.filter((s) => auswahl.einkaufStaedte.indexOf(s) !== -1 || auswahl.verkaufStaedte.indexOf(s) !== -1);
+    const einkauf = staedte.filter((s) => auswahl.einkaufStaedte.indexOf(s) !== -1);
+    const verkauf = staedte.filter((s) => auswahl.verkaufStaedte.indexOf(s) !== -1);
+    const anzahl = (liste) => liste.length + (liste.length === 1 ? " Stadt" : " Städte");
     const start = PREISE.abrufZaehler();
-    const stadtDaten = [];
-    for (let i = 0; i < staedte.length; i++) {
-      const stadt = staedte[i];
-      const ek = auswahl.einkaufStaedte.indexOf(stadt) !== -1;
-      const vk = auswahl.verkaufStaedte.indexOf(stadt) !== -1;
-      const vorsatz = stadt + " (" + (i + 1) + "/" + staedte.length + "): ";
-      const eintrag = { stadt };
-      if (ek) {
-        eintrag.preiseRoh = await PREISE.preiseAbrufen(ids.zutaten, {
-          stadt,
-          erzwingen: frisch,
-          qualitaet: 1,
-          aufFortschritt: (f, g) => status(vorsatz + "Materialpreise " + f + "/" + g + " ..."),
-        });
-      }
-      if (vk) {
-        eintrag.produktJeQ = await PREISE.preiseAlleQualitaetenAbrufen(ids.produkte, {
-          stadt,
-          erzwingen: frisch,
-          aufFortschritt: (f, g) => status(vorsatz + "Verkaufspreise " + f + "/" + g + " ..."),
-        });
-        eintrag.absatz = await PREISE.absatzAbrufen(ids.produkte, {
-          stadt,
-          tageFenster: TAGE_FENSTER,
-          erzwingen: frisch,
-          aufFortschritt: (f, g) => status(vorsatz + "Handelsvolumen " + f + "/" + g + " ..."),
-        });
-      }
-      stadtDaten.push(eintrag);
+    let preiseRoh = {};
+    let produktJeQ = {};
+    let absatz = {};
+    if (einkauf.length) {
+      preiseRoh = await PREISE.preiseAbrufen(ids.zutaten, {
+        staedte: einkauf,
+        erzwingen: frisch,
+        qualitaet: 1,
+        aufFortschritt: (f, g) => status("Materialpreise (" + anzahl(einkauf) + ") " + f + "/" + g + " ..."),
+      });
     }
+    if (verkauf.length) {
+      produktJeQ = await PREISE.preiseAlleQualitaetenAbrufen(ids.produkte, {
+        staedte: verkauf,
+        erzwingen: frisch,
+        aufFortschritt: (f, g) => status("Verkaufspreise (" + anzahl(verkauf) + ") " + f + "/" + g + " ..."),
+      });
+      absatz = await PREISE.absatzAbrufen(ids.produkte, {
+        staedte: verkauf,
+        tageFenster: TAGE_FENSTER,
+        erzwingen: frisch,
+        aufFortschritt: (f, g) => status("Handelsvolumen (" + anzahl(verkauf) + ") " + f + "/" + g + " ..."),
+      });
+    }
+    const stadtDaten = staedte.map((stadt) => {
+      const eintrag = { stadt };
+      if (preiseRoh[stadt]) eintrag.preiseRoh = preiseRoh[stadt];
+      if (produktJeQ[stadt]) {
+        eintrag.produktJeQ = produktJeQ[stadt];
+        eintrag.absatz = absatz[stadt];
+      }
+      return eintrag;
+    });
     return { stadtDaten, ids, abrufe: PREISE.abrufZaehler() - start };
   }
 
@@ -993,9 +1005,9 @@ const CRAFTEN = (function () {
       const kand = kandidaten(auswahl);
       const a = abrufSchaetzung(kand, auswahl);
       umfangEl.textContent = kand.length
-        ? a.produkte + " Produkte, " + a.zutaten + " Zutaten, höchstens " + a.abrufe + " Abrufe (rund " + Math.max(1, Math.round((a.abrufe * 2) / 60 * 10) / 10).toString().replace(".", ",") + " Min.)"
+        ? a.produkte + " Produkte, " + a.zutaten + " Zutaten, höchstens " + a.abrufe + " Abrufe (rund " + (a.abrufe * 2 < 60 ? a.abrufe * 2 + " s" : (Math.round((a.abrufe * 2) / 60 * 10) / 10).toString().replace(".", ",") + " Min.") + ")"
         : "Nichts ausgewählt.";
-      umfangEl.title = "Obergrenze: was im Preisbestand noch frisch ist (Preise " + PREISE.PREIS_GUELTIG_MIN + " Min., Handelsvolumen " + PREISE.VOLUMEN_GUELTIG_MIN + " Min.), wird nicht neu abgerufen. Die Preis-Schnittstelle drosselt; die App fragt 50 Einträge je Abruf mit Pause dazwischen ab. Weniger Warengruppen, Tiers oder Städte gehen schneller.";
+      umfangEl.title = "Obergrenze: was im Preisbestand noch frisch ist (Preise " + PREISE.PREIS_GUELTIG_MIN + " Min., Handelsvolumen " + PREISE.VOLUMEN_GUELTIG_MIN + " Min.), wird nicht neu abgerufen. Die Preis-Schnittstelle drosselt; die App fragt 50 Einträge je Abruf mit Pause dazwischen ab. Alle Städte kommen in einem Abruf; weniger Warengruppen oder Tiers gehen schneller.";
     }
 
     function preiseResetAktualisieren() {

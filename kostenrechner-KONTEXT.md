@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.15.0 · Optimierungsrunde O1: gemeinsamer Preisbestand
+Stand: 2026-11-22 · Version: v3.16.0 · Optimierungsrunde O2: Abrufplaner
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -73,6 +73,49 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.16.0 (22.11.2026): Optimierungsrunde, Paket O2 „Abrufplaner“
+
+- **Eine Warteschlange für alle Abrufe von `js/preise.js`** (`PREISE.planer`):
+  strikt nacheinander, 1,5 s Abstand, Vordergrund (Nutzer) überholt
+  Hintergrund (Scan ab O3). Budget im gleitenden Fenster 120 je Minute und
+  240 je 5 Minuten (eigene Wahl, unter den dokumentierten 180/300).
+  Schnittstelle: `einreihen(url, {prioritaet, gruppe, bezeichnung})`,
+  `abbrechen(filter)`, `pausieren()`, `fortsetzen()`,
+  `einstellen({hintergrundAuchVerborgen})`, `status()`, `beiAenderung(fn)`.
+  Hintergrundaufträge ruhen bei verborgenem Tab. Tests tauschen Uhr und
+  Wartefunktion über `PREISE.testEinstellen()`.
+- **Alle Städte in einem Abruf:** `opts.staedte` in `preiseAbrufen`,
+  `preiseAlleQualitaetenAbrufen`, `volumenAbrufen`, `absatzAbrufen`; Ergebnis
+  dann `Stadt -> bisheriges Ergebnis`, Bestandsschlüssel weiter je Stadt.
+  `CRAFTEN.datenAbrufen` und `VEREDELN.datenAbrufen` holen Zutaten nur für
+  Einkaufsstädte, Produktpreise und Volumen nur für Verkaufsstädte.
+  Geschrieben wird je Stadt nur, was für diese Stadt fällig war.
+- **429:** die ganze Schlange pausiert. Die echte Antwort nennt die
+  Reset-Zeit im Text (s. `CLAUDE.md`, API-Abschnitt); `limitResetAusText()`
+  liest sie, gewartet wird bis dahin plus 2 s, sonst wachsend 3/6/12 s.
+  Hintergrund wiederholt unbegrenzt, ein Vordergrundauftrag gibt nach 3
+  Drosselungen in Folge mit „Die Preis-API drosselt gerade (Limit bis
+  HH:MM). Bitte danach erneut suchen.“ auf.
+- **Statusanzeige** rechts in der Reiterleiste (`#abrufStatus`, gefüllt von
+  `js/tabs.js`): Zustand, offene Abrufe, geladene MB der Sitzung
+  (unkomprimiert gezählt), bei Drosselung „Limit bis HH:MM“.
+- **Nach Prüfung gehärtet** (`spieldaten-pruefer`): kein Merker `::qA` und
+  kein „nichts da“ für eine Stadt, die in der Antwort ganz fehlt;
+  Städtenamen in der URL ausdrücklich kodiert.
+- **Gemessen:** live „Veredeln leveln“, alle fünf Rohstoffe, drei Einkaufs-
+  und zwei Verkaufsstädte, frisch: 9 Abrufe in 13 s (Hauptsitzung).
+  Umsetzer, kleine Auswahl: vorher 6 Abrufe in 9,4 s, nachher 4 in 4,8 s.
+- Selbsttest **721/721** grün (686 + 35 „planer:“-Tests).
+
+**Offen aus O2:** Der Prüfer bekam beim zweiten `curl`-Abruf eine echte 429,
+weit unter dem dokumentierten Limit; Ursache ungeklärt (fehlende
+Kompression, gemeinsamer Zähler oder kürzeres Fenster). **Ob die echte
+429-Antwort einen CORS-Header trägt, ist ungeprüft**: fehlt er, sieht der
+Browser nur einen Netzfehler und der Planer landet im Fehlerweg (5 Versuche)
+statt im 429-Weg. Preisvergleich und Eintopf-Rechner rufen weiter an der
+Schlange vorbei ab. Budget gilt je Browser-Tab. Kein Schalter in der
+Oberfläche für Pausieren (kommt mit O3). Firefox ungeprüft.
 
 ## Nachtrag v3.15.0 (22.11.2026): Optimierungsrunde, Paket O1 „Gemeinsamer Preisbestand“
 

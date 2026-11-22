@@ -3020,21 +3020,16 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   // -----------------------------------------------------------------------
   document.body.dataset.testsAsync = "1";
 
-  async function bestandTests() {
-    const DB = PREISE.BESTAND_DB_NAME + "_test";
-    const DB_GROSS = PREISE.BESTAND_DB_NAME + "_test_gross";
-    const LS = "albion_kostenrechner_preiscache_test";
-    const hatIdb = typeof indexedDB !== "undefined" && !!indexedDB;
-    const echtesFetch = window.fetch;
-    const log = [];
+  // Feste synthetische API-Antworten fuer die asynchronen Tests: allein aus
+  // Stadt, Markt-ID und Qualitaet abgeleitet. Seit v3.16.0 mit mehreren
+  // Staedten je Abruf (locations=A,B,...), wie die echte API.
+  const SYNTH = (function () {
     const hash = (text) => {
       let x = 7;
       for (let i = 0; i < text.length; i++) x = (x * 31 + text.charCodeAt(i)) % 100003;
       return x;
     };
     const DATUM = "2026-11-22T10:00:00";
-    const JETZT = Date.parse("2026-11-22T10:30:00Z");
-    // Feste synthetische Preise: allein aus Stadt, Markt-ID und Qualitaet abgeleitet.
     const preisZeile = (id, stadt, q) => {
       const sell = 100 + (hash(stadt + "|" + id) % 5000) + q * 10;
       return { item_id: id, city: stadt, quality: q, sell_price_min: sell, sell_price_min_date: DATUM, buy_price_max: Math.floor(sell * 0.8), buy_price_max_date: DATUM };
@@ -3048,16 +3043,28 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       }));
     const antwortFuer = (url) => {
       const u = decodeURIComponent(url);
-      const stadt = /[?&]locations=([^&]+)/.exec(u)[1];
+      const staedte = /[?&]locations=([^&]+)/.exec(u)[1].split(",");
       const p = /\/prices\/(.+)\.json/.exec(u);
       if (p) {
         const qs = /[?&]qualities=([^&]+)/.exec(u)[1].split(",").map(Number);
-        return [].concat(...p[1].split(",").map((id) => qs.map((q) => preisZeile(id, stadt, q))));
+        return [].concat(...staedte.map((stadt) => [].concat(...p[1].split(",").map((id) => qs.map((q) => preisZeile(id, stadt, q))))));
       }
       const hi = /\/history\/(.+)\.json/.exec(u);
-      if (hi) return [].concat(...hi[1].split(",").map((id) => historieZeilen(id, stadt)));
+      if (hi) return [].concat(...staedte.map((stadt) => [].concat(...hi[1].split(",").map((id) => historieZeilen(id, stadt)))));
       return [];
     };
+    return { hash, DATUM, preisZeile, historieZeilen, antwortFuer };
+  })();
+
+  async function bestandTests() {
+    const DB = PREISE.BESTAND_DB_NAME + "_test";
+    const DB_GROSS = PREISE.BESTAND_DB_NAME + "_test_gross";
+    const LS = "albion_kostenrechner_preiscache_test";
+    const hatIdb = typeof indexedDB !== "undefined" && !!indexedDB;
+    const echtesFetch = window.fetch;
+    const log = [];
+    const { preisZeile, historieZeilen, antwortFuer } = SYNTH;
+    const JETZT = Date.parse("2026-11-22T10:30:00Z");
     window.fetch = async (url) => {
       log.push(String(url));
       return { status: 200, ok: true, json: async () => antwortFuer(String(url)) };
@@ -3353,6 +3360,571 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   }
 
   // -----------------------------------------------------------------------
+  // Asynchrone Tests: Abrufplaner (v3.16.0, OPTIMIERUNG-PLAN.md O2)
+  //
+  // Nachgebildetes fetch, eigene Testdatenbank, und eine nachgebildete Uhr:
+  // warte(ms) stellt nur die Uhr vor, kein Test wartet real auf Pause, Budget
+  // oder die Wartezeit nach HTTP 429.
+  // -----------------------------------------------------------------------
+  async function planerTests() {
+    const DB = PREISE.BESTAND_DB_NAME + "_test_planer";
+    const LS = "albion_kostenrechner_preiscache_test_planer";
+    const P = PREISE.planer;
+    const echtesFetch = window.fetch;
+    const { preisZeile, historieZeilen, antwortFuer } = SYNTH;
+    const ohneAbrufzeit = (wert) => JSON.stringify(wert, (k, v) => (k === "abgerufenAm" ? undefined : v));
+    const kurz = () => new Promise((r) => setTimeout(r, 5));
+    let t = 1000000000000; // nachgebildete Uhr in ms
+    let verborgen = false;
+    let log = []; // {url, start, ende, status}
+    let laufend = 0;
+    let maxGleichzeitig = 0;
+    let plan = {}; // url -> Liste vorgegebener Antworten ("429", "fehler"), danach normal
+    let echteTicks = true; // setTimeout(0) je Abruf macht Ueberlappung sichtbar; aus fuer die Massentests
+    let mitText = false;
+    let immer429 = null; // () => Antworttext: jeder Abruf wird mit HTTP 429 beantwortet
+    let zeilenFilter = null; // (zeile) => bool: laesst Zeilen der nachgebildeten Antwort weg
+    const umgebung = { jetzt: () => t, warte: (ms) => ((t += ms), Promise.resolve()), verborgen: () => verborgen };
+    const stellen = (o) => PREISE.testEinstellen(Object.assign({ pauseMs: PREISE.PAUSE_MS, dbName: DB, lsKey: LS }, umgebung, o || {}));
+    const neuerLauf = () => {
+      log = [];
+      laufend = 0;
+      maxGleichzeitig = 0;
+      plan = {};
+    };
+    window.fetch = async (url) => {
+      url = String(url);
+      const eintrag = { url, start: t, ende: null, status: 200 };
+      log.push(eintrag);
+      laufend++;
+      maxGleichzeitig = Math.max(maxGleichzeitig, laufend);
+      if (echteTicks) await new Promise((r) => setTimeout(r, 0));
+      else await Promise.resolve();
+      t += 100; // ein Abruf dauert 100 ms
+      laufend--;
+      eintrag.ende = t;
+      const vorgabe = immer429 ? { text: immer429() } : (plan[url] || []).shift();
+      if (vorgabe === "429") {
+        eintrag.status = 429;
+        return { status: 429, ok: false, json: async () => ({}) };
+      }
+      if (vorgabe && vorgabe.text != null) {
+        eintrag.status = 429;
+        return { status: 429, ok: false, text: async () => vorgabe.text };
+      }
+      if (vorgabe === "fehler") {
+        eintrag.status = 0;
+        throw new Error("Netz weg");
+      }
+      const daten = zeilenFilter ? antwortFuer(url).filter(zeilenFilter) : antwortFuer(url);
+      if (mitText) return { status: 200, ok: true, text: async () => JSON.stringify(daten) };
+      return { status: 200, ok: true, json: async () => daten };
+    };
+    // Kleinster Abstand zwischen dem Ende eines Abrufs und dem Start des naechsten.
+    const kleinsterAbstand = () => {
+      let min = Infinity;
+      for (let i = 1; i < log.length; i++) min = Math.min(min, log[i].start - log[i - 1].ende);
+      return min;
+    };
+    const U = (name) => "https://test.invalid/prices/" + name + ".json?locations=Lymhurst&qualities=1";
+    const staedteVon = (url) => /[?&]locations=([^&]+)/.exec(decodeURIComponent(url))[1].split(",");
+
+    try {
+      await PREISE.testDatenbankLoeschen(DB);
+      localStorage.removeItem(LS);
+      await stellen();
+
+      pruefe(
+        "planer: Budget liegt als benannte Konstanten mit Abstand unter dem dokumentierten Leselimit (180 je Minute, 300 je 5 Minuten), Pause 1,5 s, Blockgroesse 50",
+        PREISE.LIMIT_JE_MINUTE === 180 && PREISE.LIMIT_JE_5_MINUTEN === 300 && PREISE.BUDGET_JE_MINUTE < 180 && PREISE.BUDGET_JE_5_MINUTEN < 300 &&
+          PREISE.PAUSE_MS === 1500 && PREISE.BLOCKGROESSE === 50,
+        PREISE.BUDGET_JE_MINUTE + " / " + PREISE.BUDGET_JE_5_MINUTEN
+      );
+      pruefe("planer: ohne Auftraege ruht die Schlange", P.status().zustand === "ruht" && P.status().offen === 0, JSON.stringify(P.status()));
+
+      // ---- Zwei Reiter suchen gleichzeitig ----
+      const einstC = { premium: true, stationssaetze: { Kriegerschmiede: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null };
+      const auswahlC = CRAFTEN.einstellungenBereinigen({
+        warengruppen: ["sword"], tiers: [4, 5], stufen: [0, 1], einkaufStaedte: ["Lymhurst", "Fort Sterling", "Thetford"], verkaufStaedte: ["Lymhurst", "Bridgewatch"], verkaufsweg: "order",
+      });
+      const kandC = CRAFTEN.kandidaten(auswahlC);
+      const idsC = CRAFTEN.benoetigteMarktIds(kandC);
+      const einstV = { stationssaetze: { Schmelze: 400, Gerberei: 400 }, fce: 0, premium: true, maxPreisAlterMin: null, fceAusnahmen: {}, spezialisierung: {} };
+      const auswahlV = VEREDELN.einstellungenBereinigen({
+        rohstoffe: ["ore", "hide"], tiers: [4, 5, 6], stufen: [0, 1], einkaufStaedte: ["Thetford", "Martlock", "Caerleon"], verkaufStaedte: ["Thetford", "Brecilien"],
+      });
+      const kandV = VEREDELN.kandidaten(auswahlV);
+      neuerLauf();
+      const beide = await Promise.all([CRAFTEN.datenAbrufen(kandC, auswahlC), VEREDELN.datenAbrufen(kandV, auswahlV)]);
+      const gleichzeitigLog = log.slice();
+      const gleichzeitigMax = maxGleichzeitig;
+      const abstand = kleinsterAbstand();
+      const hatCraften = gleichzeitigLog.some((e) => /qualities=1,2,3,4,5/.test(decodeURIComponent(e.url)));
+      const hatVeredeln = gleichzeitigLog.some((e) => /T4_METALBAR/.test(e.url));
+      neuerLauf();
+      const einzelnC = await CRAFTEN.datenAbrufen(kandC, auswahlC, { frisch: true });
+      const einzelnV = await VEREDELN.datenAbrufen(kandV, auswahlV, { frisch: true });
+      pruefe(
+        "planer: zwei Reiter suchen gleichzeitig, die Abrufe laufen strikt nacheinander (nie zwei zugleich, mindestens 1,5 s zwischen Ende und naechstem Start)",
+        gleichzeitigMax === 1 && gleichzeitigLog.length > 3 && abstand >= PREISE.PAUSE_MS && hatCraften && hatVeredeln,
+        "hoechstens " + gleichzeitigMax + " zugleich, " + gleichzeitigLog.length + " Abrufe, kleinster Abstand " + abstand + " ms"
+      );
+      pruefe(
+        "planer: dabei geht kein Abruf verloren und keiner laeuft doppelt (gleiche Abrufzahl und gleiche Ergebnisse wie beide Suchen einzeln nacheinander)",
+        gleichzeitigLog.length === einzelnC.abrufe + einzelnV.abrufe &&
+          new Set(gleichzeitigLog.map((e) => e.url)).size === gleichzeitigLog.length &&
+          ohneAbrufzeit(beide[0].stadtDaten) === ohneAbrufzeit(einzelnC.stadtDaten) &&
+          ohneAbrufzeit(beide[1].stadtDaten) === ohneAbrufzeit(einzelnV.stadtDaten),
+        gleichzeitigLog.length + " gegen " + einzelnC.abrufe + " + " + einzelnV.abrufe
+      );
+
+      // ---- Mehrere Staedte in einem Abruf (Craften: 3 Einkaufs-, 2 Verkaufsstaedte) ----
+      PREISE.preisCacheLeeren();
+      await PREISE.bestandGeschrieben();
+      await stellen();
+      neuerLauf();
+      const bl = (n) => Math.ceil(n / PREISE.BLOCKGROESSE);
+      const m1 = await CRAFTEN.datenAbrufen(kandC, auswahlC);
+      const urls = log.map((e) => decodeURIComponent(e.url));
+      const zutatUrls = urls.filter((u) => /\/prices\//.test(u) && /qualities=1$/.test(u));
+      const produktUrls = urls.filter((u) => /\/prices\//.test(u) && /qualities=1,2,3,4,5$/.test(u));
+      const historieUrls = urls.filter((u) => /\/history\//.test(u));
+      pruefe(
+        "planer: Suche mit 3 Einkaufs- und 2 Verkaufsstaedten sendet je ID-Block genau einen Abruf je Endpunkt (Zutatenpreise, Produktpreise, Handelsvolumen)",
+        zutatUrls.length === bl(idsC.zutaten.length) && produktUrls.length === bl(idsC.produkte.length) && historieUrls.length === bl(idsC.produkte.length) &&
+          urls.length === zutatUrls.length + produktUrls.length + historieUrls.length && m1.abrufe === urls.length &&
+          urls.length === CRAFTEN.abrufSchaetzung(kandC, auswahlC).abrufe,
+        idsC.zutaten.length + " Zutaten, " + idsC.produkte.length + " Produkte: " + zutatUrls.length + " + " + produktUrls.length + " + " + historieUrls.length + " Abrufe"
+      );
+      pruefe(
+        "planer: Zutatenpreise nur fuer die Einkaufsstaedte, Produktpreise und Handelsvolumen nur fuer die Verkaufsstaedte",
+        zutatUrls.every((u) => staedteVon(u).join("|") === "Lymhurst|Fort Sterling|Thetford") &&
+          produktUrls.concat(historieUrls).every((u) => staedteVon(u).join("|") === "Lymhurst|Bridgewatch"),
+        staedteVon(zutatUrls[0]).join(",") + " / " + staedteVon(produktUrls[0]).join(",")
+      );
+      const von = (daten, stadt) => daten.stadtDaten.find((d) => d.stadt === stadt);
+      pruefe(
+        "planer: Ergebnisse liegen je Stadt richtig (jede Stadt bekommt ihren eigenen Preis, auch \"Fort Sterling\" mit Leerzeichen; Bestandsschluessel je Stadt)",
+        ["Lymhurst", "Fort Sterling", "Thetford"].every((s) => idsC.zutaten.every((id) => von(m1, s).preiseRoh[id].sell.preis === preisZeile(id, s, 1).sell_price_min)) &&
+          ["Lymhurst", "Bridgewatch"].every((s) => idsC.produkte.every((id) => von(m1, s).produktJeQ[id][3].sell.preis === preisZeile(id, s, 3).sell_price_min && von(m1, s).absatz[id][2].stueckGesamt === historieZeilen(id, s)[1].data[0].item_count)) &&
+          !von(m1, "Fort Sterling").produktJeQ && !von(m1, "Bridgewatch").preiseRoh &&
+          !!PREISE.preisCacheLesen().eintraege[PREISE.cacheSchluessel("Fort Sterling", idsC.zutaten[0], 1)] &&
+          !PREISE.preisCacheLesen().eintraege[PREISE.cacheSchluessel("Bridgewatch", idsC.zutaten[0], 1)]
+      );
+      // Bisheriger Weg (bis v3.15.0): je Stadt ein eigener Abruf mit opts.stadt.
+      const alterWegC = [];
+      for (const stadt of CRAFTEN.STAEDTE || VEREDELN.STAEDTE) {
+        const ek = auswahlC.einkaufStaedte.indexOf(stadt) !== -1;
+        const vk = auswahlC.verkaufStaedte.indexOf(stadt) !== -1;
+        if (!ek && !vk) continue;
+        const e = { stadt };
+        if (ek) e.preiseRoh = await PREISE.preiseAbrufen(idsC.zutaten, { stadt, erzwingen: true, qualitaet: 1 });
+        if (vk) {
+          e.produktJeQ = await PREISE.preiseAlleQualitaetenAbrufen(idsC.produkte, { stadt, erzwingen: true });
+          e.absatz = await PREISE.absatzAbrufen(idsC.produkte, { stadt, tageFenster: 7, erzwingen: true });
+        }
+        alterWegC.push(e);
+      }
+      const JETZT = Date.parse("2026-11-22T10:30:00Z");
+      const zeilenNeu = CRAFTEN.zeilenRechnen(kandC, m1.stadtDaten, auswahlC, einstC, JETZT);
+      pruefe(
+        "planer: Mehrstaedte-Abruf liefert dieselben Daten und dieselben Zeilen wie der bisherige Weg mit einem Abruf je Stadt (Craften)",
+        ohneAbrufzeit(m1.stadtDaten) === ohneAbrufzeit(alterWegC) && zeilenNeu.some((z) => z.gewinn != null) &&
+          ohneAbrufzeit(zeilenNeu) === ohneAbrufzeit(CRAFTEN.zeilenRechnen(kandC, alterWegC, auswahlC, einstC, JETZT)),
+        zeilenNeu.length + " Zeilen, " + zeilenNeu.filter((z) => z.gewinn != null).length + " mit Ergebnis"
+      );
+      neuerLauf();
+      const m2 = await CRAFTEN.datenAbrufen(kandC, auswahlC);
+      pruefe("planer: zweite Suche innerhalb der Gueltigkeit loest weiter 0 Abrufe aus (Bestand aus O1)", m2.abrufe === 0 && log.length === 0 && ohneAbrufzeit(m2.stadtDaten) === ohneAbrufzeit(m1.stadtDaten), m2.abrufe);
+      neuerLauf();
+      const m3 = await CRAFTEN.datenAbrufen(kandC, Object.assign({}, auswahlC, { einkaufStaedte: ["Lymhurst", "Fort Sterling", "Thetford", "Martlock"] }));
+      pruefe(
+        "planer: kommt eine Stadt hinzu, wird nur diese Stadt nachgeholt",
+        log.length === bl(idsC.zutaten.length) && log.every((e) => staedteVon(e.url).join("|") === "Martlock") && von(m3, "Martlock").preiseRoh[idsC.zutaten[0]].sell.preis === preisZeile(idsC.zutaten[0], "Martlock", 1).sell_price_min,
+        log.map((e) => staedteVon(e.url).join(",")).join(" / ")
+      );
+
+      // ---- Veredeln: 3 Einkaufs-, 2 Verkaufsstaedte ----
+      PREISE.preisCacheLeeren();
+      await PREISE.bestandGeschrieben();
+      await stellen();
+      neuerLauf();
+      const v1 = await VEREDELN.datenAbrufen(kandV, auswahlV);
+      const vUrls = log.map((e) => decodeURIComponent(e.url));
+      const zSet = new Set(v1.zutatIds);
+      const pSet = new Set(v1.produktIds);
+      const nurZ = v1.zutatIds.filter((id) => !pSet.has(id)).length;
+      const nurP = v1.produktIds.filter((id) => !zSet.has(id)).length;
+      const beides = v1.zutatIds.filter((id) => pSet.has(id)).length;
+      const idsIn = (u) => /\/(?:prices|history)\/(.+)\.json/.exec(u)[1].split(",");
+      pruefe(
+        "planer: Veredeln mit 3 Einkaufs- und 2 Verkaufsstaedten: ein Abruf je ID-Block und Endpunkt, keine ID doppelt, Zutaten nur in Einkaufs-, Produkte nur in Verkaufsstaedten",
+        vUrls.filter((u) => /\/prices\//.test(u)).length === bl(nurZ) + bl(nurP) + bl(beides) && vUrls.filter((u) => /\/history\//.test(u)).length === bl(v1.produktIds.length) &&
+          vUrls.filter((u) => /\/prices\//.test(u)).every((u) => {
+            const st = staedteVon(u).join("|");
+            return idsIn(u).every((id) => (zSet.has(id) && pSet.has(id) ? st === "Martlock|Thetford|Caerleon|Brecilien" : zSet.has(id) ? st === "Martlock|Thetford|Caerleon" : st === "Thetford|Brecilien"));
+          }) &&
+          vUrls.filter((u) => /\/history\//.test(u)).every((u) => staedteVon(u).join("|") === "Thetford|Brecilien") &&
+          [].concat(...vUrls.filter((u) => /\/prices\//.test(u)).map(idsIn)).length === new Set(v1.zutatIds.concat(v1.produktIds)).size,
+        nurZ + " nur Zutat, " + nurP + " nur Produkt, " + beides + " beides: " + vUrls.length + " Abrufe"
+      );
+      const alterWegV = [];
+      for (const stadt of VEREDELN.STAEDTE) {
+        const ek = auswahlV.einkaufStaedte.indexOf(stadt) !== -1;
+        const vk = auswahlV.verkaufStaedte.indexOf(stadt) !== -1;
+        if (!ek && !vk) continue;
+        const ids = Array.from(new Set([].concat(ek ? v1.zutatIds : [], vk ? v1.produktIds : [])));
+        const preiseRoh = await PREISE.preiseAbrufen(ids, { stadt, erzwingen: true, qualitaet: 1 });
+        const absatz = vk ? await PREISE.absatzAbrufen(v1.produktIds, { stadt, tageFenster: 7, erzwingen: true }) : {};
+        alterWegV.push({ stadt, preiseRoh, absatz });
+      }
+      const sortiert = (daten) => daten.map((d) => ({ stadt: d.stadt, preiseRoh: Object.keys(d.preiseRoh).sort().map((id) => [id, d.preiseRoh[id]]), absatz: Object.keys(d.absatz).sort().map((id) => [id, d.absatz[id]]) }));
+      const zeilenV = VEREDELN.zeilenRechnen(kandV, v1.stadtDaten, auswahlV, einstV, JETZT);
+      pruefe(
+        "planer: Mehrstaedte-Abruf liefert dieselben Daten und dieselben Zeilen wie der bisherige Weg mit einem Abruf je Stadt (Veredeln)",
+        ohneAbrufzeit(sortiert(v1.stadtDaten)) === ohneAbrufzeit(sortiert(alterWegV)) && zeilenV.some((z) => z.gewinn != null) &&
+          ohneAbrufzeit(zeilenV) === ohneAbrufzeit(VEREDELN.zeilenRechnen(kandV, alterWegV, auswahlV, einstV, JETZT)),
+        zeilenV.length + " Zeilen, " + zeilenV.filter((z) => z.gewinn != null).length + " mit Ergebnis"
+      );
+      PREISE.preisCacheLeeren();
+      await PREISE.bestandGeschrieben();
+      await stellen();
+      neuerLauf();
+      const auswahlVGleich = Object.assign({}, auswahlV, { einkaufStaedte: ["Thetford", "Martlock"], verkaufStaedte: ["Thetford", "Martlock"] });
+      const vGleich = await VEREDELN.datenAbrufen(kandV, auswahlVGleich);
+      pruefe(
+        "planer: Veredeln mit gleichen Einkaufs- und Verkaufsstaedten holt alle Preise in einem Abruf je ID-Block (hier 2 Abrufe: Preise, Handelsvolumen)",
+        log.length === bl(new Set(vGleich.zutatIds.concat(vGleich.produktIds)).size) + bl(vGleich.produktIds.length) && log.length === 2 &&
+          vGleich.stadtDaten.every((d) => vGleich.zutatIds.concat(vGleich.produktIds).every((id) => d.preiseRoh[id].sell.preis === preisZeile(id, d.stadt, 1).sell_price_min)),
+        log.length + " Abrufe"
+      );
+      neuerLauf();
+      const volM = await PREISE.volumenAbrufen(["T4_BAG", "T5_BAG"], { staedte: ["Lymhurst", "Martlock"] });
+      const volE = await PREISE.volumenAbrufen(["T4_BAG", "T5_BAG"], { stadt: "Martlock" });
+      pruefe(
+        "planer: volumenAbrufen mit mehreren Staedten, ein Abruf, Ablage je Stadt (history/ nennt die Stadt \"location\"), Einzelabruf danach aus dem Bestand",
+        log.length === 1 && volM.Martlock.T4_BAG.stadt === "Martlock" && volM.Lymhurst.T4_BAG.stadt === "Lymhurst" && ohneAbrufzeit(volM.Martlock) === ohneAbrufzeit(volE),
+        JSON.stringify(volM.Martlock.T4_BAG)
+      );
+
+      // ---- Vordergrund ueberholt Hintergrund ----
+      await stellen();
+      neuerLauf();
+      const reihenfolge = ["h1", "h2", "h3"].map((n) => P.einreihen(U(n), { prioritaet: "hintergrund" })).concat(["v1", "v2"].map((n) => P.einreihen(U(n))));
+      const offenVorher = P.status();
+      await Promise.all(reihenfolge);
+      pruefe(
+        "planer: Vordergrund ueberholt Hintergrund (der laufende Hintergrundabruf endet, dann erst alle Vordergrundauftraege)",
+        log.map((e) => /prices\/(\w+)\.json/.exec(e.url)[1]).join(",") === "h1,v1,v2,h2,h3" && offenVorher.offen === 5 && offenVorher.offenVordergrund === 2 && offenVorher.zustand === "laeuft" && maxGleichzeitig === 1,
+        log.map((e) => /prices\/(\w+)\.json/.exec(e.url)[1]).join(",")
+      );
+
+      // ---- HTTP 429: ganze Schlange pausiert, setzt selbst fort, Abruf wird wiederholt ----
+      await stellen();
+      neuerLauf();
+      plan[U("x")] = ["429"];
+      const zustaende = [];
+      const abmelden = P.beiAenderung((s) => zustaende.push(s.zustand));
+      const zaehlerVor = PREISE.abrufZaehler();
+      const drei = await Promise.all([P.einreihen(U("a")), P.einreihen(U("x")), P.einreihen(U("b"))]);
+      abmelden();
+      const namen = log.map((e) => /prices\/(\w+)\.json/.exec(e.url)[1] + (e.status === 429 ? "!" : ""));
+      pruefe(
+        "planer: HTTP 429 pausiert die ganze Schlange (auch der folgende Auftrag wartet), sie setzt selbst fort und wiederholt den betroffenen Abruf",
+        namen.join(",") === "a,x!,x,b" && log[2].start - log[1].ende >= 2 * PREISE.PAUSE_MS && drei[1].length === 1 && drei[1][0].item_id === "x" && drei[2][0].item_id === "b" &&
+          zustaende.indexOf("limit") !== -1 && zustaende[zustaende.length - 1] === "ruht" && PREISE.abrufZaehler() - zaehlerVor === 4,
+        namen.join(",") + ", Pause " + (log[2].start - log[1].ende) + " ms, Zustaende " + Array.from(new Set(zustaende)).join(">")
+      );
+      neuerLauf();
+      plan[U("y")] = ["429", "429", "429"];
+      await P.einreihen(U("y"), { prioritaet: "hintergrund" });
+      const pausen = [1, 2, 3].map((i) => log[i].start - log[i - 1].ende);
+      pruefe(
+        "planer: wiederholte 429 ohne Reset-Zeit lassen die Wartezeit wachsen (3 s, 6 s, 12 s), der Hintergrundabruf wird trotzdem nicht verworfen",
+        log.length === 4 && pausen[0] >= 3000 && pausen[1] >= 6000 && pausen[2] >= 12000 && pausen[0] < pausen[1] && pausen[1] < pausen[2],
+        pausen.join(" / ") + " ms"
+      );
+      neuerLauf();
+      plan[U("f")] = ["fehler", "fehler"];
+      plan[U("g")] = ["fehler", "fehler", "fehler", "fehler", "fehler", "fehler"];
+      const fOk = await P.einreihen(U("f"));
+      let gFehler = null;
+      try {
+        await P.einreihen(U("g"), { bezeichnung: "Preisabruf" });
+      } catch (e) {
+        gFehler = e;
+      }
+      pruefe(
+        "planer: Netzfehler werden mit Wartezeit wiederholt, nach 5 Versuchen endet der Auftrag mit Fehler statt endlos zu laufen",
+        fOk[0].item_id === "f" && log.filter((e) => /\/f\.json/.test(e.url)).length === 3 && log.filter((e) => /\/g\.json/.test(e.url)).length === 5 &&
+          gFehler && /Preisabruf fehlgeschlagen nach 5 Versuchen/.test(gFehler.message) && P.status().zustand === "ruht",
+        gFehler && gFehler.message
+      );
+
+      // ---- Budget: gleitendes Fenster ----
+      const fensterMax = (zeiten, ms) => {
+        let max = 0;
+        let j = 0;
+        for (let i = 0; i < zeiten.length; i++) {
+          while (zeiten[i] - zeiten[j] >= ms) j++;
+          max = Math.max(max, i - j + 1);
+        }
+        return max;
+      };
+      await stellen({ pauseMs: 0 });
+      neuerLauf();
+      echteTicks = false;
+      const zustaendeB = new Set();
+      const abmeldenB = P.beiAenderung((s) => zustaendeB.add(s.zustand));
+      const viele = [];
+      for (let i = 0; i < 600; i++) viele.push(P.einreihen(U("m" + i), { prioritaet: i % 2 ? "hintergrund" : "vordergrund" }));
+      const vieleErg = await Promise.all(viele);
+      abmeldenB();
+      const zeiten = log.map((e) => e.start);
+      const jeMin = fensterMax(zeiten, 60000);
+      const je5 = fensterMax(zeiten, 300000);
+      pruefe(
+        "planer: Budget haelt das gleitende Fenster ein (600 Auftraege ohne Pause: nie mehr als " + PREISE.BUDGET_JE_MINUTE + " je Minute und " + PREISE.BUDGET_JE_5_MINUTEN + " je 5 Minuten), keiner geht verloren",
+        log.length === 600 && vieleErg.every((d, i) => d[0].item_id === "m" + i) && jeMin <= PREISE.BUDGET_JE_MINUTE && je5 <= PREISE.BUDGET_JE_5_MINUTEN &&
+          jeMin === PREISE.BUDGET_JE_MINUTE && je5 === PREISE.BUDGET_JE_5_MINUTEN && zustaendeB.has("limit") && maxGleichzeitig === 1,
+        "hoechstens " + jeMin + " je Minute, " + je5 + " je 5 Minuten, Dauer " + Math.round((zeiten[599] - zeiten[0]) / 60000) + " Min. (nachgebildete Uhr)"
+      );
+      await stellen();
+      neuerLauf();
+      await Promise.all(Array.from({ length: 100 }, (x, i) => P.einreihen(U("p" + i))));
+      const zeitenP = log.map((e) => e.start);
+      pruefe(
+        "planer: mit der Vorgabe-Pause von 1,5 s bleiben die Abrufe von selbst weit unter dem Limit (hoechstens 40 je Minute)",
+        log.length === 100 && kleinsterAbstand() >= PREISE.PAUSE_MS && fensterMax(zeitenP, 60000) <= 40,
+        fensterMax(zeitenP, 60000) + " je Minute"
+      );
+      echteTicks = true;
+
+      // ---- Verborgener Tab ----
+      await stellen({ pauseMs: 0 });
+      neuerLauf();
+      verborgen = true;
+      P.sichtbarkeitGeaendert();
+      const hg = P.einreihen(U("hg"), { prioritaet: "hintergrund" });
+      await kurz();
+      const ruhtVerborgen = log.length === 0 && P.status().zustand === "pausiert" && P.status().offen === 1;
+      const vgErg = await P.einreihen(U("vg"));
+      await kurz();
+      const nurVordergrund = log.length === 1 && /\/vg\.json/.test(log[0].url) && vgErg[0].item_id === "vg";
+      verborgen = false;
+      P.sichtbarkeitGeaendert();
+      await hg;
+      pruefe(
+        "planer: bei verborgenem Tab ruht der Hintergrund, der Vordergrund laeuft; wird der Tab sichtbar, setzt der Hintergrund selbst fort",
+        ruhtVerborgen && nurVordergrund && log.length === 2 && /\/hg\.json/.test(log[1].url),
+        JSON.stringify({ ruhtVerborgen, nurVordergrund, abrufe: log.length })
+      );
+      neuerLauf();
+      verborgen = true;
+      P.einstellen({ hintergrundAuchVerborgen: true });
+      await P.einreihen(U("hg2"), { prioritaet: "hintergrund" });
+      pruefe("planer: das Ruhen bei verborgenem Tab ist abschaltbar (hintergrundAuchVerborgen)", log.length === 1 && P.status().hintergrundAuchVerborgen === true, log.length);
+      verborgen = false;
+
+      // ---- Pausieren, Fortsetzen, Abbrechen ----
+      await stellen({ pauseMs: 0 });
+      neuerLauf();
+      P.pausieren();
+      const abgelehnt = [];
+      const merke = (p, name) => p.then(() => abgelehnt.push(name + ":ok"), (e) => abgelehnt.push(name + (e.abgebrochen ? ":abgebrochen" : ":fehler")));
+      const g1a = merke(P.einreihen(U("g1a"), { prioritaet: "hintergrund", gruppe: "g1" }), "g1a");
+      const g1b = merke(P.einreihen(U("g1b"), { prioritaet: "hintergrund", gruppe: "g1" }), "g1b");
+      const g2a = merke(P.einreihen(U("g2a"), { prioritaet: "hintergrund", gruppe: "g2" }), "g2a");
+      await kurz();
+      const pausiertOk = log.length === 0 && P.status().zustand === "pausiert" && P.status().offenHintergrund === 3 && P.status().hintergrundPausiert;
+      await P.einreihen(U("vgp"));
+      const vordergrundTrotzPause = log.length === 1;
+      const nAbgebrochen = P.abbrechen({ gruppe: "g1" });
+      P.fortsetzen();
+      await Promise.all([g1a, g1b, g2a]);
+      pruefe(
+        "planer: Hintergrund pausieren (Vordergrund laeuft weiter), eine Gruppe abbrechen, fortsetzen: abgebrochene Auftraege lehnen mit abgebrochen=true ab, der Rest laeuft",
+        pausiertOk && vordergrundTrotzPause && nAbgebrochen === 2 && abgelehnt.sort().join(",") === "g1a:abgebrochen,g1b:abgebrochen,g2a:ok" && log.length === 2 && P.status().zustand === "ruht",
+        abgelehnt.join(",") + ", " + log.length + " Abrufe"
+      );
+      neuerLauf();
+      P.pausieren();
+      let scanFehler = null;
+      const scan = PREISE.preiseAbrufen(Array.from({ length: 120 }, (x, i) => "T4_SCAN_" + i), { staedte: ["Lymhurst", "Martlock"], prioritaet: "hintergrund", gruppe: "scan" }).catch((e) => {
+        scanFehler = e;
+      });
+      await kurz();
+      const scanOffen = P.status().offenHintergrund;
+      P.abbrechen({ gruppe: "scan" });
+      await scan;
+      P.fortsetzen();
+      pruefe(
+        "planer: eine Abruffunktion als Hintergrundauftrag (prioritaet, gruppe) reiht ihre Bloecke ein und endet beim Abbrechen mit abgebrochen=true, ohne einen Abruf zu senden",
+        scanOffen === 3 && scanFehler && scanFehler.abgebrochen === true && log.length === 0 && P.status().offen === 0,
+        scanOffen + " Bloecke offen"
+      );
+
+      // ---- Statusanzeige ----
+      await stellen({ pauseMs: 0 });
+      neuerLauf();
+      mitText = true;
+      const bytesVor = P.status().bytes;
+      const erg = await P.einreihen(U("bytes"));
+      mitText = false;
+      pruefe(
+        "planer: geladene Datenmenge wird gezaehlt (Laenge der Antwort)",
+        P.status().bytes - bytesVor === JSON.stringify(erg).length && P.status().bytes > 0 && Math.abs(P.status().mb - P.status().bytes / 1048576) < 1e-12,
+        P.status().bytes - bytesVor + " Zeichen"
+      );
+      pruefe(
+        "planer: Text der Statusanzeige nennt Zustand, offene Abrufe und MB",
+        TABS.abrufStatusText({ zustand: "limit", offen: 3, mb: 1.234 }) === "Abrufe: wartet wegen Limit · 3 offen · 1,2 MB" &&
+          TABS.abrufStatusText({ zustand: "ruht", offen: 0, mb: 0 }) === "Abrufe: ruht · 0 offen · 0,0 MB" &&
+          TABS.abrufStatusText({ zustand: "laeuft", offen: 12, mb: 140.06 }) === "Abrufe: läuft · 12 offen · 140,1 MB" &&
+          TABS.abrufStatusText({ zustand: "pausiert", offen: 1, mb: 0.04 }) === "Abrufe: pausiert · 1 offen · 0,0 MB",
+        TABS.abrufStatusText({ zustand: "limit", offen: 3, mb: 1.234 })
+      );
+      // ---- Nacharbeit O2: echte 429-Antwort, Obergrenze Vordergrund, Merker, Volumen, URL ----
+      const BELEG = "Throttled, be nice to the server, use compression (gzip, deflate, etc)! Throttle resets at 2026-11-22 11:10:00 +0000!\n";
+      pruefe(
+        "planer: Reset-Zeit aus dem belegten Antworttext einer HTTP 429 (UTC), Unlesbares ergibt null",
+        PREISE.limitResetAusText(BELEG) === Date.UTC(2026, 10, 22, 11, 10, 0) && PREISE.limitResetAusText("Throttled") === null && PREISE.limitResetAusText("") === null && PREISE.limitResetAusText(null) === null,
+        String(PREISE.limitResetAusText(BELEG))
+      );
+      const drosselText = (ms) => "Throttled, be nice to the server, use compression (gzip, deflate, etc)! Throttle resets at " + new Date(ms).toISOString().slice(0, 19).replace("T", " ") + " +0000!\n";
+      const HHMM = (ms) => new Date(ms).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      await stellen();
+      neuerLauf();
+      const resetUm = Math.ceil(t / 1000) * 1000 + 40000;
+      plan[U("r")] = [{ text: drosselText(resetUm) }];
+      const gesehen = [];
+      const abmeldenR = P.beiAenderung((s) => {
+        if (s.zustand === "limit") gesehen.push({ reset: s.limitResetUm, text: TABS.abrufStatusText(s) });
+      });
+      await Promise.all([P.einreihen(U("r")), P.einreihen(U("r2"))]);
+      abmeldenR();
+      pruefe(
+        "planer: HTTP 429 mit Reset-Zeit im Antworttext: die Schlange wartet bis dahin plus " + PREISE.LIMIT_RESET_MARGE_MS + " ms Marge (nicht 3 s geraten) und wiederholt dann",
+        log.length === 3 && log[1].start === resetUm + PREISE.LIMIT_RESET_MARGE_MS && /\/r\.json/.test(log[1].url) && /\/r2\.json/.test(log[2].url),
+        "Reset in " + (resetUm - log[0].ende) + " ms, naechster Start nach " + (log[1].start - log[0].ende) + " ms"
+      );
+      pruefe(
+        "planer: status() nennt die Reset-Zeit, die Statusanzeige zeigt im Zustand limit \"Limit bis HH:MM\" (Ortszeit); danach ist die Reset-Zeit wieder leer",
+        gesehen.length > 0 && gesehen.every((g) => g.reset === resetUm && g.text === "Abrufe: Limit bis " + HHMM(resetUm) + " · 2 offen · 0,0 MB") && P.status().limitResetUm === null &&
+          TABS.abrufStatusText({ zustand: "limit", offen: 1, mb: 0, limitResetUm: null, wartetBis: resetUm }) === "Abrufe: Limit bis " + HHMM(resetUm) + " · 1 offen · 0,0 MB",
+        gesehen.length ? gesehen[0].text : "kein limit gesehen"
+      );
+      const rueckfall = [];
+      for (const text of [drosselText(Math.ceil(t / 1000) * 1000 - 60000), drosselText(Math.ceil(t / 1000) * 1000 + 11 * 60000), "Throttled, kein Datum"]) {
+        await stellen();
+        neuerLauf();
+        plan[U("rf")] = [{ text }];
+        await P.einreihen(U("rf"));
+        rueckfall.push(log[1].start - log[0].ende);
+      }
+      pruefe(
+        "planer: Reset-Zeit in der Vergangenheit, mehr als 10 Minuten in der Zukunft oder nicht lesbar: bisheriger wachsender Rueckfall (3 s)",
+        rueckfall.join(",") === "3000,3000,3000",
+        rueckfall.join(" / ") + " ms"
+      );
+      await stellen();
+      neuerLauf();
+      plan[U("vg3")] = ["429", "429", "429", "429"];
+      plan[U("hg5")] = ["429", "429", "429", "429", "429"];
+      let vg3Fehler = null;
+      const vg3 = P.einreihen(U("vg3")).catch((e) => {
+        vg3Fehler = e;
+      });
+      const hg5 = P.einreihen(U("hg5"), { prioritaet: "hintergrund" });
+      await vg3;
+      const hg5Erg = await hg5;
+      pruefe(
+        "planer: ein Vordergrundauftrag gibt nach " + PREISE.MAX_429_VORDERGRUND + " HTTP 429 in Folge mit verstaendlichem Fehler auf, ein Hintergrundauftrag wiederholt weiter und kommt durch",
+        vg3Fehler && vg3Fehler.gedrosselt === true && /^Die Preis-API drosselt gerade \(Limit bis \d\d:\d\d\)\. Bitte danach erneut suchen\.$/.test(vg3Fehler.message) &&
+          log.filter((e) => /\/vg3\.json/.test(e.url)).length === 3 && log.filter((e) => /\/hg5\.json/.test(e.url)).length === 6 && hg5Erg[0].item_id === "hg5" && P.status().zustand === "ruht",
+        vg3Fehler && vg3Fehler.message
+      );
+      PREISE.preisCacheLeeren();
+      await PREISE.bestandGeschrieben();
+      await stellen();
+      neuerLauf();
+      let resetSuche = null; // die nachgebildete API nennt bei jeder 429 eine neue Reset-Zeit, 30 s voraus
+      immer429 = () => drosselText((resetSuche = Math.ceil(t / 1000) * 1000 + 30000));
+      let sucheFehler = null;
+      try {
+        await CRAFTEN.datenAbrufen(kandC, auswahlC);
+      } catch (e) {
+        sucheFehler = e;
+      }
+      immer429 = null;
+      pruefe(
+        "planer: drosselt die API dauerhaft, endet eine Suche (Craften) nach 3 Versuchen mit dem Drossel-Fehler samt Reset-Zeit statt zu haengen, und die Schlange ist danach leer",
+        sucheFehler && sucheFehler.gedrosselt === true && sucheFehler.message === "Die Preis-API drosselt gerade (Limit bis " + HHMM(resetSuche) + "). Bitte danach erneut suchen." && sucheFehler.limitBis === resetSuche + PREISE.LIMIT_RESET_MARGE_MS &&
+          log.length === 3 && log[1].start - log[0].ende >= 28000 && P.status().offen === 0,
+        (sucheFehler && sucheFehler.message) + ", " + log.length + " Abrufe"
+      );
+
+      // Merker "alle Qualitaeten" nicht fuer eine Stadt ohne Antwortzeile
+      await stellen({ pauseMs: 0 });
+      neuerLauf();
+      const qIds = ["T4_QA_1", "T4_QA_2"];
+      zeilenFilter = (z) => z.city !== "Martlock";
+      const qa1 = await PREISE.preiseAlleQualitaetenAbrufen(qIds, { staedte: ["Lymhurst", "Martlock"] });
+      zeilenFilter = null;
+      const cacheQa = PREISE.preisCacheLesen().eintraege;
+      const qa2 = await PREISE.preiseAlleQualitaetenAbrufen(qIds, { staedte: ["Lymhurst", "Martlock"] });
+      pruefe(
+        "planer: fehlt eine Stadt in der Antwort, wird fuer sie kein Merker \"alle Qualitaeten\" abgelegt; die naechste Suche holt nur diese Stadt nach",
+        !!cacheQa["Lymhurst::T4_QA_1::qA"] && !cacheQa["Martlock::T4_QA_1::qA"] && !cacheQa["Martlock::T4_QA_2::qA"] && Object.keys(qa1.Martlock.T4_QA_1).length === 0 &&
+          log.length === 2 && staedteVon(log[1].url).join("|") === "Martlock" && qa2.Martlock.T4_QA_1[3].sell.preis === preisZeile("T4_QA_1", "Martlock", 3).sell_price_min &&
+          ohneAbrufzeit(qa2.Lymhurst) === ohneAbrufzeit(qa1.Lymhurst),
+        log.map((e) => staedteVon(e.url).join(",")).join(" / ")
+      );
+
+      // Volumen: nur faellige Stadt-ID-Paare schreiben
+      neuerLauf();
+      const volA = await PREISE.volumenAbrufen(["T4_VOL_A"], { staedte: ["Lymhurst"] });
+      const absA = await PREISE.absatzAbrufen(["T4_VOL_A"], { staedte: ["Lymhurst"] });
+      zeilenFilter = (z) => !(z.item_id === "T4_VOL_A" && z.location === "Lymhurst"); // die zweite Antwort laesst genau diese Zeile weg
+      const volB = await PREISE.volumenAbrufen(["T4_VOL_A", "T4_VOL_B"], { staedte: ["Lymhurst", "Martlock"] });
+      const absB = await PREISE.absatzAbrufen(["T4_VOL_A", "T4_VOL_B"], { staedte: ["Lymhurst", "Martlock"] });
+      zeilenFilter = null;
+      const vorKontrolle = log.length;
+      const volC = await PREISE.volumenAbrufen(["T4_VOL_A"], { stadt: "Lymhurst" });
+      const absC = await PREISE.absatzAbrufen(["T4_VOL_A"], { stadt: "Lymhurst" });
+      pruefe(
+        "planer: Volumen im Mehrstaedte-Abruf schreibt je Stadt nur faellige IDs; ein frischer Wert bleibt, auch wenn die neue Antwort die Zeile nicht enthaelt",
+        volA.Lymhurst.T4_VOL_A.umsatz7Tage > 0 && JSON.stringify(volB.Lymhurst.T4_VOL_A) === JSON.stringify(volA.Lymhurst.T4_VOL_A) && JSON.stringify(volC.T4_VOL_A) === JSON.stringify(volA.Lymhurst.T4_VOL_A) &&
+          JSON.stringify(absB.Lymhurst.T4_VOL_A) === JSON.stringify(absA.Lymhurst.T4_VOL_A) && JSON.stringify(absC.T4_VOL_A) === JSON.stringify(absA.Lymhurst.T4_VOL_A) && Object.keys(absA.Lymhurst.T4_VOL_A).length === 2 &&
+          volB.Martlock.T4_VOL_A.umsatz7Tage > 0 && volB.Lymhurst.T4_VOL_B.umsatz7Tage > 0 && log.length === vorKontrolle,
+        JSON.stringify(volB.Lymhurst.T4_VOL_A)
+      );
+
+      // Staedte in der URL kodiert
+      neuerLauf();
+      await PREISE.preiseAbrufen(["T4_URL_1"], { staedte: ["Lymhurst", "Fort Sterling"], erzwingen: true });
+      await PREISE.absatzAbrufen(["T4_URL_1"], { stadt: "Fort Sterling", erzwingen: true });
+      pruefe(
+        "planer: Staedte stehen kodiert in der URL (\"Fort Sterling\" als Fort%20Sterling, Komma bleibt Trenner)",
+        /[?&]locations=Lymhurst,Fort%20Sterling&/.test(log[0].url) && /[?&]locations=Fort%20Sterling&/.test(log[1].url) && log.every((e) => e.url.indexOf(" ") === -1),
+        log.map((e) => e.url.slice(e.url.indexOf("?"))).join(" / ")
+      );
+    } catch (e) {
+      pruefe("planer: asynchrone Tests laufen ohne Ausnahme durch", false, (e && e.stack) || e);
+    } finally {
+      window.fetch = echtesFetch;
+      try {
+        PREISE.planer.abbrechen({ prioritaet: "hintergrund" });
+        await PREISE.testEinstellen(null); // zurueck zum echten Bestand und zur echten Uhr
+        await PREISE.testDatenbankLoeschen(DB);
+        localStorage.removeItem(LS);
+      } catch (e) {
+        pruefe("planer: Aufraeumen", false, e);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {
@@ -3379,9 +3951,9 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   renderErgebnisse(alleTests);
   (function () {
     const zsf = document.getElementById("zusammenfassung");
-    zsf.textContent += ", asynchrone Tests zum Preisbestand laufen ...";
+    zsf.textContent += ", asynchrone Tests zu Preisbestand und Abrufplaner laufen ...";
     zsf.className = "zusammenfassung";
-    bestandTests().then(() => {
+    bestandTests().then(planerTests).then(() => {
       renderErgebnisse(alleTests);
       document.body.dataset.testsFertig = "1";
     });

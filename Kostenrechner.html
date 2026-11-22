@@ -471,6 +471,17 @@ details.gp-panel>summary{font-family:"Cinzel",serif;font-weight:700;letter-spaci
         cursor:pointer}
 .tabbtn:hover{background:var(--accent-soft);border-color:var(--gold-dim)}
 .tabbtn.active{background:var(--gold);color:oklch(0.2 0.03 60);border-color:var(--gold)}
+/* Abrufplaner (v3.16.0): kleine Statusanzeige rechts in der Reiterleiste,
+   gefuellt von js/tabs.js aus PREISE.planer.status(). */
+.abruf-status{margin-left:auto;align-self:center;display:inline-flex;align-items:center;gap:7px;
+  padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--bg-2);
+  color:var(--dim);font:700 11.5px/1.2 "Manrope",inherit;font-variant-numeric:tabular-nums;
+  white-space:nowrap;cursor:help}
+.abruf-status .punkt{width:8px;height:8px;border-radius:50%;background:var(--line-strong);flex:0 0 auto}
+.abruf-status[data-zustand="laeuft"] .punkt{background:var(--green)}
+.abruf-status[data-zustand="pausiert"] .punkt{background:var(--gold)}
+.abruf-status[data-zustand="limit"] .punkt{background:var(--red)}
+.abruf-status[data-zustand="laeuft"],.abruf-status[data-zustand="limit"]{color:var(--text)}
 
 /* Preisvergleich-Reiter (js/preisvergleich.js), migriert aus dem ehemals
    eigenstaendigen Eintopf-Rechner. */
@@ -654,6 +665,7 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
   <button type="button" id="tabbtn-craften" class="tabbtn" data-tab="craften" role="tab" aria-selected="false" aria-controls="tab-craften">Craften: Gewinn</button>
   <button type="button" id="tabbtn-veredeln" class="tabbtn" data-tab="veredeln" role="tab" aria-selected="false" aria-controls="tab-veredeln">Veredeln leveln</button>
   <button type="button" id="tabbtn-karte" class="tabbtn" data-tab="karte" role="tab" aria-selected="false" aria-controls="tab-karte">Ancient Lands</button>
+  <span id="abrufStatus" class="abruf-status" role="status" aria-live="off" data-zustand="ruht" tabindex="0"><span class="punkt" aria-hidden="true"></span><span id="abrufStatusText">Abrufe: ruht · 0 offen · 0,0 MB</span></span>
 </div>
 
 <div id="tab-kostenrechner" class="tabpane" role="tabpanel" aria-labelledby="tabbtn-kostenrechner">
@@ -1398,23 +1410,23 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 
 </div>
 
-<script src="rezepte.js?v=3.15.0"></script>
-<script src="item-namen.js?v=3.15.0"></script>
-<script src="js/preise.js?v=3.15.0"></script>
-<script src="js/regeln.js?v=3.15.0"></script>
-<script src="js/rechenkern.js?v=3.15.0"></script>
-<script src="js/ui.js?v=3.15.0"></script>
-<script src="js/eintopf-daten.js?v=3.15.0"></script>
-<script src="js/eintopf-preise.js?v=3.15.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.15.0"></script>
-<script src="js/eintopf-ui.js?v=3.15.0"></script>
-<script src="js/tabs.js?v=3.15.0"></script>
-<script src="js/preisvergleich.js?v=3.15.0"></script>
-<script src="js/veredeln.js?v=3.15.0"></script>
-<script src="js/craften.js?v=3.15.0"></script>
+<script src="rezepte.js?v=3.16.0"></script>
+<script src="item-namen.js?v=3.16.0"></script>
+<script src="js/preise.js?v=3.16.0"></script>
+<script src="js/regeln.js?v=3.16.0"></script>
+<script src="js/rechenkern.js?v=3.16.0"></script>
+<script src="js/ui.js?v=3.16.0"></script>
+<script src="js/eintopf-daten.js?v=3.16.0"></script>
+<script src="js/eintopf-preise.js?v=3.16.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.16.0"></script>
+<script src="js/eintopf-ui.js?v=3.16.0"></script>
+<script src="js/tabs.js?v=3.16.0"></script>
+<script src="js/preisvergleich.js?v=3.16.0"></script>
+<script src="js/veredeln.js?v=3.16.0"></script>
+<script src="js/craften.js?v=3.16.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.15.0"></script>
-<script src="js/karte.js?v=3.15.0"></script>
+<script src="js/karte-daten.js?v=3.16.0"></script>
+<script src="js/karte.js?v=3.16.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

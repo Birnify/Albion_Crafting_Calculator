@@ -177,6 +177,21 @@ der Zeit oder gar nicht; Wartezeit und Ausfallrisiko sind nicht modelliert.
 - Zeitstempel sind **UTC**. Umrechnung in Ortszeit gehört in den Browser.
 - Die API **drosselt aggressiv** (HTTP 429). Anfragen sequenziell mit ~1,5 s Pause
   senden und bei 429 mit wachsender Wartezeit wiederholen. Parallele Blöcke laufen ins Limit.
+- **Eine 429-Antwort nennt die Reset-Zeit im Klartext** (22.11.2026, echte
+  Antwort, wörtlich): `Throttled, be nice to the server, use compression
+  (gzip, deflate, etc)! Throttle resets at 2026-11-22 11:10:00 +0000!`. Die
+  Zeit ist UTC und lag auf einer runden Minute. Die App wartet seit v3.16.0
+  bis zu dieser Zeit, statt blind zu wiederholen. Der Abruf kam per `curl`
+  ohne Kompression und war erst der zweite des Prüfers; kurz zuvor liefen
+  aber rund 25 Abrufe aus derselben Sitzung. Ob die Drosselung an fehlender
+  Kompression, an einem gemeinsamen Zähler je IP oder an einem kürzeren
+  Fenster als dokumentiert lag, ist **nicht geklärt**. Browser-`fetch` sendet
+  `Accept-Encoding` von selbst.
+- **`prices/` und `history/` liefern mehrere Städte in einem Abruf**
+  (`locations=Lymhurst,Fort Sterling,...`), vollständig und wertgleich zum
+  Einzelabruf (22.11.2026 gemessen: 50 IDs × 7 Städte × 5 Qualitäten = 1.750
+  Zeilen, 541 KB; 250 Lymhurst-Zeilen identisch zum Einzelabruf). Seit
+  v3.16.0 holt die Preisschicht so alle Städte je ID-Block in einem Abruf.
 - CORS ist offen (`access-control-allow-origin: *`), Abrufe direkt aus einer
   `file://`-Seite funktionieren deshalb.
 - Lese-Seite hat ein separates Limit: 180 Anfragen je Minute, 300 je 5 Minuten

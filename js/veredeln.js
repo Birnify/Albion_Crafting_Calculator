@@ -1124,9 +1124,12 @@ const VEREDELN = (function () {
 
   /**
    * Preise und Handelsvolumen der Auswahl beschaffen: aus dem Bestand, was
-   * frisch ist, der Rest per Abruf (Staedte nacheinander, PREISE drosselt).
-   * opts.frisch erzwingt den Abruf von allem. Ohne DOM, mit nachgebildetem
-   * fetch testbar.
+   * frisch ist, der Rest per Abruf. Seit v3.16.0 alle Staedte in einem
+   * Abruf je ID-Block (PREISE, Abrufplaner): Zutatenpreise nur fuer die
+   * Einkaufsstaedte, Produktpreise und Handelsvolumen nur fuer die
+   * Verkaufsstaedte; IDs, die Zutat UND Produkt sind (Veredelungskette),
+   * fuer beide Gruppen in einem Abruf. opts.frisch erzwingt den Abruf von
+   * allem. Ohne DOM, mit nachgebildetem fetch testbar.
    * @returns {Promise<{stadtDaten:Array, zutatIds:string[], produktIds:string[], abrufe:number}>}
    */
   async function datenAbrufen(kand, auswahl, opts) {
@@ -1136,27 +1139,61 @@ const VEREDELN = (function () {
     const produktIds = Array.from(new Set(kand.map((k) => k.marktId)));
     const zutatIds = Array.from(new Set([].concat(...kand.map((k) => k.zutaten.map((zt) => marktIdVon(zt.n, zt.stufe))))));
     const staedte = STAEDTE.filter((s) => auswahl.einkaufStaedte.indexOf(s) !== -1 || auswahl.verkaufStaedte.indexOf(s) !== -1);
+    const einkauf = staedte.filter((s) => auswahl.einkaufStaedte.indexOf(s) !== -1);
+    const verkauf = staedte.filter((s) => auswahl.verkaufStaedte.indexOf(s) !== -1);
     const start = PREISE.abrufZaehler();
-    const stadtDaten = [];
-    for (let i = 0; i < staedte.length; i++) {
-      const stadt = staedte[i];
-      const ek = auswahl.einkaufStaedte.indexOf(stadt) !== -1;
-      const vk = auswahl.verkaufStaedte.indexOf(stadt) !== -1;
-      const ids = Array.from(new Set([].concat(ek ? zutatIds : [], vk ? produktIds : [])));
-      const vorsatz = stadt + " (" + (i + 1) + "/" + staedte.length + "): ";
-      const preiseRoh = await PREISE.preiseAbrufen(ids, {
-        stadt,
+    // Drei Gruppen, damit auch bei "frisch abrufen" keine ID doppelt geholt
+    // wird: nur Zutat (Einkaufsstaedte), nur Produkt (Verkaufsstaedte),
+    // beides (alle beteiligten Staedte). Gruppen mit denselben Staedten
+    // (z.B. Einkauf = Verkauf) laufen zusammen in einem Abruf je ID-Block.
+    const istZutat = new Set(zutatIds);
+    const istProdukt = new Set(produktIds);
+    const gruppen = [];
+    [
+      { name: "Materialpreise", ids: zutatIds.filter((id) => !istProdukt.has(id)), staedte: einkauf },
+      { name: "Verkaufspreise", ids: produktIds.filter((id) => !istZutat.has(id)), staedte: verkauf },
+      { name: "Preise", ids: zutatIds.filter((id) => istProdukt.has(id)), staedte },
+    ].forEach((g) => {
+      const gleich = gruppen.find((x) => x.staedte.join("|") === g.staedte.join("|"));
+      if (gleich) {
+        gleich.ids = gleich.ids.concat(g.ids);
+        gleich.name = "Preise";
+      } else gruppen.push(g);
+    });
+    const jeStadt = {};
+    staedte.forEach((s) => {
+      jeStadt[s] = {};
+    });
+    for (const g of gruppen) {
+      if (!g.ids.length || !g.staedte.length) continue;
+      const teil = await PREISE.preiseAbrufen(g.ids, {
+        staedte: g.staedte,
         erzwingen: frisch,
         qualitaet: 1,
-        aufFortschritt: (f, g) => status(vorsatz + "Preise " + f + "/" + g + " ..."),
+        aufFortschritt: (f, n) => status(g.name + " (" + g.staedte.length + (g.staedte.length === 1 ? " Stadt" : " Städte") + ") " + f + "/" + n + " ..."),
       });
-      let absatz = {};
-      if (vk) {
-        status(vorsatz + "Handelsvolumen ...");
-        absatz = await PREISE.absatzAbrufen(produktIds, { stadt, tageFenster: TAGE_FENSTER, erzwingen: frisch });
-      }
-      stadtDaten.push({ stadt, preiseRoh, absatz });
+      g.staedte.forEach((s) => Object.assign(jeStadt[s], teil[s]));
     }
+    let absatz = {};
+    if (verkauf.length) {
+      absatz = await PREISE.absatzAbrufen(produktIds, {
+        staedte: verkauf,
+        tageFenster: TAGE_FENSTER,
+        erzwingen: frisch,
+        aufFortschritt: (f, n) => status("Handelsvolumen (" + verkauf.length + (verkauf.length === 1 ? " Stadt" : " Städte") + ") " + f + "/" + n + " ..."),
+      });
+    }
+    const stadtDaten = staedte.map((stadt) => {
+      const ek = einkauf.indexOf(stadt) !== -1;
+      const vk = verkauf.indexOf(stadt) !== -1;
+      // Je Stadt genau die IDs wie bis v3.15.0: Zutaten nur in
+      // Einkaufsstaedten, Produkte nur in Verkaufsstaedten.
+      const preiseRoh = {};
+      Array.from(new Set([].concat(ek ? zutatIds : [], vk ? produktIds : []))).forEach((id) => {
+        preiseRoh[id] = jeStadt[stadt][id] !== undefined ? jeStadt[stadt][id] : null;
+      });
+      return { stadt, preiseRoh, absatz: vk ? absatz[stadt] || {} : {} };
+    });
     return { stadtDaten, zutatIds, produktIds, abrufe: PREISE.abrufZaehler() - start };
   }
 
