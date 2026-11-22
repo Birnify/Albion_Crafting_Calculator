@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.20.0 · Neuer Reiter „Lootsplit“
+Stand: 2026-11-22 · Version: v3.20.1 · Lootsplit: Gildenkasse vom ganzen Topf
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -49,9 +49,9 @@ Reihenfolge wie in der Reiterleiste:
    interaktive Karte (Leaflet) mit festen Punkten aus dem Client-Dump,
    Lauf-Tracker und eigenen Markern.
 8. **Lootsplit** (`js/lootsplit.js`, seit v3.20.0): Beute einer Gruppe
-   aufteilen. Je Mitglied Lootwert, Geldbeutel und Regear; Regear wird vorab
-   erstattet, ein Prozentsatz für die Gildenkasse abgezogen, der Rest gleich
-   geteilt; Ergebnis sind Anspruch, Saldo und die Überweisungen. Keine
+   aufteilen. Je Mitglied Lootwert, Geldbeutel und Regear; die Gildenkasse
+   bekommt einen Prozentsatz vom ganzen Topf, dann wird das Regear erstattet
+   und der Rest gleich geteilt; Ergebnis sind Anspruch, Saldo und die Überweisungen. Keine
    Abrufe, kein Bezug zu den anderen Bereichen.
 
 Die bisherige Langfassung dieses Abschnitts (Entstehung, App-Fusion) steht in
@@ -64,7 +64,7 @@ der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
 Die Runde ist damit abgeschlossen.** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
 Fund zum Einkauf, Potenzialerkennung ohne Vorauswahl, Performance nur wo
 nötig. Einzelheiten je Version: Historie, Nachträge v3.15.0 bis v3.19.0.
-Selbsttest zuletzt **868/868** grün.
+Selbsttest zuletzt **872/872** grün.
 
 - **O1, v3.15.0, gemeinsamer Preisbestand.** Preise und Handelsvolumen von
   `js/preise.js` liegen in IndexedDB (`albion_kostenrechner_bestand`), mit
@@ -118,29 +118,32 @@ Selbsttest zuletzt **868/868** grün.
   200). `VEREDELN.nachZeiger()` behebt den verlorenen ersten Klick nach
   einer Zahleneingabe. Tabellen bei 1440 px ohne waagerechtes Scrollen.
 
-**Lootsplit, v3.20.0 (22.11.2026, nach der Runde).** Wunsch des Nutzers:
+**Lootsplit, v3.20.0 und v3.20.1 (22.11.2026, nach der Runde).** Wunsch des Nutzers:
 Lootwert, Geldbeutel, Regear getrennt je Partymitglied; seine Entscheidungen:
 alle drei je Mitglied, Regear vorab erstatten, Gildenkasse in % vorher
 abziehen. `LOOTSPLIT.rechnen(mitglieder, prozent)` in ganzen Silber (BigInt):
 
 ```
-Topf = Summe Lootwert + Summe Geldbeutel;  Rest = Topf − Summe Regear
-Gildenkasse = abrunden(Rest × %)           (nur wenn Rest > 0)
-Anteil = abrunden((Rest − Gildenkasse) / n)
+Topf = Summe Lootwert + Summe Geldbeutel
+Gildenkasse = abrunden(Topf × %);  Verfügbar = Topf − Gildenkasse
+Rest = Verfügbar − Summe Regear;   Anteil = abrunden(Rest / n)
 Anspruch(i) = Regear(i) + Anteil;  Saldo(i) = Hält(i) − Anspruch(i)
 ```
 
 Der Rundungsrest geht an die Gildenkasse (ohne Gildenanteil an das erste
-Mitglied). Reicht der Topf nicht fürs Regear, wird es anteilig erstattet
-(Hinweis in Warnfarbe). `ueberweisungen()` bildet die Zahlungsliste, die
-Gildenkasse ist ein Empfänger. **Festlegungen der Hauptsitzung bzw. des
-Umsetzers, vom Nutzer noch nicht bestätigt:** Gildenanteil vom Rest NACH
-Regear (nicht vom ganzen Topf); eine ganz leere Zeile (kein Name, alle
+Mitglied). **Gildenkasse vom ganzen Topf: Nutzer-Entscheidung vom
+22.11.2026 (v3.20.1; v3.20.0 nahm sie vom Rest nach Regear).** Reicht der
+Topf nach der Gildenkasse nicht fürs Regear, behält die Gilde ihren Anteil
+und das Regear wird anteilig aus dem Verfügbaren erstattet (Hinweis in
+Warnfarbe; Festlegung der Hauptsitzung, dem Nutzer angesagt). `ueberweisungen()` bildet die Zahlungsliste, die
+Gildenkasse ist ein Empfänger. **Festlegung des Umsetzers, vom Nutzer
+noch nicht bestätigt:** eine ganz leere Zeile (kein Name, alle
 Werte 0) zählt nicht als Mitglied, ein Mitglied ohne Beute und ohne Regear
 braucht also einen Namen. Eingabe versteht `250k`, `1,5m`; „Ergebnis
 kopieren“ liefert Klartext für Discord; „Neuer Split“ behält Namen und
 Gildenkasse. Von der Hauptsitzung nachgerechnet: zwei eigene Fälle (vier
-Mitglieder mit 7,5 % und Rundungsrest 2; Topf reicht nicht) stimmen.
+Mitglieder mit 7,5 %: Gildenkasse 117.751, Anteil 269.699; Topf 1.000 bei
+50 % und Regear 300/500: Erstattung 187/313) stimmen.
 Ungeprüft: echte Zwischenablage, Touch, Firefox.
 
 **Gemeinsame Einstellungen** (gelten in Kostenrechner und allen
@@ -197,7 +200,7 @@ der Änderungsgeschichte je Datei steht in der Historie, Block „Ausgelagert am
 | `assets/ancient-lands.webp` | **Erzeugt** von `build_karte.py`: Kartenbild |
 | `build_graph.py` | Baut `rezepte.js` und `item-namen.js` aus dem Client-Dump (`--refresh`) |
 | `build_karte.py` | Baut Kartenbild und `js/karte-daten.js` aus dem Client-Dump |
-| `tests/test.html` | Selbsttest aller Module, 868 Tests |
+| `tests/test.html` | Selbsttest aller Module, 872 Tests |
 | `vendor/leaflet/` | Leaflet 1.9.4 lokal (js, css, LICENSE) |
 | `assets/lymhurst-bg.jpg`, `assets/radiantwilds-bg.jpg` | Banner; das zweite ist bisher unbenutzt |
 | `design.md` | Verbindliche Design-Spezifikation |
@@ -237,7 +240,7 @@ Außerhalb des Repos, eine Ebene höher: `Kostenrechner öffnen.bat`,
   ungeprüft übernehmen, immer selbst nachlaufen lassen.
   **Die Seite ist erst fertig bei
   `document.body.dataset.testsFertig === "1"`** (ein Teil der Tests läuft
-  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 868/868.
+  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 872/872.
 - **Nach jeder Änderung im Browser gegenprüfen**, nicht nur den Code lesen. Im
   Eintopf-Projekt fielen mehrere Fehler erst in der gerenderten Seite auf.
 - **Rechenergebnisse unabhängig nachziehen** (kurzes Python-Skript im Scratchpad).

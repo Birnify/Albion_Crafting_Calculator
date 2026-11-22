@@ -1629,7 +1629,7 @@ ol.ls-ueberweisungen b{color:var(--gold)}
 <section class="ls-karte" aria-labelledby="lsK1">
   <div class="ls-kopf">
     <h2 id="lsK1">Lootsplit</h2>
-    <label class="ls-gilde" for="lsProzent" title="Anteil der Gildenkasse in Prozent, 0 bis 100. Er wird vom Rest nach Regear genommen, nicht vom ganzen Topf: erst wird das Regear erstattet, dann bekommt die Gilde ihren Teil vom Überschuss, der Rest wird gleich geteilt.">Gildenkasse %
+    <label class="ls-gilde" for="lsProzent" title="Anteil der Gildenkasse in Prozent, 0 bis 100. Er wird vom ganzen Topf genommen (Lootwert plus Geldbeutel), noch vor dem Regear: erst bekommt die Gilde ihren Teil, dann wird das Regear erstattet, der Rest wird gleich geteilt.">Gildenkasse %
       <input type="text" id="lsProzent" inputmode="decimal" autocomplete="off" placeholder="0"></label>
     <div class="ls-knoepfe">
       <button type="button" class="mini" id="lsNeu" title="Leert Lootwert, Geldbeutel und Regear aller Mitglieder. Namen und Gildenkasse bleiben.">Neuer Split</button>
@@ -1643,7 +1643,7 @@ ol.ls-ueberweisungen b{color:var(--gold)}
         <th class="l" scope="col" title="Leer gelassen heißt die Zeile „Mitglied 1“ usw. Eine ganz leere Zeile (kein Name, keine Werte) zählt nicht als Mitglied.">Name</th>
         <th scope="col" title="Geschätzter Wert der Beute, die dieses Mitglied gerade hält, in Silber. Wer Beute hält und sie nicht verkauft, zahlt den Ausgleich in Silber. Eingabe auch als 250k oder 1,5m.">Lootwert</th>
         <th scope="col" title="Silber aus Geldbeuteln, das dieses Mitglied eingesammelt hat. Eingabe auch als 250k oder 1,5m.">Geldbeutel</th>
-        <th scope="col" title="Kosten der Ausrüstung, die dieses Mitglied verloren hat. Wird vorab aus dem Topf erstattet. Eingabe auch als 250k oder 1,5m.">Regear</th>
+        <th scope="col" title="Kosten der Ausrüstung, die dieses Mitglied verloren hat. Wird nach Abzug der Gildenkasse voll erstattet, bevor geteilt wird. Eingabe auch als 250k oder 1,5m.">Regear</th>
         <th scope="col" class="ls-trenn" title="Was dem Mitglied zusteht: sein Regear plus der gleiche Anteil für alle.">Anspruch</th>
         <th scope="col" title="Was das Mitglied gerade hat: Lootwert plus Geldbeutel.">Hält</th>
         <th scope="col" title="Hält minus Anspruch. „zahlt“: das Mitglied hält mehr, als ihm zusteht, und gibt die Differenz in Silber ab. „bekommt“: ihm fehlt noch etwas. Der Lootwert ist geschätzt; wer Beute hält und sie nicht verkauft, zahlt den Ausgleich in Silber.">Saldo</th>
@@ -1683,25 +1683,25 @@ ol.ls-ueberweisungen b{color:var(--gold)}
 
 </div>
 
-<script src="rezepte.js?v=3.20.0"></script>
-<script src="item-namen.js?v=3.20.0"></script>
-<script src="js/preise.js?v=3.20.0"></script>
-<script src="js/regeln.js?v=3.20.0"></script>
-<script src="js/rechenkern.js?v=3.20.0"></script>
-<script src="js/ui.js?v=3.20.0"></script>
-<script src="js/eintopf-daten.js?v=3.20.0"></script>
-<script src="js/eintopf-preise.js?v=3.20.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.20.0"></script>
-<script src="js/eintopf-ui.js?v=3.20.0"></script>
-<script src="js/tabs.js?v=3.20.0"></script>
-<script src="js/preisvergleich.js?v=3.20.0"></script>
-<script src="js/veredeln.js?v=3.20.0"></script>
-<script src="js/craften.js?v=3.20.0"></script>
-<script src="js/gelegenheiten.js?v=3.20.0"></script>
+<script src="rezepte.js?v=3.20.1"></script>
+<script src="item-namen.js?v=3.20.1"></script>
+<script src="js/preise.js?v=3.20.1"></script>
+<script src="js/regeln.js?v=3.20.1"></script>
+<script src="js/rechenkern.js?v=3.20.1"></script>
+<script src="js/ui.js?v=3.20.1"></script>
+<script src="js/eintopf-daten.js?v=3.20.1"></script>
+<script src="js/eintopf-preise.js?v=3.20.1"></script>
+<script src="js/eintopf-rechenkern.js?v=3.20.1"></script>
+<script src="js/eintopf-ui.js?v=3.20.1"></script>
+<script src="js/tabs.js?v=3.20.1"></script>
+<script src="js/preisvergleich.js?v=3.20.1"></script>
+<script src="js/veredeln.js?v=3.20.1"></script>
+<script src="js/craften.js?v=3.20.1"></script>
+<script src="js/gelegenheiten.js?v=3.20.1"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.20.0"></script>
-<script src="js/karte.js?v=3.20.0"></script>
-<script src="js/lootsplit.js?v=3.20.0"></script>
+<script src="js/karte-daten.js?v=3.20.1"></script>
+<script src="js/karte.js?v=3.20.1"></script>
+<script src="js/lootsplit.js?v=3.20.1"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

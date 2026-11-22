@@ -3,8 +3,9 @@
 // Reiter "Lootsplit" (v3.20.0): nach einer Gruppenrunde ausrechnen, wem wie
 // viel zusteht und wer wem wie viel überweist. Je Mitglied drei Werte:
 // Lootwert (gehaltene Beute, geschätzt), Geldbeutel (eingesammeltes Silber),
-// Regear (verlorene Ausrüstung). Regear wird vorab erstattet, danach geht ein
-// Anteil in % an die Gildenkasse, der Rest wird gleich geteilt.
+// Regear (verlorene Ausrüstung). Die Gildenkasse bekommt ihren Anteil in %
+// vom ganzen Topf, danach wird das Regear erstattet, der Rest wird gleich
+// geteilt (Nutzer-Entscheidung 22.11.2026, v3.20.1).
 //
 // Reine Rechenfunktionen oben (ohne DOM, getestet in selbsttest()), die
 // Verdrahtung mit der Seite darunter. Keine Abrufe, kein gemeinsamer Zustand
@@ -98,18 +99,20 @@
 
   /**
    * Die Rechnung. mitglieder: [{name, loot, beutel, regear}], prozent: Anteil
-   * der Gildenkasse am Rest nach Regear. Jede übergebene Zeile zählt als
+   * der Gildenkasse am ganzen Topf. Jede übergebene Zeile zählt als
    * Mitglied (leere Zeilen filtert die Oberfläche vorher über zaehlt()).
    *
-   *   Topf = Loot + Geldbeutel; Rest = Topf minus Regear
-   *   Gildenkasse = abrunden(Rest × Prozent / 100), nur bei Rest > 0
-   *   Anteil = abrunden((Rest minus Gildenkasse) / Anzahl)
+   *   Topf = Loot + Geldbeutel
+   *   Gildenkasse = abrunden(Topf × Prozent / 100)
+   *   Verfügbar = Topf minus Gildenkasse; Rest = Verfügbar minus Regear
+   *   Anteil = abrunden(Rest / Anzahl)
    *   Rundungsrest: an die Gildenkasse, falls Prozent > 0, sonst an das erste Mitglied
    *   Anspruch = Regear + Anteil; Saldo = hält minus Anspruch (> 0 zahlt, < 0 bekommt)
    *
-   * Reicht der Topf nicht fürs Regear (Rest < 0): keine Gildenkasse, kein
-   * Anteil, Regear anteilig (abrunden(Regear × Topf / RegearSumme)), der
-   * Rundungsrest geht an das Mitglied mit dem höchsten Regear.
+   * Reicht es nach der Gildenkasse nicht fürs Regear (Rest < 0): die
+   * Gildenkasse behält ihren Anteil, kein Anteil für die Mitglieder, Regear
+   * anteilig (abrunden(Regear × Verfügbar / RegearSumme)), der Rundungsrest
+   * geht an das Mitglied mit dem höchsten Regear.
    *
    * Summe aller Salden = Gildenkasse, immer exakt (ganze Silber).
    */
@@ -125,28 +128,27 @@
     const summe = (feld) => zeilen.reduce((s, z) => s + z[feld], 0);
     const lootSumme = summe("loot"), beutelSumme = summe("beutel"), regearSumme = summe("regear");
     const topf = lootSumme + beutelSumme;
-    const rest = topf - regearSumme;
+    const gildeAusProzent = malDurch(topf, zehntel, 1000);
+    const verfuegbar = topf - gildeAusProzent;
+    const rest = verfuegbar - regearSumme;
     const e = {
-      n: n, prozent: zehntel / 10, lootSumme: lootSumme, beutelSumme: beutelSumme, topf: topf, regearSumme: regearSumme, rest: rest,
-      knapp: rest < 0, gildeAusProzent: 0, gildenkasse: 0, anteil: 0, rundungsrest: 0, rundungsrestAn: null, zeilen: zeilen, kontrolle: 0,
+      n: n, prozent: zehntel / 10, lootSumme: lootSumme, beutelSumme: beutelSumme, topf: topf, gildeAusProzent: gildeAusProzent, verfuegbar: verfuegbar,
+      regearSumme: regearSumme, rest: rest, knapp: rest < 0, gildenkasse: gildeAusProzent, anteil: 0, rundungsrest: 0, rundungsrestAn: null, zeilen: zeilen, kontrolle: 0,
     };
     if (n > 0 && rest < 0) {
       let hoechstes = 0;
       zeilen.forEach((z, i) => {
-        z.anspruch = malDurch(z.regear, topf, regearSumme);
+        z.anspruch = malDurch(z.regear, verfuegbar, regearSumme);
         if (z.regear > zeilen[hoechstes].regear) hoechstes = i;
       });
-      e.rundungsrest = topf - summe("anspruch");
+      e.rundungsrest = verfuegbar - summe("anspruch");
       if (e.rundungsrest > 0) {
         zeilen[hoechstes].anspruch += e.rundungsrest;
         e.rundungsrestAn = hoechstes;
       }
     } else if (n > 0) {
-      e.gildeAusProzent = rest > 0 ? malDurch(rest, zehntel, 1000) : 0;
-      const zuVerteilen = rest - e.gildeAusProzent;
-      e.anteil = Math.floor(zuVerteilen / n);
-      e.rundungsrest = zuVerteilen - e.anteil * n;
-      e.gildenkasse = e.gildeAusProzent;
+      e.anteil = Math.floor(rest / n);
+      e.rundungsrest = rest - e.anteil * n;
       zeilen.forEach((z) => {
         z.anspruch = z.regear + e.anteil;
       });
@@ -200,14 +202,19 @@
     return saldo > 0 ? "zahlt " + zahlText(saldo) : saldo < 0 ? "bekommt " + zahlText(-saldo) : "ausgeglichen";
   }
 
+  /** Satzanfang des Hinweises, wenn es nicht fürs Regear reicht. */
+  function knappText(e) {
+    return e.gildeAusProzent > 0 ? "Nach der Gildenkasse reicht der Topf nicht fürs Regear" : "Topf reicht nicht fürs Regear";
+  }
+
   /** Klartext für Discord: Kopfzeile, je Mitglied eine Zeile, darunter die Überweisungen. */
   function ergebnisText(ergebnis, liste) {
     const e = ergebnis;
     const ue = liste || ueberweisungen(e);
     const zeilen = [
-      "Lootsplit: Topf " + zahlText(e.topf) + " · Regear " + zahlText(e.regearSumme) + " · Gildenkasse " + zahlText(e.gildenkasse) + " (" + prozentText(e.prozent) + " %) · Anteil " + zahlText(e.anteil),
+      "Lootsplit: Topf " + zahlText(e.topf) + " · Gildenkasse " + zahlText(e.gildenkasse) + " (" + prozentText(e.prozent) + " %) · Regear " + zahlText(e.regearSumme) + " · Anteil " + zahlText(e.anteil),
     ];
-    if (e.knapp) zeilen.push("Topf reicht nicht fürs Regear (es fehlen " + zahlText(-e.rest) + "), Erstattung anteilig.");
+    if (e.knapp) zeilen.push(knappText(e) + " (es fehlen " + zahlText(-e.rest) + "), Erstattung anteilig.");
     e.zeilen.forEach((z) => zeilen.push(z.name + ": Anspruch " + zahlText(z.anspruch) + ", " + saldoText(z.saldo)));
     zeilen.push("Überweisungen:" + (ue.length ? "" : " keine"));
     ue.forEach((u) => zeilen.push(u.vonName + " zahlt " + u.anName + " " + zahlText(u.betrag)));
@@ -357,26 +364,26 @@
       const warnung = el("lsWarnung");
       warnung.hidden = !e.knapp;
       warnung.textContent = e.knapp
-        ? "Topf reicht nicht fürs Regear: es fehlen " + zahlText(-e.rest) + ". Regear wird anteilig erstattet (" + prozentText((e.topf / e.regearSumme) * 100) + " %), kein Anteil, keine Gildenkasse."
+        ? knappText(e) + ": es fehlen " + zahlText(-e.rest) + ". Regear wird anteilig erstattet (" + prozentText((e.verfuegbar / e.regearSumme) * 100) + " %), kein Anteil."
         : "";
 
       const dl = el("lsRechnung");
       dl.textContent = "";
       const mitgl = e.n === 1 ? "1 Mitglied" : e.n + " Mitglieder";
       rechnungZeile(dl, "Topf (Lootwert " + zahlText(e.lootSumme) + " + Geldbeutel " + zahlText(e.beutelSumme) + ")", zahlText(e.topf));
-      rechnungZeile(dl, "minus Regear", zahlText(e.regearSumme), "", "Regear wird vorab voll erstattet, bevor geteilt wird.");
+      rechnungZeile(dl, "minus Gildenkasse (" + prozentText(e.prozent) + " % vom Topf)", zahlText(e.gildeAusProzent), "", "Die Gildenkasse bekommt ihren Teil vom ganzen Topf, noch vor dem Regear. Abgerundet auf ganze Silber.");
+      rechnungZeile(dl, "minus Regear", zahlText(e.regearSumme), "", "Regear wird voll erstattet, bevor geteilt wird.");
       if (e.knapp) {
-        rechnungZeile(dl, "Es fehlen", zahlText(-e.rest), "ls-rz-warn", "Der Topf deckt das Regear nicht. Jeder bekommt denselben Bruchteil seines Regears.");
+        rechnungZeile(dl, "Es fehlen", zahlText(-e.rest), "ls-rz-warn", "Was nach der Gildenkasse bleibt, deckt das Regear nicht. Jeder bekommt denselben Bruchteil seines Regears.");
       } else {
         rechnungZeile(dl, "Rest", zahlText(e.rest), "ls-rz-summe");
-        rechnungZeile(dl, "minus Gildenkasse (" + prozentText(e.prozent) + " % vom Rest)", zahlText(e.gildeAusProzent), "", "Die Gildenkasse bekommt ihren Teil vom Rest nach Regear, nicht vom ganzen Topf. Abgerundet auf ganze Silber.");
         rechnungZeile(dl, "geteilt durch " + mitgl + ": Anteil je Mitglied", zahlText(e.anteil), "ls-rz-summe", "Abgerundet auf ganze Silber. Leere Zeilen zählen nicht als Mitglied.");
       }
       if (e.rundungsrest > 0) {
         const an = e.rundungsrestAn === GILDE ? GILDE_NAME : e.zeilen[e.rundungsrestAn].name;
         rechnungZeile(dl, "Rundungsrest, geht an " + an, zahlText(e.rundungsrest), "", e.knapp ? "Geht an das Mitglied mit dem höchsten Regear." : "Geht an die Gildenkasse; ohne Gildenkasse an das erste Mitglied der Liste.");
       }
-      if (!e.knapp && e.gildenkasse > 0) rechnungZeile(dl, GILDE_NAME + " bekommt", zahlText(e.gildenkasse), "ls-rz-summe");
+      if (e.gildenkasse > 0) rechnungZeile(dl, GILDE_NAME + " bekommt", zahlText(e.gildenkasse), "ls-rz-summe");
 
       const ol = el("lsUeberweisungen");
       ol.textContent = "";
@@ -536,7 +543,7 @@
     const out = [];
     const t = (name, ok, details) => out.push({ name: name, ok: !!ok, details: details == null ? "" : String(details) });
     const M = (name, loot, beutel, regear) => ({ name: name, loot: loot, beutel: beutel, regear: regear });
-    const kurz = (e) => JSON.stringify({ topf: e.topf, regear: e.regearSumme, rest: e.rest, gilde: e.gildenkasse, anteil: e.anteil, rr: e.rundungsrest, an: e.rundungsrestAn, anspruch: e.zeilen.map((z) => z.anspruch), saldo: e.zeilen.map((z) => z.saldo), kontrolle: e.kontrolle });
+    const kurz = (e) => JSON.stringify({ topf: e.topf, verf: e.verfuegbar, regear: e.regearSumme, rest: e.rest, gilde: e.gildenkasse, anteil: e.anteil, rr: e.rundungsrest, an: e.rundungsrestAn, anspruch: e.zeilen.map((z) => z.anspruch), saldo: e.zeilen.map((z) => z.saldo), kontrolle: e.kontrolle });
     const gleich = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     // Gleichen die Überweisungen jeden Saldo und die Gildenkasse exakt aus?
     const gleichtAus = (e, ue) => {
@@ -553,22 +560,22 @@
 
     // (a) Normalfall: 3 Mitglieder, Gildenkasse 10 %, Loot und Silber ungleich verteilt.
     const a = rechnen([M("Anna", 900000, 100000, 0), M("Ben", 0, 250000, 300000), M("Cara", 50000, 0, 100000)], 10);
-    t("(a) Topf 1.300.000, Regear 400.000, Rest 900.000", a.topf === 1300000 && a.regearSumme === 400000 && a.rest === 900000 && !a.knapp, kurz(a));
-    t("(a) Gildenkasse 10 % vom Rest nach Regear = 90.000, Anteil 270.000, kein Rundungsrest", a.gildenkasse === 90000 && a.anteil === 270000 && a.rundungsrest === 0 && a.rundungsrestAn === null, kurz(a));
-    t("(a) Anspruch 270.000 / 570.000 / 370.000, hält 1.000.000 / 250.000 / 50.000", gleich(a.zeilen.map((z) => z.anspruch), [270000, 570000, 370000]) && gleich(a.zeilen.map((z) => z.haelt), [1000000, 250000, 50000]), kurz(a));
-    t("(a) Saldo: zahlt 730.000, bekommt 320.000, bekommt 320.000; Summe der Salden minus Gildenkasse = 0", gleich(a.zeilen.map((z) => z.saldo), [730000, -320000, -320000]) && a.kontrolle === 0, kurz(a));
+    t("(a) Topf 1.300.000, Gildenkasse 10 % vom Topf = 130.000, verfügbar 1.170.000, Regear 400.000, Rest 770.000", a.topf === 1300000 && a.gildeAusProzent === 130000 && a.verfuegbar === 1170000 && a.regearSumme === 400000 && a.rest === 770000 && !a.knapp, kurz(a));
+    t("(a) Anteil 256.666, Rundungsrest 2 an die Gildenkasse (130.002)", a.anteil === 256666 && a.rundungsrest === 2 && a.rundungsrestAn === GILDE && a.gildenkasse === 130002, kurz(a));
+    t("(a) Anspruch 256.666 / 556.666 / 356.666, hält 1.000.000 / 250.000 / 50.000", gleich(a.zeilen.map((z) => z.anspruch), [256666, 556666, 356666]) && gleich(a.zeilen.map((z) => z.haelt), [1000000, 250000, 50000]), kurz(a));
+    t("(a) Saldo: zahlt 743.334, bekommt 306.666, bekommt 306.666; Summe der Salden minus Gildenkasse = 0", gleich(a.zeilen.map((z) => z.saldo), [743334, -306666, -306666]) && a.kontrolle === 0, kurz(a));
     const aUe = ueberweisungen(a);
-    t("(a) Überweisungen: Anna zahlt Ben 320.000, Cara 320.000, Gildenkasse 90.000",
-      gleich(aUe.map((u) => [u.vonName, u.anName, u.betrag]), [["Anna", "Ben", 320000], ["Anna", "Cara", 320000], ["Anna", "Gildenkasse", 90000]]) && aUe[2].an === GILDE, JSON.stringify(aUe));
+    t("(a) Überweisungen: Anna zahlt Ben 306.666, Cara 306.666, Gildenkasse 130.002",
+      gleich(aUe.map((u) => [u.vonName, u.anName, u.betrag]), [["Anna", "Ben", 306666], ["Anna", "Cara", 306666], ["Anna", "Gildenkasse", 130002]]) && aUe[2].an === GILDE, JSON.stringify(aUe));
     t("(a) Kopiertext", ergebnisText(a) === [
-      "Lootsplit: Topf 1.300.000 · Regear 400.000 · Gildenkasse 90.000 (10 %) · Anteil 270.000",
-      "Anna: Anspruch 270.000, zahlt 730.000",
-      "Ben: Anspruch 570.000, bekommt 320.000",
-      "Cara: Anspruch 370.000, bekommt 320.000",
+      "Lootsplit: Topf 1.300.000 · Gildenkasse 130.002 (10 %) · Regear 400.000 · Anteil 256.666",
+      "Anna: Anspruch 256.666, zahlt 743.334",
+      "Ben: Anspruch 556.666, bekommt 306.666",
+      "Cara: Anspruch 356.666, bekommt 306.666",
       "Überweisungen:",
-      "Anna zahlt Ben 320.000",
-      "Anna zahlt Cara 320.000",
-      "Anna zahlt Gildenkasse 90.000",
+      "Anna zahlt Ben 306.666",
+      "Anna zahlt Cara 306.666",
+      "Anna zahlt Gildenkasse 130.002",
     ].join("\n"), ergebnisText(a));
 
     // (b) Gildenkasse 0 %.
@@ -585,41 +592,50 @@
     t("(c) 12,5 % von 999 = 124 (abgerundet), Anteil 437, Rundungsrest 1 an die Gildenkasse", c3.prozent === 12.5 && c3.gildeAusProzent === 124 && c3.anteil === 437 && c3.gildenkasse === 125 && c3.kontrolle === 0, kurz(c3));
 
     // (d) Rest genau 0.
-    const d = rechnen([M("A", 300, 200, 0), M("B", 0, 0, 500)], 10);
-    t("(d) Rest genau 0: keine Gildenkasse, kein Anteil, kein Hinweis; A zahlt B 500", d.rest === 0 && !d.knapp && d.gildenkasse === 0 && d.anteil === 0 && gleich(d.zeilen.map((z) => z.saldo), [500, -500]) && d.kontrolle === 0 && gleich(ueberweisungen(d).map((u) => [u.von, u.an, u.betrag]), [[0, 1, 500]]), kurz(d));
+    const d = rechnen([M("A", 600, 400, 0), M("B", 0, 0, 900)], 10);
+    t("(d) Rest genau 0 (Topf 1.000, Gildenkasse 100, Regear 900): kein Anteil, kein Hinweis; A zahlt B 900 und Gildenkasse 100", d.rest === 0 && !d.knapp && d.gildenkasse === 100 && d.verfuegbar === 900 && d.anteil === 0 && gleich(d.zeilen.map((z) => z.saldo), [1000, -900]) && d.kontrolle === 0 && gleich(ueberweisungen(d).map((u) => [u.von, u.an, u.betrag]), [[0, 1, 900], [0, GILDE, 100]]), kurz(d));
 
-    // (e) Topf reicht nicht fürs Regear.
+    // (e) Nach der Gildenkasse reicht der Topf nicht fürs Regear.
     const e5 = rechnen([M("A", 100, 0, 60), M("B", 0, 0, 60), M("C", 0, 0, 31)], 10);
-    t("(e) Topf 100, Regear 151: anteilig 39 / 39 / 20, Rundungsrest 2 an das höchste Regear (erstes bei Gleichstand): 41 / 39 / 20", e5.knapp && e5.rest === -51 && e5.gildenkasse === 0 && e5.anteil === 0 && e5.rundungsrest === 2 && e5.rundungsrestAn === 0 && gleich(e5.zeilen.map((z) => z.anspruch), [41, 39, 20]), kurz(e5));
-    t("(e) Summe der Ansprüche = Topf, Summe der Salden exakt 0, Überweisungen gleichen aus", e5.zeilen.reduce((s, z) => s + z.anspruch, 0) === 100 && e5.zeilen.reduce((s, z) => s + z.saldo, 0) === 0 && e5.kontrolle === 0 && gleichtAus(e5, ueberweisungen(e5)), kurz(e5));
+    t("(e) Topf 100, Gildenkasse 10, verfügbar 90, Regear 151: anteilig 35 / 35 / 18, Rundungsrest 2 an das höchste Regear (erstes bei Gleichstand): 37 / 35 / 18", e5.knapp && e5.rest === -61 && e5.gildenkasse === 10 && e5.verfuegbar === 90 && e5.anteil === 0 && e5.rundungsrest === 2 && e5.rundungsrestAn === 0 && gleich(e5.zeilen.map((z) => z.anspruch), [37, 35, 18]), kurz(e5));
+    t("(e) Summe der Ansprüche = verfügbar, Summe der Salden = Gildenkasse, Überweisungen gleichen aus", e5.zeilen.reduce((s, z) => s + z.anspruch, 0) === 90 && e5.zeilen.reduce((s, z) => s + z.saldo, 0) === 10 && e5.kontrolle === 0 && gleichtAus(e5, ueberweisungen(e5)), kurz(e5));
     const e6 = rechnen([M("A", 0, 10, 5), M("B", 0, 0, 21)], 50);
-    t("(e) Rundungsrest geht an das höchste Regear, auch wenn es nicht das erste Mitglied ist (10 auf 5 und 21: abgerundet 1 und 8, Rest 1 an B)", e6.knapp && e6.rundungsrestAn === 1 && gleich(e6.zeilen.map((z) => z.anspruch), [1, 9]) && e6.kontrolle === 0, kurz(e6));
+    t("(e) Rundungsrest geht an das höchste Regear, auch wenn es nicht das erste Mitglied ist (verfügbar 5 auf Regear 5 und 21: abgerundet 0 und 4, Rest 1 an B)", e6.knapp && e6.verfuegbar === 5 && e6.rundungsrestAn === 1 && gleich(e6.zeilen.map((z) => z.anspruch), [0, 5]) && e6.kontrolle === 0, kurz(e6));
     const e7 = rechnen([M("A", 0, 0, 500), M("B", 0, 0, 0)], 10);
     t("(e) Topf 0 bei Regear 500: niemand bekommt etwas, keine Überweisung", e7.knapp && gleich(e7.zeilen.map((z) => z.anspruch), [0, 0]) && ueberweisungen(e7).length === 0 && e7.kontrolle === 0, kurz(e7));
-    t("(e) Kopiertext nennt den Fehlbetrag", ergebnisText(e5).split("\n")[1] === "Topf reicht nicht fürs Regear (es fehlen 51), Erstattung anteilig.", ergebnisText(e5));
+    t("(e) Kopiertext nennt den Fehlbetrag", ergebnisText(e5).split("\n")[1] === "Nach der Gildenkasse reicht der Topf nicht fürs Regear (es fehlen 61), Erstattung anteilig.", ergebnisText(e5));
+    const e8 = rechnen([M("A", 1000, 0, 300), M("B", 0, 0, 500)], 50);
+    t("(e) Topf 1.000, 50 %, Regear 300 und 500: Gildenkasse 500, verfügbar 500, Erstattung 187 und 313 (Rundungsrest 1 an das höchste Regear)", e8.knapp && e8.gildenkasse === 500 && e8.verfuegbar === 500 && e8.rest === -300 && e8.anteil === 0 && e8.rundungsrest === 1 && e8.rundungsrestAn === 1 && gleich(e8.zeilen.map((z) => z.anspruch), [187, 313]) && gleich(e8.zeilen.map((z) => z.saldo), [813, -313]) && e8.kontrolle === 0 && gleichtAus(e8, ueberweisungen(e8)), kurz(e8));
+    const e9 = rechnen([M("A", 1000, 0, 0), M("B", 0, 0, 400)], 100);
+    t("(e) 100 %: alles an die Gildenkasse, Regear wird nicht erstattet, Hinweis (knapp)", e9.knapp && e9.gildenkasse === 1000 && e9.verfuegbar === 0 && e9.rest === -400 && gleich(e9.zeilen.map((z) => z.anspruch), [0, 0]) && e9.kontrolle === 0 && gleich(ueberweisungen(e9).map((u) => [u.von, u.an, u.betrag]), [[0, GILDE, 1000]]), kurz(e9));
+    const e10 = rechnen([M("A", 1000, 0, 0), M("B", 0, 0, 0)], 100);
+    t("(e) 100 % ohne Regear: alles an die Gildenkasse, kein Hinweis", !e10.knapp && e10.gildenkasse === 1000 && e10.anteil === 0 && e10.rest === 0 && e10.kontrolle === 0, kurz(e10));
+    const e11 = rechnen([M("A", 100, 0, 60), M("B", 0, 0, 60)], 0);
+    t("(e) ohne Gildenkasse heißt der Hinweis „Topf reicht nicht fürs Regear“", e11.knapp && ergebnisText(e11).split("\n")[1] === "Topf reicht nicht fürs Regear (es fehlen 20), Erstattung anteilig." && gleich(e11.zeilen.map((z) => z.anspruch), [50, 50]), ergebnisText(e11));
 
     // (f) ein Mitglied.
     const f = rechnen([M("Solo", 1000, 500, 200)], 10);
-    t("(f) ein Mitglied: Rest 1.300, Gildenkasse 130, Anteil 1.170, Anspruch 1.370, zahlt 130 an die Gildenkasse", f.n === 1 && f.gildenkasse === 130 && f.anteil === 1170 && f.zeilen[0].anspruch === 1370 && f.zeilen[0].saldo === 130 && f.kontrolle === 0 && gleich(ueberweisungen(f).map((u) => [u.von, u.an, u.betrag]), [[0, GILDE, 130]]), kurz(f));
+    t("(f) ein Mitglied: Topf 1.500, Gildenkasse 150, Rest 1.150, Anteil 1.150, Anspruch 1.350, zahlt 150 an die Gildenkasse", f.n === 1 && f.gildenkasse === 150 && f.rest === 1150 && f.anteil === 1150 && f.zeilen[0].anspruch === 1350 && f.zeilen[0].saldo === 150 && f.kontrolle === 0 && gleich(ueberweisungen(f).map((u) => [u.von, u.an, u.betrag]), [[0, GILDE, 150]]), kurz(f));
 
     // (g) keine Mitglieder.
     const g = rechnen([], 10);
     t("(g) keine Mitglieder: kein Fehler, alles 0, keine Überweisungen", g.n === 0 && g.topf === 0 && g.gildenkasse === 0 && g.anteil === 0 && g.zeilen.length === 0 && g.kontrolle === 0 && ueberweisungen(g).length === 0, kurz(g));
     const g2 = rechnen(null, "quatsch");
     t("(g) kaputte Eingabe (null, Text als Prozent) wie leer", g2.n === 0 && g2.prozent === 0 && ueberweisungen(g2).length === 0 && ueberweisungen(null).length === 0, kurz(g2));
-    t("(g) Kopiertext ohne Mitglieder", ergebnisText(g) === "Lootsplit: Topf 0 · Regear 0 · Gildenkasse 0 (10 %) · Anteil 0\nÜberweisungen: keine", ergebnisText(g));
+    t("(g) Kopiertext ohne Mitglieder", ergebnisText(g) === "Lootsplit: Topf 0 · Gildenkasse 0 (10 %) · Regear 0 · Anteil 0\nÜberweisungen: keine", ergebnisText(g));
 
     // (h) Überweisungen gleichen exakt aus und sind höchstens (Beteiligte minus 1) viele.
-    const faelle = [a, b, c1, c2, c3, d, e5, e6, f,
+    const faelle = [a, b, c1, c2, c3, d, e5, e6, f, e8, e9, e10, e11,
       rechnen([M("A", 500000, 0, 0), M("B", 0, 300000, 0), M("C", 0, 0, 120000), M("D", 0, 0, 0), M("E", 77777, 1234, 0)], 15),
       rechnen([M("A", 10, 0, 0), M("B", 20, 0, 0), M("C", 30, 0, 0), M("D", 40, 0, 0), M("E", 0, 0, 0), M("F", 0, 0, 0), M("G", 0, 0, 7)], 0),
       rechnen([M("A", 999999999999, 999999999999, 0), M("B", 0, 0, 999999999999), M("C", 1, 0, 0)], 33.3),
     ];
+    const gross = faelle[faelle.length - 1];
     t("(h) in allen " + faelle.length + " Fällen: Kontrollsumme 0, Überweisungen gleichen jeden Saldo und die Gildenkasse exakt aus",
       faelle.every((x) => x.kontrolle === 0 && gleichtAus(x, ueberweisungen(x))), faelle.map((x) => x.kontrolle + "/" + ueberweisungen(x).length).join(" "));
     t("(h) höchstens (Beteiligte minus 1) Überweisungen",
       faelle.every((x) => ueberweisungen(x).length <= Math.max(0, beteiligte(x) - 1)), faelle.map((x) => ueberweisungen(x).length + "<=" + (beteiligte(x) - 1)).join(" "));
-    t("(h) große Werte (je 999.999.999.999) bleiben ganzzahlig exakt", faelle[11].zeilen.every((z) => Number.isSafeInteger(z.saldo)) && faelle[11].topf === 1999999999999 && faelle[11].gildeAusProzent === 333000000000, kurz(faelle[11]));
+    t("(h) große Werte (je 999.999.999.999) bleiben ganzzahlig exakt", gross.zeilen.every((z) => Number.isSafeInteger(z.saldo)) && gross.topf === 1999999999999 && gross.gildeAusProzent === 665999999999 && gross.verfuegbar === 1334000000000, kurz(gross));
     t("(h) leerer Name bekommt in der Rechnung „Mitglied n“", rechnen([M("", 5, 0, 0), M("  ", 0, 0, 0)], 0).zeilen.map((z) => z.name).join() === "Mitglied 1,Mitglied 2", "");
 
     // (i) Zahlen-Parser.
