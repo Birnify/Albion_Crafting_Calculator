@@ -899,6 +899,7 @@ dort) - der Git-Commit bleibt dort trotzdem Pflicht.
 | `AUDIT-2026-09-13.md` | Code-Audit gegen das offizielle Wiki, mit Umsetzungsstatus je Befund |
 | `EINTOPF-KONTEXT-ARCHIV.md` | Historische Fachdokumentation des archivierten, eigenständigen Eintopf-Rechners; weiterhin die Quelle für `js/eintopf-*.js` |
 | `Kostenrechner.html`, `js/*.js` | Die App |
+| `js/gelegenheiten.js` | Reiter „Gelegenheiten" (seit v3.17.0): Rangliste über alle Warengruppen, Hintergrundscan, Einkaufsliste, Merkliste |
 | `js/craften.js` | Reiter „Craften: Gewinn" (seit v3.11.0, ersetzt „Schnelles Geld"): lohnende Crafts aus eingekauftem Material, mit Volumenfilter |
 | `js/veredeln.js` | Reiter „Veredeln leveln": Veredeln mit Gewinn oder etwa Null; Einkaufs- und Verkaufsstädte mehrfach, eine Fertigungsstadt (seit v3.10.0) |
 | `js/karte.js` | Reiter „Ancient Lands“: Karte, Lauf-Tracker, eigene Marker (seit v3.14.0) |

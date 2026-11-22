@@ -7,6 +7,1148 @@ Diese Datei sammelt die vollständigen "Aktueller Stand"-Abschnitte, die aus
 
 ---
 
+## Ausgelagert am 22.11.2026 (Paket O6)
+
+<!-- Am 22.11.2026 (v3.19.1, Optimierungsrunde Paket O6) aus kostenrechner-KONTEXT.md verschoben, unverkuerzt und zeichengleich. -->
+
+Dieser Block enthält, in der Reihenfolge der alten Hauptdatei: die Langfassung
+von „Was ist das?“, die Ablesung vom 19.09.2026, die Nachträge v3.19.0 bis
+v3.9.0, die gewachsene „Dateistruktur“ und den vollständigen alten Abschnitt
+„Backlog / Mögliche nächste Schritte“ (erledigte und offene Punkte, samt
+Browser-Vorschau und Ideen für später). Verweise wie „s. Aktueller Stand oben“
+beziehen sich auf die Hauptdatei zum damaligen Zeitpunkt. Die offenen Punkte
+stehen bereinigt in `kostenrechner-KONTEXT.md`, Abschnitt „Backlog“. Der Block
+endet vor dem Kommentar zur Auslagerung vom 13.10.2026.
+
+## Was ist das?
+
+**Seit v3.14.0 eine App mit sechs Bereichen** (v3.5.0 bis v3.13.0 fünf, v3.2.0 bis v3.4.1 vier, bis v3.1.11 drei) ("Albion Werkzeuge", sichtbarer
+Titel in der Oberfläche, Ordner-/Repo-Name bleibt bewusst `Kostenrechner`, s.
+Nutzer-Entscheidung unten): oben eine Reiterumschaltung
+(Kostenrechner/Eintopf-Rechner/Preisvergleich/Craften: Gewinn/Veredeln leveln/Ancient Lands, `js/tabs.js`; „Ancient Lands“ seit v3.14.0; „Craften: Gewinn“ seit v3.11.0, vorher „Schnelles Geld“). Jeder Bereich
+bleibt fachlich eigenständig (eigener Rechenkern/eigener Zustand), das ist
+Architektur-Zusammenführung, keine inhaltliche Vermischung.
+
+**Bereich 1, Kostenrechner** (der ursprüngliche, unveränderte Auftrag dieser
+Datei): für ein beliebiges craftbares Albion-Item auf einer beliebigen
+Verzauberungsstufe **und Qualitätsstufe** den **günstigsten Beschaffungsweg**
+ermitteln: kaufen, craften, aus einer niedrigeren Stufe hochverzaubern, per Reroll
+an der Reparaturstation hochqualifizieren, oder eine Mischung daraus über den
+ganzen Rezeptbaum. Stadt frei wählbar (seit v1.1.0), Qualität frei wählbar
+(seit v1.4.0). Ziel und Rechenmodell: `kostenrechner-PLAN.md`, Abschnitte 1 und 4.
+
+**Bereich 2, Eintopf-Rechner** (seit v3.1.0 migriert): Profitrechner für den
+Rindfleischeintopf (T8, Stufen .0-.3), komplett auf Live-Fetch im Browser
+umgestellt (Preise, Handelsvolumen, Stundenprofil - kein Python-Vorablauf
+mehr, anders als ursprünglich für dieses Paket erwartet, s.
+`kostenrechner-KONTEXT-HISTORIE.md` Abschnitt "Aktueller Stand (v3.1.0 ...)").
+Der eigenständige Eintopf-Rechner im Albion-Wurzelverzeichnis ist seit Paket E
+(v3.1.2, 13.09.2026) archiviert (`../Archiv/Eintopf-Rechner (eigenstaendig,
+vor App-Fusion)/`, s. `EINTOPF-KONTEXT-ARCHIV.md`), nicht gelöscht, aber kein aktives
+Arbeitsziel mehr. Die App-Fusion (Pakete A-E) ist damit vollständig
+abgeschlossen.
+
+**Bereich 3, Preisvergleich** (seit v3.0.0 migriert): beliebige Items aus dem
+kompletten ao-bin-dumps-Namensdump suchen, mehrere auswählen, Live-Preise über
+alle 7 Hauptstädte und alle 5 Qualitätsstufen abrufen. Kein Bezug zum
+Rezeptbaum, reine Marktabfrage. Migriert 1:1 (Rechenlogik unverändert) aus dem
+ehemals eigenständigen Eintopf-Rechner (dort seit 13.09.2026 im Einsatz), s.
+Abschnitt "Aktueller Stand" unten für Details.
+
+## Ablesung festgehalten (19.09.2026, nur Dokumentation, keine Codeänderung)
+
+Sören hat zehn Screenshots aus dem Spiel geschickt: die Fenster
+"Foliant-", "Fackel-" und "Schild-Handwerksspezialisierung" sowie vier
+Ausschnitte der "Alchemist-Handwerksspezialisierung". Zwei belegte Befunde
+daraus, beide in `AUDIT-2026-09-13.md` mit voller Zuordnungstabelle:
+
+- **Nebenhände haben drei getrennte Bäume, nicht einen** (Foliant, Fackel,
+  Schild), mit je sechs Knoten. Die 18 decken die 18 abgeleiteten
+  `offhand`-Gruppen exakt ab. Damit ist der erste der beiden Blocker von
+  Audit-Befund 11 weg.
+- **Der Alchemisten-Baum hat 16 Knoten**, nicht die im Wiki gelesenen 8. Sie
+  decken alle 15 `potion`-Gruppen ab, plus einen eigenen Knoten **Alkohol**.
+  Die bisherige Einsortierung von `ALCOHOL` unter "Kochzutaten" im Koch-Baum
+  ist damit widerlegt.
+
+**Bewusst noch nichts umgesetzt.** Beiden Bäumen fehlt der Mutual-Wert, und
+ohne ihn wäre jede Knotenliste eine Zahl, die schlechter rechnet als der
+Freitext-Fallback: bei den Tränken ergäbe 16 Knoten mit dem bisherigen Mutual
+30 einen Endwert von 76.000 FCE gegen die 52.000 aus dem Wiki. Erbeten
+(19.09.2026): das Details-Panel je eines Trank- und eines Schild-Knotens, ein
+Bild der Ebene darüber wegen des Meisterschaftsknotens, und das
+Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
+
+Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
+
+---
+
+## Nachtrag v3.19.0 (22.11.2026): Optimierungsrunde, Paket O5 „Von der Gelegenheit zur Tat“
+
+- **Einkaufsliste im Reiter „Gelegenheiten“**, für Crafts und Veredelungen:
+  Zähler (− Zahl +) je Zeile (`einstellungen.plan`, Zeilenschlüssel →
+  Stück), Liste unter der Rangliste, Sprungknopf „Einkaufsliste (n)“ in der
+  Leiste. Mengen vor Rückgewinnung, gleiche Zutat je Einkaufsstadt
+  zusammengezählt. „Kopieren“ je Zutat und am Produktnamen (mit Stufe,
+  `CRAFTEN.suchName`), „Alles kopieren“, „Liste leeren“. Eine Logik für
+  beide Reiter: `CRAFTEN.einkaufsliste(zeilen, plan, schluesselVon)`.
+- **Vier Summenzeilen in beiden Einkaufslisten**
+  (`CRAFTEN.einkaufslisteSummenHtml`): Einkauf gesamt (vorzustrecken),
+  Kosten nach Rückgewinnung (Kosten/Stück × Menge, enthält die
+  Stationsgebühr und kann deshalb über dem Einkauf liegen), Erlös gesamt,
+  Gewinn gesamt. Es gilt sichtbar Erlös − Kosten nach Rückgewinnung =
+  Gewinn. Produkte ohne Verkaufspreis zählen in keiner der drei
+  Ergebnissummen. In „Craften: Gewinn“ hieß die erste Zeile vorher „Summe“.
+- **Sprung in den Kostenrechner** aus jeder Zeile der drei Gewinn-Reiter:
+  Knopf „Kostenrechner“, `UI.itemOeffnen({item, stufe, stadt})` wählt Item,
+  Stufe und Fertigungsstadt und startet die Rechnung (Suchfeld zeigt den
+  deutschen Namen). Die Stadt des Kostenrechners wird dabei dauerhaft
+  umgestellt, wie von Hand.
+- **Merkliste** in „Gelegenheiten“: Stern je Zeile, gemerkt wird mit
+  Zeitpunkt und den Zahlen des Moments (`einstellungen.merkliste`,
+  höchstens 200). Filter „★ Gemerkt (n)“ zeigt alle gemerkten Zeilen, auch
+  ohne Gewinn oder unter dem Volumenfilter, mit „damals 21.815 ▼“ über dem
+  heutigen Wert und „★ gemerkt vor 3 Std.“. **Der Scan frischt gemerkte
+  Zeilen vor der Spitze der Rangliste auf.**
+- **Verlorener Klick behoben** (`VEREDELN.nachZeiger()`): Zahl eintippen und
+  sofort auf Kopf oder Knopf klicken wirkt jetzt beim ersten Klick, in
+  allen drei Reitern.
+- **Tabellen bei 1440 px ohne waagerechtes Scrollen:** alle drei Rahmen
+  1398/1398 (vorher Craften 1555, Veredeln 1430); Köpfe zweizeilig,
+  Abstände kompakter, keine Spalte entfernt.
+- **Zutatenpreise mit Tausenderpunkt** in Craften und Veredeln; das
+  Preisfeld ist ein Textfeld (Anzeige „5.611“, beim Bearbeiten „5611“;
+  Eingabe „1.234“ wird als 1234 gelesen, „12.5“ als 12,5).
+- **Geprüft:** Hauptsitzung live (Zähler, Liste, Stern, Sprung);
+  `oberflaechen-pruefer`: keine Bedienfehler, sieben Punkte zu
+  Verständlichkeit und Zahlenformat nachgezogen. Klick- und Sprungtests mit
+  echter Maus liegen als Playwright-Skripte außerhalb des Repos, nicht in
+  `tests/test.html`.
+- Selbsttest **829/829** grün (807 + 22).
+
+**Offen aus O5:** Breite mit klassischem 17-px-Scrollbalken ungeprüft (der
+ungünstigste Fall in Craften, Fokus plus zweite Einkaufsstadt, läge etwa
+1 px über dem Rahmen). Bei 390 px liegen die Summen der Einkaufsliste hinter
+waagerechtem Scrollen im Rahmen. Touch und Firefox ungeprüft. „Veredeln
+leveln“ hat weiter keinen Zähler und keine eigene Einkaufsliste.
+
+## Nachtrag v3.18.0 (22.11.2026): Optimierungsrunde, Paket O4 „Gewinn je Einsatz“
+
+Zwei neue Kennzahlen je Zeile in „Gelegenheiten“, „Craften: Gewinn“ und
+„Veredeln leveln“, gesetzt von `VEREDELN.kennzahlenSetzen()`:
+
+- **Gewinn/Tag** (`gewinnJeTag`) = Gewinn/Stück × erreichbare Stück/Tag.
+  Erreichbar = Anteil × verkauft/Tag der gewählten Verkaufsstadt; rechnet
+  die Zeile mit Fokus und ist Premium aktiv, zusätzlich höchstens 10.000 /
+  Fokus je Stück (`tagGrenze` „absatz“ oder „fokus“). Ohne Premium ist kein
+  Tagesbudget belegt, dann keine Fokusgrenze (Tooltip sagt es). Kein
+  erfasster Handel: leer, sortiert ans Ende. **Neue Vorgabe der Sortierung**
+  in allen drei Reitern; gespeichertes „marge“ wird einmalig umgestellt
+  (Merker `sortTagUmgestellt`), eine spätere bewusste Wahl bleibt.
+- **Anteil ist eine Annahme, kein Spielwert:** gemeinsame Einstellung
+  `einstellungen.absatzAnteilProzent` (Vorgabe 25, 1 bis 100), Feld
+  „Annahme: Anteil %“ in jedem der drei Reiter, `UI.absatzAnteilSetzen()`,
+  Ereignis `albion:absatzanteil`.
+- **Mehrgewinn je Fokuspunkt** (`mehrgewinnJeFokus`) = (Gewinn/Stück mit
+  Fokus − ohne Fokus) / Fokus je Stück, unabhängig vom Fokus-Schalter;
+  leer, wenn der Vorgang keinen Fokus kennt. `RECHENKERN.kosten` wird je
+  Zeile einmal gerufen und liefert beide Varianten in `alleWege`;
+  `rechenkern.js` und `regeln.js` unverändert.
+- **„Gewinn je eingesetztem Silber“ nicht als eigene Spalte:** das ist die
+  Marge; ihr Tooltip sagt es jetzt.
+- Zeilen ohne Wert sortieren bei allen Schlüsseln ans Ende.
+- **Geprüft:** Umsetzer, 4.614 Zeilen vor und nach dem Umbau in 18 Feldern
+  bytegleich. `rechenkern-pruefer`: kein Rechenbefund; Leder T6.1 in
+  Martlock (mit Fokus, Fokusgrenze greift, 81.475,94 je Tag) und Tasche T4.0
+  in Lymhurst in Python und Node identisch; Rindfleischeintopf T8.3 bei FCE
+  34.242: 219,2 Fokus je Stück, 2.192 je Charge, Gebühr 2.462 je Charge, wie
+  im Spiel abgelesen.
+- Selbsttest **807/807** grün (769 + 38).
+
+**Offen aus O4:**
+- **Gewinn/Tag begrenzt nur die Verkaufsseite.** Bei Massenware mit dünner
+  Marge (Kunstvoller Stoff T5.0: 4,3 %, 107.883 verkauft/Tag) rechnet die
+  Kennzahl mit rund 27.000 Stück je Tag und unterstellt, dass sich dafür
+  rund 81.000 Zutaten zum Bestpreis kaufen lassen. Das verletzt „Markttiefe
+  beachten“ (`CLAUDE.md`, Modellierung). Abhilfe heute: Anteil senken.
+  Sauber wäre eine Begrenzung über das Tagesvolumen der Zutaten (eigener
+  Volumenabruf je Zutat, eigenes Paket).
+- Jede Zeile setzt das volle Fokusbudget an; Gewinn/Tag mehrerer
+  Fokus-Zeilen ist nicht summierbar.
+- Tabellenbreite bei 1440 px: in „Craften: Gewinn“ liegen „Mehrgewinn je
+  Fokus“ und „Gewinn gesamt“ hinter waagerechtem Scrollen im Rahmen, in
+  „Veredeln leveln“ ist die letzte Spalte 32 px angeschnitten.
+- Alter Fehler, auch am neuen Feld: Zahl eintippen und direkt auf einen
+  Tabellenkopf klicken verliert den Klick (Neuzeichnen beim Verlassen des
+  Felds), ebenso bei Menge und Mind. verkauft/Tag.
+- Die Root-`CLAUDE.md` (eine Ebene höher) nennt im Spielerprofil noch den
+  überholten Stand „2.353 je Charge, 1.022 FCE“; die Kopie im Repo ist seit
+  19.09.2026 korrigiert. Abgleich steht aus.
+
+## Nachtrag v3.17.0 (22.11.2026): Optimierungsrunde, Paket O3, Reiter „Gelegenheiten“
+
+Siebter Bereich der App, in der Reiterleiste vor „Craften: Gewinn“
+(`js/gelegenheiten.js`, Modul `GELEGENHEITEN`).
+
+- **Rangliste über alle Warengruppen:** Crafts und Veredelungen in einer
+  Tabelle. Die Rechnung je Zeile kommt unverändert aus
+  `CRAFTEN.zeilenRechnen` und `VEREDELN.zeilenRechnen`; der Reiter baut nur
+  deren Eingaben aus dem Preisbestand (`PREISE.bestandPreis`,
+  `bestandAlleQualitaeten`, `bestandAbsatz`). Keine eigene Rechenlogik.
+  Gezeigt werden Zeilen mit Gewinn über 0 und „Mind. verkauft/Tag“ (Vorgabe
+  5, gilt auch für Veredelungen); 200 Zeilen im DOM, „Mehr anzeigen“.
+- **Sofort aus dem Bestand:** Öffnen rechnet ohne Abruf, auch mit
+  abgelaufenen Werten; Alter je Zeile, alte Zeilen (Preise über 30 Min.,
+  Volumen über 60 Min.) dezent markiert, Leiste nennt „n von N frisch“.
+- **Laufender Hintergrundscan** über `PREISE.planer` (`hintergrund`, Gruppe
+  `scan`), „oben zuerst“: zuerst die aktuelle Rangliste von oben, dann der
+  Rest mit den ältesten Preisen; ohne Bestand Veredeln zuerst, dann die
+  Warengruppen. Startet erst nach dem ersten Öffnen des Reiters. Schalter
+  „Scan läuft/pausiert“ und „auch im Hintergrund-Tab“, beide gespeichert.
+  Ist gescrollt, bleibt die Reihenfolge stehen, Knopf „Neu sortieren (n
+  geändert)“.
+- **Scanumfang**, Vorgabe: T4 bis T8, alle Stufen, alle Warengruppen plus
+  fünf Veredelungsrohstoffe, Fertigung/Einkauf/Verkauf Lymhurst, ohne
+  Artefakt-Items: 3.203 Vorgänge, höchstens 202 Abrufe je Durchlauf (65 × 3
+  + 7), rund 6,7 Min. Mit Artefakt-Items rund 6.800 Crafts (in der
+  Oberfläche nicht getestet).
+- **Einstellungen** eingeklappt über der Liste, eigener Speicher
+  `albion_kostenrechner_gelegenheiten_v1`. Stationssätze, Tagesbonus und
+  Premium sind die gemeinsamen der App. **Zusatzbonus, eigene Preise und
+  Etwa-Null-Grenze der Detailreiter fließen bewusst nicht ein**, dieselbe
+  Zeile kann dort deshalb abweichen.
+- **Bestand-Obergrenze** (offen aus O1): beim Laden fällt weg, was älter als
+  7 Tage ist (`PREISE.BESTAND_MAX_ALTER_TAGE`).
+- **Für O4/O5 vorbereitet:** `GELEGENHEITEN.spalteErgaenzen({id, kopf,
+  titel, zelle, wert, auf})` und `aktionErgaenzen({id, text, titel,
+  ausfuehren})`; `maschine()` liefert die Instanz der App.
+- **Gemessen (Hauptsitzung, live):** Klick auf den Reiter, nach 0,3 s zehn
+  Zeilen aus dem Bestand; nach 20 s Scan 200 von 3.203 frisch (13 Abrufe,
+  0,6 MB). Umsetzer mit synthetischem Bestand (37.406 Preise): vollständige
+  Rangliste nach rund 0,2 s, längste Stockung unter 0,1 s.
+  `rechenkern-pruefer`: kein Rechenbefund, Bogen T5.3 und Barren T6.1 in
+  Python, Reiter und Detailreiter identisch. `oberflaechen-pruefer`: sechs
+  Punkte nachgezogen (sichtbares Warnschild bei fehlendem Stationssatz,
+  Tausenderpunkt in der Marge, durchgehend „verkauft/Tag“, ehrliche
+  Unterzeile, Tooltip der Abrufschätzung, Statusanzeige).
+- Selbsttest **769/769** grün (721 + 48 „gelegenheiten:“-Tests).
+
+**Offen aus O3:** „oberste 50 frisch in 15 s“ gilt bei ruhigen Preisen (3
+Abrufe); sortiert sich die Spitze um, wurden 12,3 s gemessen, garantiert ist
+es nicht. Bei 390 px liegen Gewinn und Marge hinter waagerechtem Scrollen
+(wie in den anderen Gewinn-Reitern). Läuft der Bestand im
+`localStorage`-Rückfall, sprengt ein Gesamtscan dessen Grenze (nicht
+behandelt). Abrufe anderer Reiter fließen erst beim nächsten Öffnen oder
+Scan-Block ein. **Ablesung erbeten:** Gegenstandswert eines veredelten
+Rohstoffs im Craft-Fenster (T5-Stoff am Weber): die App rechnet die Gebühr
+aus der Zutatensumme 31, der Dump nennt für den Stoff 32 (bestehendes
+Verhalten, `regeln.js` `itemWert` mit Rezept; 0,45 Silber je Stück bei Satz
+400).
+
+## Nachtrag v3.16.0 (22.11.2026): Optimierungsrunde, Paket O2 „Abrufplaner“
+
+- **Eine Warteschlange für alle Abrufe von `js/preise.js`** (`PREISE.planer`):
+  strikt nacheinander, 1,5 s Abstand, Vordergrund (Nutzer) überholt
+  Hintergrund (Scan ab O3). Budget im gleitenden Fenster 120 je Minute und
+  240 je 5 Minuten (eigene Wahl, unter den dokumentierten 180/300).
+  Schnittstelle: `einreihen(url, {prioritaet, gruppe, bezeichnung})`,
+  `abbrechen(filter)`, `pausieren()`, `fortsetzen()`,
+  `einstellen({hintergrundAuchVerborgen})`, `status()`, `beiAenderung(fn)`.
+  Hintergrundaufträge ruhen bei verborgenem Tab. Tests tauschen Uhr und
+  Wartefunktion über `PREISE.testEinstellen()`.
+- **Alle Städte in einem Abruf:** `opts.staedte` in `preiseAbrufen`,
+  `preiseAlleQualitaetenAbrufen`, `volumenAbrufen`, `absatzAbrufen`; Ergebnis
+  dann `Stadt -> bisheriges Ergebnis`, Bestandsschlüssel weiter je Stadt.
+  `CRAFTEN.datenAbrufen` und `VEREDELN.datenAbrufen` holen Zutaten nur für
+  Einkaufsstädte, Produktpreise und Volumen nur für Verkaufsstädte.
+  Geschrieben wird je Stadt nur, was für diese Stadt fällig war.
+- **429:** die ganze Schlange pausiert. Die echte Antwort nennt die
+  Reset-Zeit im Text (s. `CLAUDE.md`, API-Abschnitt); `limitResetAusText()`
+  liest sie, gewartet wird bis dahin plus 2 s, sonst wachsend 3/6/12 s.
+  Hintergrund wiederholt unbegrenzt, ein Vordergrundauftrag gibt nach 3
+  Drosselungen in Folge mit „Die Preis-API drosselt gerade (Limit bis
+  HH:MM). Bitte danach erneut suchen.“ auf.
+- **Statusanzeige** rechts in der Reiterleiste (`#abrufStatus`, gefüllt von
+  `js/tabs.js`): Zustand, offene Abrufe, geladene MB der Sitzung
+  (unkomprimiert gezählt), bei Drosselung „Limit bis HH:MM“.
+- **Nach Prüfung gehärtet** (`spieldaten-pruefer`): kein Merker `::qA` und
+  kein „nichts da“ für eine Stadt, die in der Antwort ganz fehlt;
+  Städtenamen in der URL ausdrücklich kodiert.
+- **Gemessen:** live „Veredeln leveln“, alle fünf Rohstoffe, drei Einkaufs-
+  und zwei Verkaufsstädte, frisch: 9 Abrufe in 13 s (Hauptsitzung).
+  Umsetzer, kleine Auswahl: vorher 6 Abrufe in 9,4 s, nachher 4 in 4,8 s.
+- Selbsttest **721/721** grün (686 + 35 „planer:“-Tests).
+
+**Offen aus O2:** Der Prüfer bekam beim zweiten `curl`-Abruf eine echte 429,
+weit unter dem dokumentierten Limit; Ursache ungeklärt (fehlende
+Kompression, gemeinsamer Zähler oder kürzeres Fenster). **Ob die echte
+429-Antwort einen CORS-Header trägt, ist ungeprüft**: fehlt er, sieht der
+Browser nur einen Netzfehler und der Planer landet im Fehlerweg (5 Versuche)
+statt im 429-Weg. Preisvergleich und Eintopf-Rechner rufen weiter an der
+Schlange vorbei ab. Budget gilt je Browser-Tab. Kein Schalter in der
+Oberfläche für Pausieren (kommt mit O3). Firefox ungeprüft.
+
+## Nachtrag v3.15.0 (22.11.2026): Optimierungsrunde, Paket O1 „Gemeinsamer Preisbestand“
+
+Erstes Paket aus `OPTIMIERUNG-PLAN.md` (Ziele: ergonomische
+Gewinnmaximierung, Potenzialerkennung, Performance). Erstmals nach dem neuen
+Ablauf gebaut: Hauptsitzung steuert, ein Umsetzer-Subagent je Paket, Prüfung
+und Abschluss durch die Hauptsitzung (s. `CLAUDE.md`, „Arbeitsablauf“).
+
+- **Preisbestand in IndexedDB** (`albion_kostenrechner_bestand`) statt
+  `localStorage`, mit Arbeitskopie im Speicher: gelesen wird synchron aus dem
+  Speicher, geschrieben im Hintergrund. Kein Aufrufer in `ui.js`,
+  `rechenkern.js`, `regeln.js` geändert. Rückfall auf `localStorage`, wenn
+  IndexedDB fehlt oder nicht binnen 5 s öffnet (`PREISE.bestandInfo()`).
+  IndexedDB trägt unter `file://` in Chrome und Edge (vom Umsetzer mit
+  Playwright über einen Browser-Neustart belegt; Firefox ungeprüft). Alle
+  `file://`-Seiten teilen sich die Datenbank, also auch alle Versionsordner.
+- **Handelsvolumen mit Bestand**, gültig 60 Min. (`VOLUMEN_GUELTIG_MIN`),
+  Preise weiter 30 Min. Gilt auch für den Volumen-Knopf an gesperrten Knoten
+  im Kostenrechner und ersetzt dort die Entscheidung vom 05.09.2026 („nur
+  laufende Sitzung“). „Cache leeren“ leert Preise und Volumen.
+- **Gewinn-Reiter verwenden den Bestand wieder.** „Gelegenheiten suchen“
+  ruft nur ab, was fehlt oder zu alt ist; neuer Knopf „Frisch abrufen“
+  (`#vdFrisch`, `#cgFrisch`) erzwingt alles. Abruflogik als
+  `VEREDELN.datenAbrufen()` und `CRAFTEN.datenAbrufen()` herausgezogen. Was
+  ein Reiter holt, nutzt der andere. Merker `Stadt::ID::qA` für „alle
+  Qualitäten abgerufen“.
+- **Alter sichtbar:** Tooltip je Zeile, Statuszeile nennt Abrufzahl und
+  ältesten verwendeten Wert.
+- **Migration:** alter `localStorage`-Preisbestand wird einmalig übernommen
+  und der Schlüssel entfernt. Eigenpreise und Einstellungen unverändert.
+- **Nach Prüfung gehärtet (Hauptsitzung):** ein Eintrag aus der Zukunft
+  (Systemuhr zurückgestellt) gilt nicht mehr als frisch; eine ganz leere
+  `history/`-Antwort wird nicht mehr 60 Min. als „kein Handel“ gemerkt.
+- **Nutzerwunsch nebenbei:** neue Spalte **„Kosten gesamt“** in „Veredeln
+  leveln“ und „Craften: Gewinn“ (Kosten je Stück mal eingestellter Menge,
+  `z.kostenGesamt`).
+- **Gemessen:** live in „Veredeln leveln“ erste Suche 8 Abrufe, zweite 0,
+  nach Neuladen 0, Bestand in 0,12 s geladen. Umsetzer-Messung mit 50.000
+  Einträgen: Schreiben rund 2 s im Hintergrund, Laden rund 0,3 s, längste
+  Stockung unter 50 ms. `rechenkern-pruefer`: keine Rechenfehler, eine Zeile
+  in Python und Node identisch nachgerechnet (Guter Stoff T4.0, Kosten
+  244,54, Erlös 463,76).
+- Selbsttest **686/686** grün (660 + 26 neue „bestand:“-Tests). Die neuen
+  Tests laufen asynchron: fertig ist die Seite erst bei
+  `document.body.dataset.testsFertig === "1"`, vorher liest man 660.
+
+**Offen aus O1:** der Bestand löscht nichts nach Alter (Obergrenze
+spätestens in O3 entscheiden); 270.000 Einträge (Zielgröße des Gesamtscans)
+nicht gemessen; IDs, die die API in der Antwort weglässt, werden bei Preisen
+jedes Mal neu geholt; zwei offene Browser-Tabs sehen die Abrufe des anderen
+erst nach Neuladen; ein Rückfall auf `localStorage` ist in der Oberfläche
+nicht sichtbar.
+
+## Nachtrag v3.14.1 (08.11.2026): Ancient Lands, Schlüsselsteine und Leytore
+
+Nutzer-Hinweis: „die Kugeln zum Aktivieren der Schreine fehlen“. Geklärt über
+die deutschen Spieltexte (`localization.xml`) und `carriables.xml`:
+
+- Die Kugel ist der **Leytor-Schlüsselstein** (`DRAGON_AREA_ISLAND_KEY`,
+  Spieltext: „Bringe diesen Schlüsselstein zu einem Leytor auf deiner Insel“,
+  Farbe im Spiel `99FF00`). Er erscheint nach dem Inselquest
+  (`SPAWN_DRAGON_AREA_ISLAND_KEY` an einem `LocalQuestRewardSpawnLocation`) und
+  schaltet am **Leytor** (Teleporter-Podest) eine Verbindung frei.
+- **12 feste Spawnpunkte** im Grundgerüst (4 Zentralinsel, 8 Pfadinseln),
+  deckungsgleich mit `DRAGON_KPR_FANATICS_KEY_MARKER_B`; jeder liegt 4 bis 6 m
+  neben einer Truhe, das Symbol ist deshalb schräg darüber versetzt. Die
+  Camp-Vorlagen bringen je einen eigenen mit (Lage je Instanz, nur im
+  Insel-Tooltip erwähnt).
+- **120 Leytore** als eigene Ebene (zwei je Verbindung, Raute, gefüllt wenn
+  die Verbindung aktiv ist), standardmäßig aus.
+- **Umbenannt:** die bisherigen „Drachenschreine“ heißen im Spiel
+  **„Drachenaltar“** (`BUILDINGS_DRAGON_REWARD_SHRINE`). Laut `buildings.xml`
+  ist der Altar ein Händler für Ansehen bei den Drachen (Belohnungen gegen
+  `QUESTITEM_STANDING_DRAGONS`), kein Segen gegen Knochen; der alte Tooltip
+  stammte aus einer Sekundärquelle und ist ersetzt. Interne ID `schreine`
+  bleibt wegen des Speicherstands.
+- Lauf-Tracker: „Schlüsselsteine eingesetzt x/12“, Klick auf den Stein.
+- Selbsttest **660/660** grün (3 neue: Anzahl, 4 auf der Zentralinsel,
+  jedes Leytor gehört zu einer Verbindung; Bereiniger um `schluessel`
+  erweitert).
+
+## Nachtrag v3.14.0 (08.11.2026): Reiter „Ancient Lands“, interaktive Karte
+
+Auftrag von Sören (autonom umgesetzt, während er weg war; lokal zuerst als v3.11.0 gebaut, beim Push auf v3.11.0 bis v3.13.0 aus einer anderen Sitzung gesetzt und auf v3.14.0 umnummeriert): ein Entwurf eines
+Kollegen („Albion Map Builder“, Leaflet, eigene Marker, Export/Import, Kartenbild
+per Upload) sollte schön in die App, mit besserem Kartenmaterial der Ancient Lands
+(Gebiet aus dem Dragonfire-Update vom 31.08.2026; der Nutzer nannte es
+„Dragonlands“/„Accident Lands“).
+
+- **Kartenmaterial aus dem Client-Dump statt Screenshot.** Im Netz gab es nur
+  Spiel-Screenshots in 1920×1080. Der Dump (`ao-bin-dumps`) enthält dagegen das
+  komplette Grundgerüst `templates/NONE/DRAGON_001.template.xml` und
+  `dragonareatemplatemetadata.json`. Neues Skript **`build_karte.py`** (Muster wie
+  `build_graph.py`, Zwischenspeicher im Temp-Ordner, `--refresh`) rastert daraus
+  die Inseln (Bausteine `_DRAGON_AxB` mit Größe im Namen, Randstücke verkleinert,
+  Slots aufgefüllt, Kanten geglättet), Wasser, Steinplätze, Bäume, Felsen, Glut,
+  und rendert schwebende Inseln mit Klippe und Schatten im App-Farbschema:
+  `assets/ancient-lands.webp`, 4096 px, 226 KB. Daten: `js/karte-daten.js`.
+- **Ausrichtung belegt:** Dump-Koordinaten (x Osten, z Norden) um 45° im
+  Uhrzeigersinn gedreht ergeben die Raute des Spiels mit Norden oben. Gegen einen
+  Spiel-Screenshot (albiononlinegrind.com) geprüft: großer See im Westen,
+  Wasser im Osten, vier Drachen um die Mitte, Ausgänge an den Rändern.
+- **Feste Punkte (aus dem Dump, belegt):** 37 Inseln (28 Camp-Slots, davon 4 mit
+  `DRAKE_ISLAND`, plus Zentralinsel und Pfadinseln), 60 Teleporter-Verbindungen,
+  12 Drachenschreine (`DRAGON_REWARD_SHRINE`), 17 Truhen-Spawnpunkte (8 Camp,
+  8 Zentralinsel, 1 Feuerdrache), Feuerdrache, 9 Ausgänge (8 Rand, 1 Mitte),
+  6 Lore-Punkte, 19 Angelstellen mit Schatz. **Die Truhenpositionen sind in allen
+  sechs Varianten (orange/schwarz × Solo/Veteran/Elite) identisch**, nur der
+  Truhentyp wechselt.
+- **Nicht fest, bewusst nicht als Punkt gezeichnet:** die Camps in den 28 Slots.
+  Das Spiel setzt je Instanz eine Vorlage ein (`M_DR_Mobcamp_01..04`,
+  `S_DR_Mobcamp_01..06`, Drachen-Slots `M_DR_Drake_01`), jede mit 2 Truhen und
+  einem Schlüsselstein-Marker, Lage und Drehung je Instanz unbekannt. Die Karte
+  zeigt deshalb die Inselnummer am Slot mit diesem Hinweis im Tooltip.
+- **Reiter** (`js/karte.js`, Leaflet 1.9.4 lokal unter `vendor/leaflet/`,
+  Prüfsummen gegen die offiziellen SRI-Werte geprüft, BSD-2-Lizenz beiliegend):
+  Ebenen als Chips (Truhen, Schreine, Drachen, Inseln, Verbindungen, Ausgänge,
+  Lore, Angeln, Eigene), **Lauf-Tracker** (Klick auf Truhe = geöffnet, Schrein =
+  benutzt, Insel = erledigt, Verbindung = aktiv, wie die Keystone-Verbindungen im
+  Spiel; Zähler mit Balken; „Neuer Lauf“), **eigene Marker** aus dem Entwurf
+  (sieben Typen, Dialog, Ziehen, Doppelklick bearbeitet, Liste springt hin,
+  Export/Import als JSON, liest auch Dateien des Map Builders), Vollbild,
+  Kompass N/O/S/W. Verbindungen laufen wie im Spiel von Inselmitte zu
+  Inselmitte. Unter Zoom −0,25 werden die Symbole kleiner.
+- **Weggelassen aus dem Entwurf:** Kartenbild-Upload (Karte ist fest), Tier-Feld.
+- Speicher: eigener Schlüssel `albion_kostenrechner_karte_v1` (Ebenen, Lauf,
+  Marker), beim Laden bereinigt (`laufBereinigen`, `markerBereinigen`).
+- Selbsttest **657/657** grün (644 + 13 Kartentests: Datenumfang,
+  Truhenarten, alle Punkte in der Raute, Verbindungen gültig, Bereiniger).
+  Im Browser bei 1600 und 390 px durchgeklickt (Truhe, Insel, Verbindung,
+  Marker setzen und speichern), keine Konsolenfehler, kein Seitenscrollbalken.
+
+**Offen:** Namen der Schreine im deutschen Client nicht geprüft (Tooltip sagt
+„Drachenschrein“). Ob die Variante `DRAGON-ISLANDS-002` (`DRA`, eigener Cluster)
+ein anderes Gerüst nutzt, ist nicht geprüft; beide Cluster-Dateien sind
+inhaltlich identisch und verweisen auf `DRAGON_001`.
+
+## Nachtrag v3.13.0 (17.10.2026): Preisvergleich, Handelsvolumen je Stadt
+
+Wunsch von Sören: je Item und Stadt das Handelsvolumen gesamt. Neue Spalte
+„verkauft/Tag“: erfasster Handel aus `history/` (`time-scale=24`, alle
+Städte in einem Abruf je 50 Items), Mittel der letzten 7 Tage, Summe über
+alle Qualitäten (gleiche Lesart wie „Craften: Gewinn“, dort ebenfalls
+Standard). Tooltip der Zahl schlüsselt je Qualität auf. Preise erscheinen
+zuerst, das Volumen folgt im zweiten Durchgang. Eigener Code in
+`preisvergleich.js` (`volumenAusHistorie`, `volumenSumme`,
+`baueHistorieUrl`), weiterhin ohne gemeinsamen Code mit `preise.js`.
+Selbsttest **644/644** grün (6 neu). Headless mit synthetischen Antworten
+geprüft; die echte API ist aus der Cloud nicht erreichbar.
+
+## Nachtrag v3.12.2 (17.10.2026): Craften: Gewinn, Kopieren mit Stufe
+
+- Kopierknopf jetzt auch neben jedem Produktnamen in der Tabelle.
+- Alle Kopierknöpfe des Reiters (Produkt, Zutat, „Alles kopieren“) hängen
+  „ Tier.Verzauberung“ an, auch „.0“: `CRAFTEN.suchName()`. Grund: alle
+  Verzauberungsstufen heißen gleich, die Albion-Marktsuche findet die
+  Variante nur mit der Stufe (Screenshot Sören: „Verfluchter Stab des
+  Adepten 4.3“). Ob die Suche „4.0“ ebenso auswertet, ist nicht geprüft.
+- Selbsttest 638/638.
+
+## Nachtrag v3.12.1 (17.10.2026): Preisvergleich, Qualität bei .1 bis .4
+
+Wunsch von Sören: je hinzugefügtem Item die Qualitätsstufe wählen. Die
+Auswahl gab es seit v3.0.0, sie fehlte aber bei allen verzauberten
+Varianten: `item-namen.js` führt `T4_BAG@1` bis `@4` ohne `q`-Merker, und
+der Rezeptgraph kennt keine @-IDs. `istQualifizierbar()` prüft jetzt die
+Grund-ID ohne `@n`. Zusätzlich zeigt der Reiter die Stufe (z. B. „4.2“)
+hinter dem Namen, in Vorschlägen und Kopf, weil alle Verzauberungsstufen
+im Dump denselben Namen tragen. Qualität bleibt je Eintrag gespeichert,
+Vorgabe Normal. Selbsttest **637/637** grün (4 neu).
+
+## Nachtrag v3.12.0 (17.10.2026): Craften: Gewinn, Zähler und Einkaufsliste
+
+Wunsch von Sören: am Produkt einen Zähler hochdrücken, darunter eine
+Einkaufsliste der Zutaten für die gewünschte Anzahl, vor Rückgewinnung, mit
+Kopierknopf je Zutatenname.
+
+- Zähler (− Zahl +) je Zeile unter dem Produktnamen; Schritt = Ausbeute je
+  Vorgang (Speisen 10). Gespeichert im Reiter-Speicher als `plan`
+  (Markt-ID → Stück), bleibt über Suchen und Neuladen erhalten.
+- Einkaufsliste unter der Tabelle (`CRAFTEN.einkaufsliste`, rein): Menge =
+  Menge je Vorgang × ganze Vorgänge, ohne Rückgewinnung abzuziehen; gleiche
+  Zutat verschiedener Produkte je Einkaufsstadt zusammengezählt; Preis ohne
+  Einstellgebühr, Kosten mit angesetztem Stückpreis, Summe. Geplante
+  Produkte als Schilder mit ×; Produkte außerhalb der aktuellen Suche werden
+  genannt und lassen sich entfernen.
+- „Kopieren“ je Zutat (Zwischenablage, Rückfall `execCommand`), „Alles
+  kopieren“ (Menge Tab Name je Zeile), „Liste leeren“.
+- Selbsttest **633/633** grün (3 neu). Headless mit synthetischen Preisen
+  geklickt, Zwischenablage geprüft.
+
+## Nachtrag v3.11.0 (17.10.2026): Reiter „Craften: Gewinn“ ersetzt „Schnelles Geld“
+
+Sörens Urteil: „Schnelles Geld“ (ein Knoten, Einstellungen aus dem
+Kostenrechner, alle Qualitäten als eigene Zeilen) funktionierte nicht wie
+gewünscht. Neu: dieselbe Bedienung wie „Veredeln leveln“, ausgelegt auf
+Crafting. `js/chancen.js` gelöscht, `js/craften.js` neu.
+
+- **Auswahl:** Warengruppen (craftingcategory, nach Gebäude geordnet, ohne
+  Veredeln und Tierhaltung), Tier, Verzauberung, Schalter Artefakt-Items
+  (Artefakt oder Kristallisierter Geist wird dann wie Material gekauft).
+  Anzeige „N Produkte, etwa M Abrufe“, weil die API drosselt.
+- **Flach (Sörens Vorgabe):** direkte Zutaten werden gekauft, auf der Stufe
+  des Produkts; nie Hochverzaubern, nie Zwischenprodukte selbst craften.
+  Mehrere marktfähige Rezepte je Item und Stufe: das billigere zählt.
+  Rezepte mit nicht handelbarer Zutat (`nichtHandelbareKandidaten`) fallen weg.
+- **Rechnung:** Craft-Kandidat aus `RECHENKERN.kosten` mit
+  `nurDirekteEbene`; Stadtwahl je Zutat und Produkt, eigene Preise,
+  Höchstpreis, Zeile und Einstufung kommen unverändert aus `VEREDELN`.
+  Stadtbonus +0,15 über `REGELN.hatCraftBonus`. Tagesbonus, Stationssätze,
+  Premium: gemeinsame Einstellungen mit Kostenrechner und Veredeln-Reiter.
+  Vorgabe Einkauf Sofortkauf, Verkauf Verkaufsorder (Spielerprofil).
+- **Qualität (mein Vorschlag, umgesetzt):** Verkaufsorder = niedrigster
+  `sell_price_min` über alle Qualitäten (Käufer nimmt das billigste gleicher
+  oder besserer Qualität; nie höher als Normal). Sofortverkauf = höchste
+  Kauforder in Normal (eine Kauforder für höhere Qualität kann ein
+  Normal-Stück nicht bedienen; Annahme, nicht im Spiel geprüft). Volumen
+  standardmäßig Summe über alle Qualitäten, per Schalter nur Normal.
+  Bessere gewürfelte Qualität nicht eingerechnet. Neu in `js/preise.js`:
+  `preiseAlleQualitaetenAbrufen` (ein Abruf je 50 IDs mit
+  `qualities=1,2,3,4,5`, je Qualität abgelegt).
+- **Volumenfilter Pflicht:** „Mind. verkauft/Tag“ (Vorgabe 5), Zeilen ohne
+  erfassten Handel fallen heraus; Status nennt die Zahl ausgeblendeter
+  Gewinnzeilen. Spalte verkauft/Tag sortierbar.
+- Selbsttest **630/630** grün (vorher 621: Tests von `chancen.js` entfernt,
+  neue für `craften.js` und `preiseJeQualitaetAusAntwort`). Headless mit
+  synthetischen API-Antworten durchgeklickt (1440 und 390 px). Echter Abruf
+  aus der Cloud nicht möglich, prüft Sören im Browser.
+
+## Nachtrag v3.10.2 (13.10.2026): Veredeln leveln, Preis je Stadt im Tooltip
+
+Nutzerwunsch: beim Hover über den Einkaufspreis sehen, was die Zutat in jeder
+angehakten Einkaufsstadt kostet ("vielleicht kostet es da, wo ich bin, nur 2
+Silber mehr"), statt des langen Erklärtextes. Gilt nur bei mehr als einer
+angehakten Einkaufsstadt, sortiert vom günstigsten: "Bridgewatch: 88 ✓,
+Martlock: 95 (+7), Lymhurst: 100 (+12), Caerleon: kein Preis". Basis ist der
+Preis ohne Einstellgebühr, eigene Preise zählen mit. Gleiches beim
+Verkaufserlös (bei mehr als einer Verkaufsstadt): Netto-Erlös je Stadt, bester
+zuerst, Abstand zur gewählten. `einkaufWaehlen`/`verkaufWaehlen` liefern dafür
+zusätzlich `alle`. Bei nur einer Stadt bleibt ein kurzer Tooltip. Tests 621/621.
+
+## Nachtrag v3.10.1 (13.10.2026): Veredeln leveln, Darstellungsfixes
+
+Inline nach Sichtprüfung des Hauptagenten. Lange Zutatennamen (z. B.
+"Ungewöhnliche Bernstein-Baumwolle") liefen in das Preisfeld; `.vd-zname`
+bricht jetzt um. "verkauft/Tag" mit Tausenderpunkt (`toLocaleString("de-DE")`).
+Stationssatz-Felder in einem zweispaltigen Raster, die Eingabefelder stehen
+bündig untereinander. Keine Rechenänderung, Tests 619/619.
+
+## Nachtrag v3.10.0 (13.10.2026): Veredeln leveln, Handelsstädte und neues Layout
+
+Wunsch von Sören (per /define-feature bestätigt, Design-Entwurf freigegeben):
+Einkauf, Fertigung und Verkauf in verschiedenen Städten, übersichtlichere
+Oberfläche mit Albion-Icons.
+
+- **Rechnung** (`js/veredeln.js`, reine Funktionen): mehrere Einkaufsstädte,
+  mehrere Verkaufsstädte, genau eine **Fertigungsstadt**. Die Fertigungsstadt
+  geht als `opts.stadt` in den Rechenkern (Stadtbonus +0,40 nur für ihre
+  Warengruppe, Rückgewinnung, Stationssatz). Je Zutat die günstigste
+  angehakte Einkaufsstadt (`einkaufWaehlen`: Sofortkauf `sell_price_min`,
+  Kauforder `buy_price_max`, Höchstalter wie im Rechenkern, eigene Preise der
+  jeweiligen Stadt zählen mit, Gleichstand: erste Stadt). Die Kosten sind je
+  Zutat getrennt (Preis × Menge), die günstigste Stadt je Zutat ist deshalb
+  die günstigste Kombination. Je Produkt die Verkaufsstadt mit dem höchsten
+  Netto-Erlös (`verkaufWaehlen` über `REGELN.erloesJeStueck`).
+  verkauft/Tag kommt aus der gewählten Verkaufsstadt. Eine Zeile je Vorgang
+  (vorher eine je Vorgang und Stadt).
+- **Höchstpreis** unverändert linear, bezieht sich auf die **gewählte
+  Einkaufsstadt** bei sonst festen Preisen. Liegt er über dem Preis einer
+  anderen angehakten Stadt, würde dort gekauft (Gegenprobe als Test).
+- **Nicht modelliert:** Transportkosten, Gewicht, Reiserisiko (Tooltip an
+  „Einkauf in“, „Verkauf in“ und den Stadtschildern). Kein Vergleich
+  mehrerer Fertigungsstädte.
+- **Migration:** alte Liste `staedte` wird zu Einkauf = Verkauf = diese
+  Städte, Fertigung Lymhurst falls angehakt, sonst die erste
+  (`einstellungenBereinigen`). Neue Vorgabe: alles Lymhurst. Neues Feld
+  `sortierung` (Vorgabe Marge).
+- **Premium geteilt:** `UI.premiumSetzen()` und Ereignis `albion:premium`,
+  Muster wie Stationssätze/Tagesbonus; der Kostenrechner meldet seine
+  Änderung ebenfalls.
+- **Oberfläche nach Entwurf:** drei Karten (Was veredeln, Wo handeln, Wie
+  rechnen), Rohstoff-Kacheln mit Icon, Tier/Verzauberung als gleich große
+  Chips, Fertigungsstadt mit Bonus-Schild und „Rückgewinnung 36,7 %“ (je
+  Rohstoff, falls verschieden), Stationssätze der angehakten Rohstoffe,
+  Städte als Chips, vier Schalter (Einkauf, Verkauf, Fokus, Premium),
+  Tagesbonus mit fünf Icons, „Weitere Einstellungen“ zugeklappt. Ein Knopf
+  „Gelegenheiten suchen“ ruft immer frisch ab (`erzwingen: true`, Städte
+  nacheinander wie bisher); „Preise aktualisieren“ entfällt. Tabelle:
+  Produkt, Einkauf je Vorgang (feste Spalten, Preisfeld wie Text, eigener
+  Preis gold mit rotem ×), Verkauf, Kosten/Stück, Gewinn/Stück, Marge,
+  Gewinn gesamt; Sortierung per Klick auf die Köpfe. Stadtschilder nur bei
+  mehr als einer angehakten Stadt. Rundungen als `--r`/`--r-tag`/`--r-card`.
+  Icons von `render.albiononline.com/v1/item/<ID>.png?size=…` (ID mit
+  `_LEVELn`, geprüft: liefert das verzauberte Bild), lazy, fester Platz.
+- **Nachrechnen ohne Abruf** jetzt auch bei Fertigungsstadt, Premium,
+  Sortierung und bei verkleinerter Auswahl (Städte, Rohstoffe, Tier, Stufe),
+  solange die Daten der letzten Suche reichen; sonst Hinweis im Status.
+- **App-weit:** `.wrap` fluid bis 1440 px, Reiterleiste bricht um, Ränder
+  16 px unter 600 px. Leerer waagerechter Scrollbalken unter „Schnelles
+  Geld“: der Rahmen `.ch-tabellenrahmen` scrollte selbst, und die goldenen
+  Eckklammern der `.gp-panel` ragen 1 px hinaus; jetzt scrollt nur der
+  Inhalt. Kostenrechner bei 390 px war 597 px breit (`.klein-tbl` erbte
+  `min-width:560px`), behoben. Gemessen: alle fünf Reiter bei 1920, 1280 und
+  390 px ohne Seitenscrollbalken, waagerecht scrollen nur echte Tabellen.
+- Selbsttest **619/619** grün (vorher 601; 18 neu, 6 bestehende
+  Veredeln-Tests auf das Stadtmodell umgestellt). Headless mit Live-Preisen
+  durchgeklickt; eine Zeile von Hand nachgerechnet (Guter Stoff T4.0
+  Lymhurst: (2 × 100 + 175) / 1,58 + 7,2 = 245, Erlös 496 × 0,935 = 464,
+  max. Hanf 100 + 219 / 1,266 = 273).
+
+**Abweichungen vom Entwurf:** Sortierung voreingestellt nach Marge (wie
+bisher), nicht Gewinn gesamt; „etwa Null“ gold statt rot; Fokus je Vorgang
+klein unter den Kosten und verkauft/Tag unter dem Verkauf (im Entwurf nicht
+vorhanden, Information bleibt erhalten); Ausbeute beim Stein als Tooltip am
+Tier; kein Erklärtext unter der Tabelle (Nutzer-Nachtrag), nur Tooltips;
+Schalter-Text darf umbrechen statt abgeschnitten zu werden.
+
+## Nachtrag v3.9.1 (13.10.2026): Tagesbonus gilt in allen Städten
+
+Nutzerbeleg (Sören, im Spiel beobachtet): der Tagesbonus auf die
+Rückgewinnung ist **nicht stadtspezifisch**, er gilt in allen Städten gleich.
+Ersetzt die Aussage „rotiert je Stadt“ in `CLAUDE.md` (beide Kopien) und im
+Plan (Abschnitt 9, Punkt 6, mit Korrekturvermerk).
+
+- **Veredeln leveln:** die Tabelle Stadt × Rohstoff ist ersetzt durch eine
+  Zeile „Tagesbonus (gilt in allen Städten)“, je Rohstoff aus / 10 % / 20 %,
+  mehrere gleichzeitig möglich. Der Wert gilt in jeder Stadt
+  (`zeilenRechnen` nimmt `einstellungen.tagesbonus`, nicht mehr je Stadt).
+- **Eine gemeinsame Einstellung:** der Kostenrechner führte den Tagesbonus
+  schon immer ohne Stadt (`einstellungen.tagesbonus`, cc → silber/gold), und
+  „Schnelles Geld“ liest denselben Wert. Der Reiter nutzt jetzt genau diese
+  Einstellung, Abgleich wie bei den Stationssätzen: `UI.tagesbonusSetzen()`
+  speichert und meldet per Ereignis `albion:tagesbonus`, der Kostenrechner
+  übernimmt den einen Wert in seinen Arbeitsspeicher, der Reiter zieht bei
+  Änderungen im Kostenrechner nach. `rechenkern.js`/`regeln.js` unverändert
+  (dort war der Bonus nie stadtabhängig).
+- **Migration:** ein alter Stand `tagesbonus` (Stadt → Rohstoff) im
+  Reiter-Speicher wird beim Laden einmalig übernommen, je Rohstoff der
+  **höchste** Wert über alle Städte (`VEREDELN.tagesbonusAusAltstand`).
+  Begründung: jeder Eintrag war eine Ablesung desselben Bonus; die alte
+  Tabelle zeigte jede angehakte Stadt, gepflegt wurde meist nur eine, ein
+  „aus“ heißt also eher „nicht eingetragen“. Der Altstand ersetzt einen
+  Kostenrechner-Wert derselben Kategorie (seit v3.6.0 wurde der Bonus für
+  diese fünf Rohstoffe im Reiter gepflegt, der Kostenrechner-Wert dort
+  ignoriert); Rohstoffe ohne Altstand behalten den Kostenrechner-Wert.
+  `einstellungenBereinigen` führt kein Feld `tagesbonus` mehr, der
+  Reiter-Speicher wird danach ohne das Feld zurückgeschrieben.
+- Selbsttest **601/601** grün (vorher 594; der Test für
+  `tagesbonusBereinigen` ersetzt, 8 neu: Faser 20 % ergibt Lymhurst
+  B = 0,78 und Martlock/Caerleon B = 0,38, mehrere Rohstoffe, Altstand wirkt
+  nicht mehr, Migration samt Vorrangregel, Ereignis, aus). Headless
+  durchgeklickt mit Live-Preisen: Migration (Lymhurst Silber, Martlock Gold
+  → Gold), Rückgewinnung 43,8 % / 27,5 %, Umschalten in beiden Reitern
+  wirkt im jeweils anderen, Reload behält den Stand, 390 px bricht um.
+
+## Nachtrag v3.9.0 (13.10.2026): Veredeln leveln, eigener Preis und Höchstpreis
+
+Wunsch von Sören: nach der Entscheidung für einen Vorgang kauft er die Zutat,
+der Preis steigt dabei; er will sehen, wie viel Gewinn bis zu welcher
+Preisgrenze bleibt.
+
+- **Einkaufspreis je Zutat überschreibbar.** In der Spalte „Einsatz je
+  Vorgang, Einkaufspreis“ ist der Preis ein Eingabefeld (Wert ohne
+  Einstellgebühr, wie im Marktfenster). Die Zeile rechnet sofort neu. Eigene
+  Preise: goldener Rahmen, ✕ je Feld, Knopf „Eigene Preise zurücksetzen (n)“,
+  Tooltip mit dem aktuellen Marktpreis. Leer oder ≤ 0 setzt zurück.
+- **Entscheidung, Verhältnis zu den vorhandenen Mechanismen:** eigenes,
+  kleines Speicherfeld `preisUeberschreibungen` (Stadt → Markt-ID → Silber) im
+  Reiter-Speicher `albion_kostenrechner_veredeln_v1`. Keine Wiederverwendung,
+  weil keiner der beiden Kostenrechner-Wege passt: die Eigenpreise
+  (`PREISE.eigenpreis*`, „kein Eigenpreis“-Felder) greifen nur, wenn GAR kein
+  Marktpreis da ist; die Preisübersteuerungen (`einstellungen.
+  preisUebersteuerungen`) sind stadtunabhängig und ein fester Kaufpreis ohne
+  Einstellgebühr. Der eigene Preis wird als Marktpreis in `opts.preise`
+  eingesetzt (beide Seiten, ohne Datum), gilt je Stadt und Markt-ID in allen
+  Zeilen und wirkt nur auf den Einkauf; der Erlös rechnet weiter mit dem
+  Markt. Bei eigener Kauforder ist er der Orderpreis, die 2,5 % kommen
+  obendrauf. **„Preise aktualisieren“ lässt eigene Preise stehen**, bis sie
+  zurückgesetzt werden; der Tooltip zeigt den frischen Marktpreis daneben.
+- **Höchstpreis je Zutat** („max. 1.236“, rot bei Verlust, „kein Preis
+  reicht“ wenn ≤ 0): Preis, bei dem der Gewinn der Zeile auf 0 fällt, alle
+  anderen fest. Lineare Herleitung, belegt: mit `nurDirekteEbene` wird jede
+  Zutat gekauft (Kosten = Preis × Kauffaktor), die Rückgewinnung ist ein
+  fester Mengenfaktor, die Gebühr hängt am Gegenstandswert. Also
+  `p* = p0 + Gewinn / (effektiveMenge × Kauffaktor)` (`VEREDELN.hoechstpreis`).
+  Selbsttests setzen p* über den echten Rechenkern ein (Sofortkauf, Kauforder,
+  Kauf- und Verkaufsorder, Verlustfall) und prüfen Gewinn ≈ 0 sowie die
+  Linearität an drei Punkten. Live gegengerechnet: Seltener Hanf 1.198,
+  Gewinn 49/Stück, 2 × (1 − 0,367) → 1.198 + 49 / 1,266 = 1.236.
+- **Stationssätze im Reiter** für die angehakten Rohstoffe (Weber, Sägewerk,
+  Schmelze, Steinmetz, Gerberei), je 100 Nahrung. Dieselbe Einstellung wie im
+  Kostenrechner: `UI.stationssatzSetzen()` schreibt `einstellungen.
+  stationssaetze` und meldet per Ereignis `albion:stationssaetze`; der
+  Kostenrechner übernimmt den einen Satz in seinen Arbeitsspeicher (sonst
+  würde er beim nächsten Speichern den alten Stand zurückschreiben), der
+  Reiter zieht umgekehrt nach. 0 ist erlaubt, leer ändert nichts. Fehlt ein
+  Satz, sagt die Fußzeile „mit 0 gerechnet“.
+- **Nachrechnen ohne Abruf:** die Suche legt Preise und Handelsvolumen je
+  Stadt ab (`daten`), `VEREDELN.zeilenRechnen()` baut daraus die Zeilen.
+  Neu gerechnet wird bei eigenem Preis, Stationssatz und jetzt auch bei
+  Einkauf, Verkauf, Fokus, Zusatzbonus und Tagesbonus (vorher erst beim
+  nächsten Suchen). Städte/Rohstoffe/Tier/Stufe brauchen weiter eine Suche.
+- Selbsttest **594/594** grün (vorher 574, 20 neue). Headless mit
+  Live-Preisen (Lymhurst, Faser T4–T6) durchgeklickt, auch bei 390 px.
+
+**Nebenbefund, nicht behoben:** bei 390 px Breite ist die Seite 601 px breit,
+die Reiterleiste bricht nicht um (auch schon in v3.8.3 so gemessen).
+
+**Ältere Nachträge (v3.8.3 bis v3.1.7)** am 13.10.2026 unverkürzt nach
+`kostenrechner-KONTEXT-HISTORIE.md` verschoben (Schlankheitsregel).
+
+## Dateistruktur
+
+Stand nach P7 (v1.0.0) plus Feature "Craft-Stadt waehlbar" (v1.1.0) plus
+Feature "Fokuseinsatz steuerbar machen" (v1.2.0) plus Feature "Bauplan-Ansicht
+ergonomisch ueberarbeitet" (v1.3.0) plus Standardwert Stationssaetze (v1.3.1)
+plus Feature "Qualitaetsstufen" (v1.4.0) plus "FCE-Ableitung ueber
+Schicksalsbrett-Knotenliste je Kategorie" (v1.5.0) plus Bugfix "Veredeln-
+Spezialisierungsknoten nach Tier gruppiert" (v1.5.1) plus Diagnose
+"Fokus-Monotonie-Regressionstest" (v1.5.2, nur `tests/test.html` erweitert,
+kein Rechenkern-/Regeln-/UI-Code geaendert) plus Feature "Alle-Wege-Tabelle
+gruppiert gleichwertige Wege" (v1.6.0, nur `Kostenrechner.html`/`js/ui.js`/
+`tests/test.html`, kein Rechenkern-/Regeln-Code geaendert, keine neuen
+Dateien) plus Feature "Handelsvolumen als Zusatzsignal bei gesperrten
+Preisen" (v1.7.0, `js/preise.js`/`js/ui.js`/`Kostenrechner.html`/
+`tests/test.html`, kein Rechenkern-/Regeln-Code geaendert, keine neuen
+Dateien) plus Feature "Bauplan grafisch als Baumdiagramm mit Item-Icons"
+(v1.8.0, `js/ui.js`/`Kostenrechner.html`/`tests/test.html`, kein
+Rechenkern-/Regeln-/Preise-Code geaendert, keine neuen Dateien) plus
+"Icon-Kachel im grafischen Bauplan ueberarbeitet" (v1.9.0, `js/ui.js`/
+`Kostenrechner.html`) plus "Komplettes visuelles Redesign, Albion-Theme"
+(v2.0.0, ausschliesslich `Kostenrechner.html` CSS+Markup, `js/*.js` und
+`tests/test.html` unveraendert, neue Dateien `design.md`/`assets/`) plus
+"Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt"
+(v2.0.1, nur `build_graph.py`/`rezepte.js` (neu erzeugt)/`tests/test.html`
+(eine Testbezeichnung angepasst), kein Rechenkern-/Regeln-/UI-Code geaendert)
+plus "App-Fusion Paket A+B: Reiterumschaltung + Preisvergleich migriert"
+(v3.0.0, neue Dateien `item-namen.js` (von `build_graph.py` zusaetzlich
+erzeugt)/`js/tabs.js`/`js/preisvergleich.js`, `Kostenrechner.html`/
+`tests/test.html` erweitert, kein Rechenkern-/Regeln-Code geaendert) plus
+"App-Fusion Paket C: Eintopf-Rechenkern live migriert" (v3.1.0, neue Dateien
+`js/eintopf-daten.js`/`js/eintopf-preise.js`/`js/eintopf-rechenkern.js`/
+`js/eintopf-ui.js`, `Kostenrechner.html` erweitert (Eintopf-Platzhalter durch
+echtes Markup ersetzt, neue CSS-Klassen), kein bestehendes
+Kostenrechner-/Preisvergleich-Modul und `tests/test.html` nicht geaendert -
+Tests fuer den Eintopf-Rechenkern sind Paket D) plus "App-Fusion Paket D:
+Eintopf-Rechenkern automatisierte Tests ergaenzt" (v3.1.1, ausschliesslich
+`tests/test.html` erweitert (39 neue Tests + 3 neue Script-Einbindungen),
+keine der drei Eintopf-Dateien geaendert, Option A) plus "App-Fusion Paket E:
+alte eigenstaendige Eintopf-Rechner-Dateien archiviert" (v3.1.2, reines
+Aufraeum-/Dokumentationspaket, KEINE Kostenrechner-Code-Datei geaendert, nur
+diese Kontextdatei; die drei archivierten Dateien und die Doku ausserhalb
+dieses Repos s. "Aktueller Stand"; App-Fusion Pakete A-E damit abgeschlossen)
+plus Bugfix "Spezialisierungsknoten-FCE-Formel" (v3.1.3, `js/regeln.js`
+(SPEZ_TYP.veredeln, fceAusSpezialisierungsknoten()) + `tests/test.html`
+(drei Tests angepasst, zwei neu) geaendert, `js/ui.js` nur Kommentare/
+Tooltip-Text, s. "Aktueller Stand" und `AUDIT-2026-09-13.md` Befund 2/3) plus
+vier weitere Audit-Befunde (v3.1.4, `js/regeln.js` (shapeshifterstaff/
+gatherergear-Tabellen, qualitaetsVerteilung()) + `js/rechenkern.js`
+(craftBeiQualitaetKandidat() Craften+Reroll-Kombination) + `js/ui.js`
+(neuer qualitaetsart-Fall) + `js/eintopf-rechenkern.js` (nur Kommentar) +
+`tests/test.html` (33 neue Tests) geaendert, s. "Aktueller Stand" und
+`AUDIT-2026-09-13.md` Befund 5/6/10/12) plus Befund 7+8 (v3.1.5,
+`js/regeln.js` (istQualifizierbar(), stationsgebuehrGiltFuerTier()) +
+`js/rechenkern.js` (kostenBeiQualitaet()/craftKandidat()/
+craftBeiQualitaetKandidat()) + `js/ui.js` (renderHero()-Hinweis) +
+`tests/test.html` (20 neue Tests) geaendert, s. "Aktueller Stand" und
+`AUDIT-2026-09-13.md` Befund 7/8):
+
+```
+Kostenrechner/
+  build_graph.py            fertig (P1, P2: el-Feld ergaenzt); Root-Filter
+                              is_excluded_root() gegen kosmetische/interne
+                              Nicht-Crafting-Items (vanity-Shopkategorie,
+                              GAMEMASTER-Items) v2.0.1; erzeugt zusaetzlich
+                              item-namen.js fuer den Preisvergleich-Reiter v3.0.0
+  rezepte.js                erzeugt (P1, P2, v2.0.1 neu erzeugt), nicht von Hand bearbeiten
+  item-namen.js             neu v3.0.0, erzeugt von build_graph.py: ALLE 12.237
+                              Items aus dem Namensdump (nicht nur der Rezeptgraph),
+                              q-Merker fuer Items mit Qualitaetsstufen-Preisen
+  Kostenrechner.html         fertig (P6, v0.5.0; Stadt-Dropdown v1.1.0; Fokus-Regel-
+                              Tabelle + Fokus-Schalter im Bauplan v1.2.0; Qualitaet-Dropdown
+                              + Qualitaets-Chancenpunkte-Block v1.4.0; Schicksalsbrett-
+                              Meisterschaft/Spezialisierung-Zeile ersetzt durch
+                              #spezKnotenContainer-Panel v1.5.0; #volumenBtn +
+                              .kn-volumen v1.7.0; .bg-*-CSS (grafischer Bauplan-Baum,
+                              Verbindungslinien als Pseudoelemente) + #bauplanAnsichtSchalter
+                              v1.8.0; Icon-Kachel-Farbwerte/-Badges v1.9.0; komplettes
+                              CSS + Banner-/`.gp-panel`-Markup auf das dunkle Albion-Theme
+                              aus design.md umgestellt, IDs/JS-Klassennamen unveraendert
+                              v2.0.0; Reiterumschaltung (.tabs/.tabbtn), Eintopf-Platzhalter-
+                              Reiter, Preisvergleich-Reiter-Markup (.pv-*), App-Titel
+                              "Albion Werkzeuge" v3.0.0; Eintopf-Platzhalter durch echtes
+                              Markup ersetzt (Einstellungen/Haupttabelle/Fischsauce/
+                              Tagesertrag/Faustregel/Absatzzeiten/Fisch-Rangliste/Rohpreise,
+                              IDs mit et-Praefix), neue CSS-Klassen .tag/.staedte/.stunden/
+                              .legend v3.1.0): Suche, Hero,
+                              Bauplan-Baum, Alle-Wege, Eigenpreis-Pflege (P6), Einstellungen
+  js/
+    tabs.js                  neu v3.0.0, keine Rechenlogik: Reiterumschaltung
+                              zwischen den drei Bereichen, aria-selected mitgezogen
+    preisvergleich.js        neu v3.0.0, migriert 1:1 aus dem ehemals eigenstaendigen
+                              Eintopf-Rechner (Reiter "Preisvergleich"): Suche ueber
+                              ITEM_NAMEN.alle, Live-Preise ueber alle Staedte/Qualitaeten,
+                              eigener Realm/Retry/localStorage-Schluessel (bewusst kein
+                              gemeinsamer Code mit preise.js), PREISVERGLEICH.selbsttest()
+    craften.js                neu v3.11.0, Reiter "Craften: Gewinn" (ersetzt chancen.js /
+                              "Schnelles Geld", v3.2.0 bis v3.10.2): Warengruppen je Gebaeude,
+                              Craft-Kandidat je Item und Stufe ueber RECHENKERN.kosten mit
+                              nurDirekteEbene, Stadtwahl/eigene Preise/Hoechstpreis aus VEREDELN,
+                              Preise aller Qualitaeten (PREISE.preiseAlleQualitaetenAbrufen),
+                              Volumenfilter, CRAFTEN.selbsttest()
+    eintopf-daten.js          neu v3.1.0, migriert aus eintopf_update.py (STEWS/SAUCE/FISH/
+                              ITEM_VALUE, Rindfleischeintopf T8_MEAL_STEW), reine
+                              Sprachumstellung Python->JS, keine Werteaenderung
+    eintopf-preise.js         neu v3.1.0, Live-Fetch-Schicht (/prices + /history
+                              time-scale=24/1), eigener localStorage-Schluessel
+                              albion_kostenrechner_eintopf_preise_v1 (Schema 1), bewusst
+                              kein gemeinsamer Code mit preise.js/preisvergleich.js
+    eintopf-rechenkern.js     neu v3.1.0, alle Rechenfunktionen unveraendert aus dem alten
+                              Eintopf_Rechner.html-TEMPLATE uebernommen (bezugsarten/
+                              billigste/bestChopQuelle/sauceWege/verkaufswege/strategien/
+                              gerade/entscheidungsleiter/schmerzgrenze/guete), nur
+                              Datenquelle auf EINTOPF_PREISE/EINTOPF_DATEN umgestellt;
+                              RET_OHNE/RET_MIT/ORDERGEB/FEFF unveraendert aus CLAUDE.md;
+                              Kommentar bei RET_OHNE ergaenzt (Verhaeltnis zu
+                              REGELN.RRR_GRUNDPRODUKTION erklaert, keine Werteaenderung)
+                              v3.1.4, s. AUDIT-2026-09-13.md Befund 12
+    eintopf-ui.js             neu v3.1.0, Rendering/DOM-Verdrahtung 1:1 aus dem alten
+                              TEMPLATE, IDs mit et-Praefix, alle querySelectorAll auf
+                              #tab-eintopf eingeschraenkt; automatischer Erstabruf beim
+                              ersten Reiter-Oeffnen je Sitzung (Cache leer oder >30 Min. alt)
+    preise.js                fertig (P2, P3; stadtabhaengiger Cache v1.1.0; qualitaetsabhaengiger
+                              Cache-Schluessel + sammleQualitaetsMarktIds() v1.4.0, Schema auf 3);
+                              volumenAbrufen()/normalisiereHistorieZeile() gegen history/,
+                              bewusst OHNE localStorage-Cache v1.7.0):
+                              eigenpreisSetzen lehnt Preis<=0 ab, PREIS_CACHE_SCHEMA_VERSION/
+                              EIGENPREIS_SCHEMA_VERSION getrennt seit v1.1.0. Unveraendert v1.4.0-v1.6.0.
+    regeln.js                fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0; Qualitaetswurf/Reroll-Kette
+                              v1.4.0; SPEZ_TYP/KATEGORIE_ZU_SPEZTYP/spezialisierungsGruppen()/
+                              fceAusSpezialisierungsknoten() v1.5.0; gruppenSchluesselVonItem(item,cc)
+                              Bugfix v1.5.1; Bugfix fceAusSpezialisierungsknoten() (eigener Mutual-
+                              Anteil ergaenzt) + SPEZ_TYP.veredeln (kein getrennter Meisterschafts-
+                              knoten mehr) v3.1.3; shapeshifterstaff in allen drei Tabellen
+                              ergaenzt, SPEZ_TYP.gatherergear eigener Typ (vorher faelschlich
+                              werkzeug_fused), neue Funktion qualitaetsVerteilung() (volle
+                              Wurf-Qualitaetsverteilung, Basis fuer die Craften+Reroll-
+                              Kombination in rechenkern.js) v3.1.4; neue Funktionen
+                              stationsgebuehrGiltFuerTier() (T1/T2 gebuehrenfrei) und
+                              istQualifizierbar() (Speisen/Traenke/Werkzeuge ausser Angelrute
+                              nicht qualifizierbar) v3.1.5, s. AUDIT-2026-09-13.md Befund 7/8;
+                              neue Funktion istEchterKnoten() (Veredelungsknoten erst ab T4),
+                              wirkt in spezialisierungsGruppen() UND im Mutual-Anteil von
+                              fceAusSpezialisierungsknoten() v3.1.7, s. Befund 4):
+                              itemWert, RRR, Stationsgebuehr
+                              (mit 0-Floor), Fokus (mit 0-Floor), Steuer, Kategorie-Tabellen,
+                              rezepteFuerStufe, qualitaetWurfErfolgswahrscheinlichkeit()/
+                              qualitaetsVerteilung()/rerollKostenZuQualitaet(),
+                              Spezialisierungsknoten-Ableitung (v1.5.0/v1.5.1/v3.1.3/v3.1.4/v3.1.7).
+    rechenkern.js             fertig (P3, v0.3.1, P5-Nacharbeit v0.4.0, P6 v0.5.0,
+                              Fokusregel-Ebenen v1.2.0; kostenBeiQualitaet() v1.4.0;
+                              fceFuer() um Knoten-Ebene erweitert v1.5.0, reicht cc an
+                              gruppenSchluesselVonItem() durch v1.5.1):
+                              kosten(item,stufe,menge,opts), stationssatzFuer() unterscheidet
+                              fehlend von ausdruecklich 0, weg.eigenpreis kennzeichnet
+                              Kauf-Kandidaten aus einer eigenen Schaetzung (P6), fokusRegelFuer()
+                              steuert mit/ohne Fokus je Knoten/Kategorie (v1.2.0),
+                              kostenBeiQualitaet()/vier neue Kandidaten-Konstruktoren fuer
+                              Kaufen/Reroll/Craften(Wurf oder preservequality)/Verzaubern
+                              in Zielqualitaet (v1.4.0), fceFuer(item,cc,opts) mit drei
+                              Prioritaetsebenen (Knoten > Kategorie-Freitext > global, v1.5.0).
+                              craftBeiQualitaetKandidat() rechnet im Wurf-Fall (kein
+                              preservequality) jetzt zwei Strategien gegeneinander (Neu-
+                              Craften vs. Craften+Reroll ueber REGELN.qualitaetsVerteilung()/
+                              rerollKostenZuQualitaet()) und waehlt die guenstigere, neue Felder
+                              weg.qualitaetsart="wurf+reroll"/weg.erwarteterRerollSilber v3.1.4,
+                              s. AUDIT-2026-09-13.md Befund 10. craftKandidat()/
+                              craftBeiQualitaetKandidat() setzen die Stationsgebuehr bei T1/T2
+                              auf 0, kostenBeiQualitaet() delegiert fuer nicht qualifizierbare
+                              Items direkt an kostenGesamt() v3.1.5, s. Befund 7/8. Unveraendert
+                              seit v3.1.5.
+    ui.js                     fertig (P5, v0.4.0, P6 v0.5.0, Stadt-Einstellung v1.1.0,
+                              Fokus-Regel-Tabelle + Bauplan-Fokus-Schalter v1.2.0,
+                              Bauplan-Knoten als Karten statt Fliesstext v1.3.0; Qualitaet-
+                              Einstellung + reroll-Knotentyp im Bauplan v1.4.0;
+                              fceAusSchicksalsbrett() entfernt, renderSpezialisierungsknoten()/
+                              spezKnotenAnzeigeGruppen()/fceUeberschreibungenFuerOpts() v1.5.0;
+                              wegLabelKurz() auf Modul-Ebene verschoben, neu:
+                              statusInfoFuerWeg()/gruppiereAlleWege()/wegGruppenLabel(),
+                              renderAlleWege() gruppiert+aufklappbar v1.6.0;
+                              sammleGesperrteKaufMarktIds() (Modul-Ebene), volumenBtn-Listener,
+                              wegVolumenHtml(), baueGesperrtZeile() nimmt jetzt das ganze
+                              weg-Objekt statt Einzelfeldern entgegen, zustand.handelsvolumen
+                              v1.7.0; itemIconUrl()/bgBadgeInfo()/bgTooltipFuer()/bgCard()/
+                              baueKnotenGrafisch()/renderBauplanGrafisch() (alle Modul-Ebene
+                              bzw. im boot()-Scope wie baueKnoten()), einstellungen.bauplanAnsicht
+                              (Text/Grafisch, localStorage-persistiert) v1.8.0; FCE-Spalten-
+                              Tooltip + Kommentar praezisiert, keine Logikaenderung
+                              (Meisterschaftsfeld-Sichtbarkeit haengt schon vorher an
+                              typ.einFeld) v3.1.3; neuer Fall weg.qualitaetsart==="wurf+reroll"
+                              an beiden Detailzeilen-Stellen (Bauplan-Karte, Tooltip) ergaenzt
+                              v3.1.4; renderHero() zeigt einen Hinweis, wenn die eingestellte
+                              Zielqualitaet fuer das gewaehlte Item ignoriert wird (nicht
+                              qualifizierbar) v3.1.5, s. AUDIT-2026-09-13.md Befund 7):
+                              Suche mit Tastaturbedienung, Rendering, Einstellungen, Eigenpreis-
+                              Pflegeansicht (P6), baueKnoten()/eigenerKandidat() (v1.3.0)
+  kostenrechner-PLAN.md
+  kostenrechner-KONTEXT.md
+  kostenrechner-KONTEXT-HISTORIE.md
+  CLAUDE.md                 neu v3.1.6, konsolidierte, ans Repo angepasste Kopie der
+                              Root-CLAUDE.md (Spielregeln/-formeln), s. "Aktueller Stand"
+  EINTOPF-KONTEXT-ARCHIV.md neu v3.1.6, Kopie der historischen Eintopf-Rechner-
+                              Fachdokumentation (vorher nur als ../KONTEXT.md erreichbar)
+  AUDIT-2026-09-13.md       Code-Audit gegen das offizielle Wiki, mit Umsetzungsstatus
+                              je Befund (s. Kopfzeile der Datei)
+  .claude/agents/           neu v3.1.6 ins Repo kopiert (vorher nur lokal eine Ebene
+                              hoeher): albion-cycle-orchestrator.md, rechenkern-pruefer.md,
+                              spieldaten-pruefer.md, oberflaechen-pruefer.md
+  .claude/skills/define-feature/ neu v3.1.6 ins Repo kopiert, s. oben
+  design.md                 neu v2.0.0, verbindliche Design-Spezifikation (Farben/Typografie/
+                              Bausteine), einzige Quelle fuer Design-Entscheidungen
+  assets/lymhurst-bg.jpg    neu v2.0.0, Banner Hauptseite
+  assets/radiantwilds-bg.jpg neu v2.0.0, in der App bisher unbenutzt (kein Cover, s. design.md)
+  Versionen/v0.1.0 - Rezeptgraph erzeugt/
+  Versionen/v0.2.0 - Preisschicht mit localStorage-Cache/
+  Versionen/v0.3.0 - Rechenkern/
+  Versionen/v0.3.1 - Veredelungs-Rezeptbug behoben/
+  Versionen/v0.4.0 - Oberflaeche/
+  Versionen/v0.5.0 - Eigenpreis-Pflege/
+  Versionen/v1.0.0 - Erste vollstaendige Version/
+  Versionen/v1.0.1 - Zeitzonen-Bug Preisalter behoben/
+  Versionen/v1.1.0 - Craft-Stadt waehlbar/
+  Versionen/v1.2.0 - Fokuseinsatz steuerbar machen/
+  Versionen/v1.3.0 - Bauplan-Ansicht ergonomisch ueberarbeitet/
+  Versionen/v1.3.1 - Stationssaetze Standard 400/
+  Versionen/v1.4.0 - Qualitaetsstufen/
+  Versionen/v1.5.0 - FCE-Ableitung ueber Schicksalsbrett-Knotenliste je Kategorie/
+  Versionen/v1.5.1 - Veredeln-Spezialisierungsknoten nach Tier gruppiert/
+  Versionen/v1.5.2 - Fokus-Monotonie-Regressionstest (Diagnose ohne Codefehler)/
+  Versionen/v1.6.0 - Alle-Wege-Tabelle gruppiert gleichwertige Wege/
+  Versionen/v1.7.0 - Handelsvolumen als Zusatzsignal bei gesperrten Preisen/
+  Versionen/v1.8.0 - Bauplan grafisch als Baumdiagramm mit Item-Icons/
+  Versionen/v1.9.0 - Icon-Kachel im grafischen Bauplan ueberarbeitet/
+  Versionen/v2.0.0 - Visuelles Redesign Albion-Theme/
+  Versionen/v2.0.1 - Eigenpreis-Kandidatenliste auf echte Crafting-Zutaten eingeschraenkt/
+  Versionen/v2.1.0 - v2.1.4 - siehe kostenrechner-KONTEXT-HISTORIE.md/
+  Versionen/v3.0.0 - App-Fusion Paket A+B, Reiterumschaltung und Preisvergleich migriert/
+  Versionen/v3.1.0 - App-Fusion Paket C, Eintopf-Rechenkern live migriert/
+  Versionen/v3.1.1 - App-Fusion Paket D, Eintopf-Rechenkern automatisierte Tests ergaenzt/
+  Versionen/v3.1.2 - App-Fusion Paket E, alte eigenstaendige Eintopf-Rechner-Dateien archiviert/
+  Versionen/v3.1.3 - Bugfix Spezialisierungsknoten-FCE-Formel/
+  Versionen/v3.1.4 - Vier Audit-Befunde (shapeshifterstaff, gatherergear, RRR-Kommentare, Craften+Reroll)/
+  Versionen/v3.1.5 - Befund 7 und 8, Qualitaet ignoriert und T1-T2 gebuehrenfrei/
+  Versionen/v3.1.6 - Repo fuer Claude Projects eigenstaendig gemacht/
+  tests/test.html           441 Tests (433 bisherige + 8 neu fuer die Bezugsgroesse des
+                              Dump-Fokus, Audit-Befund 1, v3.1.10; 408 davon + 25 fuer Global
+                              Discount und die neun Kochknoten, v3.1.8/v3.1.9;
+                              396 davon + 12 fuer istEchterKnoten() und die
+                              Knotenzahl je Veredelungskette, v3.1.7; dabei ein bestehender
+                              Fokus-Regressionsanker von 1.087,45 auf 1.099,71 gezogen, s.
+                              "Aktueller Stand"; 377 davon + 19 fuer istQualifizierbar()/
+                              stationsgebuehrGiltFuerTier() und deren Integration, v3.1.5;
+                              338 davon + 33 neu fuer shapeshifterstaff/
+                              gatherergear/qualitaetsVerteilung()/Craften+Reroll-Kombination,
+                              v3.1.4; 335 davon + 3 neu/angepasst fuer
+                              fceAusSpezialisierungsknoten(), v3.1.3, Bugfix
+                              Spezialisierungsknoten-FCE-Formel; 296 davon + 39 fuer
+                              eintopf-rechenkern.js/eintopf-daten.js, v3.1.1, App-Fusion
+                              Paket D). Offline-
+                              Selbsttests + 2 Live-Abschnitte; Testrahmen/-logik sonst
+                              unveraendert seit v1.7.0. Die 39 neuen Tests binden
+                              js/eintopf-daten.js/eintopf-preise.js/eintopf-rechenkern.js
+                              zusaetzlich per <script> ein und ersetzen EINTOPF_PREISE.
+                              sell/buy/volOf/avgOf temporaer per Monkey-Patching durch
+                              synthetische Fixtures (mitFixture()-Helfer), keine der drei
+                              Eintopf-Dateien wurde dafuer geaendert (Nutzer-Entscheidung)
+  build_karte.py            neu v3.14.0, erzeugt assets/ancient-lands.webp und
+                              js/karte-daten.js aus dem Client-Dump (DRAGON_001)
+  js/karte.js               neu v3.14.0, Reiter "Ancient Lands" (Leaflet-Karte,
+                              Lauf-Tracker, eigene Marker), KARTE.selbsttest()
+  js/karte-daten.js         neu v3.14.0, erzeugt, nicht von Hand bearbeiten
+  vendor/leaflet/           neu v3.14.0, Leaflet 1.9.4 (js, css, LICENSE)
+  assets/ancient-lands.webp neu v3.14.0, Kartenbild 4096 px, erzeugt
+  .gitignore, README.md      seit 04.09.2026: eigenes Git-Repo, Remote Birnify/Albion_Crafting_Calculator
+```
+
+Außerhalb des Repos, eine Ebene höher (`..\`, Albion-Wurzelverzeichnis):
+`Kostenrechner öffnen.bat` (öffnet `Kostenrechner.html` direkt, kein Neubau),
+`Rezeptgraph neu bauen.bat` (ruft `build_graph.py --refresh` auf). Beide bewusst
+außerhalb des Git-Repos, weil sie Nutzer-Komfort sind, keine App-Bestandteile.
+
+## Backlog / Mögliche nächste Schritte
+
+**App-Fusion (Pakete A-E) ist mit v3.1.2 vollständig abgeschlossen**, s.
+"Aktueller Stand" oben. Kein offenes Paket aus diesem Vorhaben mehr. Die
+Backlog-Punkte unten sind eigenständige, davon unabhängige Ideen.
+
+**`oberflaechen-pruefer` und `spieldaten-pruefer` waren über mehrere
+Sitzungen hinweg nicht verfügbar** (Harness-Fehler "Agent type ... not found").
+Im v3.1.0-Zyklus deshalb auf Anweisung gar nicht erst angefordert, stattdessen
+durchgehend selbst geprüft (Screenshot der gerenderten Seite, eigene
+Python-Gegenprobe). `rechenkern-pruefer` war im selben Zyklus dagegen
+problemlos erreichbar. Wirkt wie ein selektives Harness-Problem bei genau
+diesen beiden Agenten, nicht wie ein generelles Subagenten-Problem - falls das
+weiterhin auftritt, lohnt sich eine Prüfung der Agenten-Registrierung dieser
+beiden speziell.
+
+Die Arbeitspakete stehen in `kostenrechner-PLAN.md`, Abschnitt 6, alle sechs
+(P1-P7) sind abgeschlossen. Hier nur, was darüber hinaus offen ist. Die
+Bau-Handoff-Notizen zwischen den einzelnen Paketen (P1 für P2, P2 für P3 usw.)
+wurden am 05.09.2026 aus dieser Liste entfernt, sie waren nur während des
+Bauens selbst relevant und sind jetzt reine Ablenkung; die fachlichen Details
+dazu stehen weiterhin unverkürzt in `kostenrechner-KONTEXT-HISTORIE.md`.
+
+**Offene Fäden, keiner zu Ende entschieden.** Punkt 1 aus der vorherigen
+Fassung dieser Liste („Alle Wege"-Tabelle zeigt bei baugleichen
+Alternativrezepten identische, nichtssagende Zeilen") wurde im Zyklus
+„Aussagekraft der Alle-Wege-Tabelle verbessern" (v1.6.0, 05.09.2026)
+umgesetzt und ist deshalb hier entfernt, s. "Aktueller Stand" oben. Der
+zweite Punkt („Bekannte Grenze der Preisquelle") wurde im Zyklus
+„history/-Handelsvolumen als Zusatzsignal bei gesperrten Preisen" (v1.7.0,
+05.09.2026) zur Hälfte umgesetzt (s. "Aktueller Stand" oben) und ist deshalb
+hier ebenfalls entfernt.
+
+1. **Offen aus dem v2.0.1-Zyklus: Tierhaltung/Zucht und Season-Kosmetik in der
+   Eigenpreis-Pflegeliste, bewusst nicht entschieden.** Nach dem Root-Filter
+   auf `@shopcategory=="vanity"` und `GAMEMASTER`-Items (365 → 118 Kandidaten,
+   s. "Aktueller Stand") bleiben u. a. 16 Tierhaltungs-/Zucht-Jungtiere
+   (`T5_FARM_*_BABY`/`T8_FARM_*_BABY`) und mehrere Season-/Kampagnen-
+   Kosmetikfamilien (`UNIQUE_LOOTCHEST_FACTIONCAMPAIGN_*`, Avalon-Umhang-
+   Freischaltungen) in der Liste. Nicht klar entscheidbar, ob das echte
+   Eigenpreis-Faelle sind oder ebenfalls raus sollten; im Zweifel drin
+   gelassen statt geraten. Falls gewuenscht: Nutzer-Entscheidung je Familie,
+   dann `ROOT_EXCLUDE_SHOPCATEGORIES`/`is_excluded_root()` in
+   `build_graph.py` gezielt erweitern.
+
+2. **Noch offener Rest aus dem v1.7.0-Zyklus: Wortlaut-Alternative nicht
+   umgesetzt.** Die ursprüngliche Backlog-Notiz nannte zwei Ideen: (a) den
+   Wortlaut „gesperrt" auf etwas wie „kein bei AODP erfasster Preis" ändern,
+   (b) `history/`-Handelsvolumen als Zusatzsignal nutzen. Die vier
+   Rückfragen des v1.7.0-Zyklus deckten nur (b) ab; (a) wurde nicht gefragt
+   und nicht umgesetzt. Falls weiterhin gewünscht: eigene Rückfrage, ob/wie
+   der Wortlaut angepasst werden soll (z. B. nur bei `ursprungsTyp==="kaufen"`
+   ohne jeden Preisdatensatz, oder generell).
+
+3. **Fokuswert-Verdacht aus der v1.5.2-Diagnose, noch nicht durch den Nutzer
+   bestätigt.** Der gemeldete Fokus-Anstieg (754,9 → 1.233,5) ließ sich mit
+   `fokuswert:0` rechnerisch nicht reproduzieren (s. `kostenrechner-KONTEXT-HISTORIE.md`,
+   Abschnitt "Aktueller Stand (Fokus-Monotonie-Regressionstest ..., v1.5.2)"), wohl
+   aber die Erklärung, dass ein aus einer früheren Sitzung noch in
+   `localStorage` stehender Fokuswert > 0 einen legitimen Pfadwechsel ausgelöst
+   haben könnte (kein Formelfehler). **Vor der nächsten Sitzung zu diesem
+   Thema:** den Nutzer bitten, das Feld "Was ist mir ein Fokuspunkt wert?" in
+   den Einstellungen zu prüfen und den Test bei bestätigtem `Fokuswert = 0` zu
+   wiederholen. Bestätigt sich die Erklärung nicht, ist das eine echte Lücke,
+   die eine erneute, tiefere Diagnose braucht (evtl. mit Zugriff auf ein
+   Browser-Werkzeug, um den tatsächlichen `localStorage`-Stand der gemeldeten
+   Sitzung einzusehen).
+
+4. **Naechstes Orchestrator-Paket: 549 Graph-Wurzeln komplett ohne Namen
+   (weder Deutsch noch Englisch).** Beim v2.1.2-PROTOTYPE-Fund (s.
+   "Aktueller Stand" oben) mitentdeckt: deutlich groesser als die 14
+   PROTOTYPE-Faelle, quer durch viele Item-Familien (Quest-Items wie
+   `QUESTITEM_CARAVAN_TRADEPACK_*`, Dungeon-Erfahrungs-Token
+   `QUESTITEM_EXP_TOKEN_*` usw.), meist ohne `craftingcategory`. Nicht
+   pauschal ausschliessbar wie bei "vanity" - braucht dieselbe empirische
+   Sorgfalt (Stichproben pruefen, Gegenprobe "wird als Zutat referenziert?"),
+   bevor `is_excluded_root()` erweitert wird. Vom Nutzer als naechstes Paket
+   angefordert (06.09.2026: "die 549 namenlosen Items einreihen").
+5. **ERLEDIGT 29.09.2026 (v3.3.0), s. Nachtrag oben.** Knopf zum voruebergehenden Ausschalten des Fokuseinsatzes. Nutzer-
+   Wunsch (06.09.2026): eine Moeglichkeit, die Fokusnutzung fuer die
+   Berechnung komplett und temporaer abzuschalten (nicht dauerhaft in den
+   Einstellungen aendern). Noch nicht spezifiziert, ob das global (ein
+   Schalter fuer die ganze Berechnung) oder je Knoten gemeint ist - die App
+   hat bereits einen Fokus-Schalter je Knoten (`automatisch/immer/nie`, s.
+   `fokus-schalter`-Klasse), ein GLOBALER Kurzschalter fehlt aber. Vor der
+   Umsetzung klaeren, ob "automatisch" als Ausgangszustand gemeint ist oder
+   der zuletzt gewaehlte Zustand je Knoten erhalten bleiben soll, wenn der
+   Schalter wieder aus geht.
+6. **ERLEDIGT 19.09.2026: "Reine Craften-Pfade in Alle Wege liefern
+   astronomische Werte" war KEIN Rechenfehler, nur eine fehlende Angabe in
+   der Beschriftung.** Diagnose in einem Projekt-Thread, die App dafuer
+   offline in Node und headless im Browser gegen synthetische Preise
+   laufen gelassen (Netzzugriff auf die Preis-API ist aus einem
+   Cloud-Thread gesperrt, s. unten).
+
+   **Ursache:** sobald die Zielqualitaet ueber Normal steht, multipliziert
+   `craftBeiQualitaetKandidat()` in `js/rechenkern.js` Silber UND Fokus mit
+   `erwarteteVersuche = 1 / Erfolgswahrscheinlichkeit`. Bei Exzellent und 0
+   Chancenpunkten sind das 90,9 Versuche. Verzaubern traegt diesen Faktor
+   nicht (kein Qualitaetswurf, es erbt die Qualitaet der Vorstufe), daher der
+   beobachtete Faktor 30-70. Reproduziert: 52.236 Silber / 7.401 Fokus je
+   Versuch, mal 90,9 ergibt 4.748.685 Silber / 672.782 Fokus, dieselbe
+   Groessenordnung wie im urspruenglichen Bericht.
+
+   **Zwei Annahmen des urspruenglichen Berichts sind widerlegt:** (a) die
+   "Craften #N"-Zeilen erzwingen das Craften NICHT auf jeder Ebene, sondern
+   nur an der Wurzel; die Zutaten nehmen weiter ihren guenstigsten Weg
+   (`kind = kindErgebnis.beste`). Gegenprobe: senkt man den Marktpreis des
+   verzauberten Barrens, kippt die Zutat in derselben Zeile von Craften auf
+   Kaufen. (b) Die identischen Fokuswerte bei einem anderen Item sind zu
+   erwarten und kein Indiz: alle T4-Plattenruestungen haengen an derselben
+   Kette aus 16 Barren, und die Artefakt-Zutat kostet selbst keinen Fokus
+   (SET1, SET3 und UNDEAD ergeben alle 7.401 Fokus).
+
+   **Umgesetzt:** neue Hilfsfunktion `qualitaetsZusatzKurz()` in `js/ui.js`,
+   angehaengt in `wegLabelKurz()` und (nur bei einheitlichem Zusatz ueber
+   alle Mitglieder) in `wegGruppenLabel()`. Die Zeile heisst jetzt
+   "Craften #1, mit Fokus, erwartet 90,9 Versuche" bzw. bei der seit v3.1.4
+   kombinierten Strategie "Craften #1, mit Fokus, ein Versuch + Reroll".
+   Wortlaut bewusst identisch zur Bauplan-Detailzeile und zum Tooltip, wo
+   die Zahl schon vorher stand. Bei Zielqualitaet Normal bleibt die
+   Beschriftung unveraendert. Keine Rechenlogik angefasst.
+
+**Kleinere offene Punkte, unverändert seit früheren Paketen:**
+
+- ERLEDIGT v3.10.0: Reiterleiste bricht um, keine Seitenscrollbar bei 390 px.
+- Wartezeit/Füllrisiko eigener Orders und Transport zwischen Städten sind im
+  Reiter „Veredeln leveln“ nicht modelliert (nur Tooltip).
+
+- Ein Eigenpreis von 0 könnte legitim sein, wenn der Nutzer eine Zutat schon
+  auf Lager hat ("kostet mich nichts mehr"). In P6 bewusst nicht gelöst,
+  `eigenpreisSetzen(id, 0)` löscht weiterhin den Eintrag. Falls gewünscht:
+  eigene, klar gekennzeichnete Funktion statt eines überladenen Preisfelds.
+- 11 von 118 Kandidaten (Stand v2.0.1, vorher 21 von 365) in der
+  Eigenpreis-Pflegeliste haben keinen deutschen Namen
+  (`REZEPTGRAPH.namen[id]` fehlt, z. B. `QUESTITEM_TOKEN_ARENA_CRYSTAL`) und
+  zeigen stattdessen ihre ID. Nicht nachgebessert, da `build_graph.py`/die
+  Namensquelle betroffen wäre.
+
+**Browser-Vorschau, Stand 05.09.2026 (wichtig für die nächste Sitzung):**
+`.claude/launch.json` nutzt seit heute `no_cache_server.py` statt
+`python -m http.server`, weil Letzterer wiederholt veraltete `js`-Dateien
+ausgeliefert hat, auch nach Hard-Reload und in neuen Tabs. Trotzdem in dieser
+Sitzung beobachtet: `127.0.0.1` als Navigationsziel wurde vom Vorschau-Werkzeug
+verweigert ("denied or failed"), während `localhost` auf demselben Server
+anstandslos funktionierte - ein Berechtigungsdetail dieser Sitzung, kein
+Serverfehler. Bei einer neuen Sitzung zuerst `localhost` probieren, falls
+`127.0.0.1` nicht navigiert. Bei Zweifel an einer Testzahl im Browser: dieselbe
+Assertion-Logik aus `tests/test.html` (Zeilen zwischen dem Testrahmen-Start und
+dem DOM-Rendering-Teil) in Node gegen die Dateien auf der Platte laufen lassen,
+das ist cachefrei und war in dieser Sitzung mehrfach die einzig verlässliche
+Probe.
+
+**Ideen für später (v2), bewusst nicht in v1** (aus `kostenrechner-PLAN.md`
+Abschnitt 8, hier vollständig gegen den Plan abgeglichen):
+
+- (Im Reiter „Veredeln leveln“ seit v3.10.0 umgesetzt, im Kostenrechner
+  nicht.) Mehrere Staedte gleichzeitig vergleichen, getrennte Rollen je
+  Einkaufen/Craften/Verkaufen (wie beim Eintopf-Rechner), Transportkosten und
+  Schwarzzonen-Risiko. Eine einzelne, frei waehlbare Stadt fuer die ganze
+  Rechnung ist seit v1.1.0 umgesetzt (05.09.2026), s. "Aktueller Stand" oben.
+- Markttiefe über `history` statt nur Bestpreis (Mischkalkulation bei Massenbedarf)
+- Einkaufsliste über mehrere Items hinweg („ich brauche ein komplettes Set")
+- Wartezeit und Ausfallrisiko eigener Kauf-/Verkaufsorders
+- Craft-Fame und Spezialisierungsaufbau als Nutzen (die App rechnet Silber,
+  nicht Fortschritt)
+- Ernte, Farmen, Inseln (nur Markt und Werkbank in v1)
+- Mengenrabatt durch ganze Chargen (v1 rechnet stetig, s. Plan 4.4)
+
+---
+
 <!-- Am 13.10.2026 (v3.10.0) aus kostenrechner-KONTEXT.md verschoben, unverkuerzt. -->
 
 ## Nachtrag v3.8.3 (13.10.2026): Rückgewinnung und Stationsgebühr bei Möbeln
