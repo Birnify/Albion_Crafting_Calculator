@@ -30,7 +30,7 @@
   /** Tooltip der Statusanzeige. Ohne DOM, testbar. */
   function abrufStatusTitel(s, grenzen) {
     const zeilen = [
-      "Warteschlange für die Preisabrufe von Kostenrechner, Craften: Gewinn und Veredeln leveln. Preisvergleich und Eintopf-Rechner rufen getrennt ab und zählen hier nicht mit.",
+      "Warteschlange für die Preisabrufe von Kostenrechner, Gelegenheiten (Hintergrundscan), Craften: Gewinn und Veredeln leveln. Preisvergleich und Eintopf-Rechner rufen getrennt ab und zählen hier nicht mit.",
       "Abrufe laufen nacheinander mit " + String(grenzen.pauseMs / 1000).replace(".", ",") + " s Pause. Budget: höchstens " + grenzen.jeMinute + " je Minute und " + grenzen.je5Minuten + " je 5 Minuten (Limit der Schnittstelle: " + grenzen.limitJeMinute + " und " + grenzen.limitJe5Minuten + ").",
       "Letzte Minute: " + s.abrufeLetzteMinute + ", letzte 5 Minuten: " + s.abrufeLetzte5Minuten + ", seit dem Laden der Seite: " + s.abrufe + " Abrufe, " + s.mb.toFixed(2).replace(".", ",") + " MB Antwortdaten (unkomprimiert).",
     ];

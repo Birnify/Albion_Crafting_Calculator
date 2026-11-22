@@ -59,6 +59,11 @@ const PREISE = (function () {
   // Handelsvolumen (history/) ist ein 7-Tage-Mittel und aendert sich langsam,
   // deshalb laenger gueltig als ein Preis (OPTIMIERUNG-PLAN.md, Paket O1).
   const VOLUMEN_GUELTIG_MIN = 60;
+  // Obergrenze des Bestands (v3.17.0, offener Punkt aus O1): Eintraege, die
+  // aelter sind, werden beim Laden entfernt. Der Reiter "Gelegenheiten"
+  // rechnet auch mit abgelaufenen Werten; aelter als das sagt ein Preis
+  // nichts mehr, und der Bestand wuechse sonst mit jedem Scan weiter.
+  const BESTAND_MAX_ALTER_TAGE = 7;
 
   // Bestand in IndexedDB (v3.15.0). Ein Gesamtscan sind bis etwa 270.000
   // Preiszeilen, das passt nicht in localStorage. Unter file:// belegt am
@@ -371,6 +376,24 @@ const PREISE = (function () {
     });
   }
 
+  /** Schluessel in Bloecken loeschen (Obergrenze des Bestands). */
+  function idbLoeschen(db, store, keys) {
+    return new Promise((resolve, reject) => {
+      let tx;
+      try {
+        tx = db.transaction(store, "readwrite", { durability: "relaxed" });
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      const os = tx.objectStore(store);
+      keys.forEach((k) => os.delete(k));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
   function idbLeeren(db) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction([STORE_PREISE, STORE_VOLUMEN], "readwrite");
@@ -402,6 +425,7 @@ const PREISE = (function () {
       db: null,
       ladeMs: null,
       migriert: 0,
+      entfernt: 0, // beim Laden wegen BESTAND_MAX_ALTER_TAGE entfernte Eintraege
       fehler: null,
       kette: Promise.resolve(),
     };
@@ -502,6 +526,30 @@ const PREISE = (function () {
         b.modus = "localstorage";
         if (alt) Object.keys(alt.eintraege).forEach((key) => b.preise.set(key, alt.eintraege[key]));
       }
+      // Obergrenze (v3.17.0): was aelter als BESTAND_MAX_ALTER_TAGE ist oder
+      // keine Abrufzeit traegt, faellt weg; aus der Arbeitskopie sofort,
+      // dauerhaft im Hintergrund. Ein Eintrag aus der Zukunft bleibt stehen.
+      const grenze = Date.now() - BESTAND_MAX_ALTER_TAGE * 24 * 60 * 60 * 1000;
+      [
+        [STORE_PREISE, b.preise],
+        [STORE_VOLUMEN, b.volumen],
+      ].forEach(([store, map]) => {
+        const alt = [];
+        map.forEach((wert, key) => {
+          if (!(wert && wert.abgerufenAm >= grenze)) alt.push(key);
+        });
+        if (!alt.length) return;
+        alt.forEach((key) => map.delete(key));
+        b.entfernt += alt.length;
+        if (b.modus === "indexeddb") {
+          for (let i = 0; i < alt.length; i += SCHREIB_BLOCK) {
+            const teil = alt.slice(i, i + SCHREIB_BLOCK);
+            b.kette = b.kette.then(() => idbLoeschen(b.db, store, teil)).catch((e) => {
+              b.fehler = e;
+            });
+          }
+        } else if (store === STORE_PREISE) lsSchreiben();
+      });
       b.ladeMs = (typeof performance !== "undefined" ? performance.now() : Date.now()) - start;
       return b;
     })();
@@ -524,6 +572,7 @@ const PREISE = (function () {
       volumen: bestand.volumen.size,
       ladeMs: bestand.ladeMs,
       migriert: bestand.migriert,
+      entfernt: bestand.entfernt,
       fehler: bestand.fehler ? String(bestand.fehler) : null,
     };
   }
@@ -622,6 +671,40 @@ const PREISE = (function () {
   /** Schluessel im Volumenbestand. art: "a" = Absatz je Qualitaet, "v" = 7-Tage-Summe. */
   function volumenSchluessel(art, stadt, id, tageFenster) {
     return stadt + "::" + id + "::" + art + tageFenster;
+  }
+
+  // Synchrone Sicht auf einzelne Bestandseintraege (v3.17.0), fuer den Reiter
+  // "Gelegenheiten": er rechnet ohne Abruf mit dem, was da ist, auch wenn es
+  // aelter als die Gueltigkeit ist. Vor Ablauf von bestandBereit() leer.
+
+  /** Preiseintrag einer Stadt, Markt-ID und Qualitaet aus der Arbeitskopie, oder null. */
+  function bestandPreis(stadt, id, qualitaet) {
+    return bestand.preise.get(cacheSchluessel(stadt, id, qualitaet)) || null;
+  }
+
+  /**
+   * Preise aller Qualitaeten, wie preiseAlleQualitaetenAbrufen() sie aus dem
+   * Bestand liest: nur wenn der Merker alleQSchluessel() existiert.
+   * @returns {?{abgerufenAm:number, jeQ:Object<number, object>}}
+   */
+  function bestandAlleQualitaeten(stadt, id) {
+    const merker = bestand.preise.get(alleQSchluessel(stadt, id));
+    if (!merker) return null;
+    const jeQ = {};
+    (merker.qualitaeten || []).forEach((q) => {
+      const e = bestand.preise.get(cacheSchluessel(stadt, id, q));
+      if (e) jeQ[q] = e;
+    });
+    return { abgerufenAm: merker.abgerufenAm, jeQ };
+  }
+
+  /**
+   * Absatz je Qualitaet, wie absatzAbrufen() ihn ablegt.
+   * @returns {?{abgerufenAm:number, jeQ:Object<number, object>}}
+   */
+  function bestandAbsatz(stadt, id, tageFenster) {
+    const da = bestand.volumen.get(volumenSchluessel("a", stadt, id, tageFenster || 7));
+    return da ? { abgerufenAm: da.abgerufenAm, jeQ: da.jeQ || {} } : null;
   }
 
   /** Leert den ganzen Bestand (Preise und Handelsvolumen), Arbeitskopie sofort, dauerhaft im Hintergrund. */
@@ -2057,6 +2140,7 @@ const PREISE = (function () {
     EIGENPREIS_SCHEMA_VERSION,
     PREIS_GUELTIG_MIN: CACHE_GUELTIG_MIN_DEFAULT,
     VOLUMEN_GUELTIG_MIN,
+    BESTAND_MAX_ALTER_TAGE,
     BESTAND_DB_NAME,
     BLOCKGROESSE,
     PAUSE_MS,
@@ -2072,6 +2156,9 @@ const PREISE = (function () {
     bestandBereit,
     bestandInfo,
     bestandGeschrieben,
+    bestandPreis,
+    bestandAlleQualitaeten,
+    bestandAbsatz,
     abrufZaehler,
     testEinstellen,
     testBestandSchreiben,

@@ -1,6 +1,6 @@
 # Optimierungsplan: Albion Werkzeuge
 
-Stand: 2026-11-22 · Ausgangsversion: v3.14.1 · Status: O1 und O2 abgeschlossen (v3.16.0), O3 als Nächstes
+Stand: 2026-11-22 · Ausgangsversion: v3.14.1 · Status: O1 bis O3 abgeschlossen (v3.17.0), O4 als Nächstes
 
 > Auftrag für die Optimierungsrunde, in Arbeitspaketen O1 bis O6. Jedes Paket
 > geht an einen **frischen** Umsetzer-Subagenten; die Hauptsitzung steuert,
@@ -272,7 +272,7 @@ durchgeklickt, keine Konsolenfehler.
 |---|---|---|
 | O1 Gemeinsamer Preisbestand | erledigt 22.11.2026 | v3.15.0 |
 | O2 Abrufplaner | erledigt 22.11.2026 | v3.16.0 |
-| O3 Reiter „Gelegenheiten" | offen | |
+| O3 Reiter „Gelegenheiten" | erledigt 22.11.2026 | v3.17.0 |
 | O4 Gewinn je Einsatz | offen, vom Nutzer am 22.11.2026 mit „alles nacheinander“ freigegeben | |
 | O5 Von der Gelegenheit zur Tat | offen | |
 | O6 Aufräumen | offen | |

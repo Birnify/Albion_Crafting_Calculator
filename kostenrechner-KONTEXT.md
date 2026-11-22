@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.16.0 · Optimierungsrunde O2: Abrufplaner
+Stand: 2026-11-22 · Version: v3.17.0 · Optimierungsrunde O3: Reiter „Gelegenheiten“ mit Hintergrundscan
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -73,6 +73,66 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.17.0 (22.11.2026): Optimierungsrunde, Paket O3, Reiter „Gelegenheiten“
+
+Siebter Bereich der App, in der Reiterleiste vor „Craften: Gewinn“
+(`js/gelegenheiten.js`, Modul `GELEGENHEITEN`).
+
+- **Rangliste über alle Warengruppen:** Crafts und Veredelungen in einer
+  Tabelle. Die Rechnung je Zeile kommt unverändert aus
+  `CRAFTEN.zeilenRechnen` und `VEREDELN.zeilenRechnen`; der Reiter baut nur
+  deren Eingaben aus dem Preisbestand (`PREISE.bestandPreis`,
+  `bestandAlleQualitaeten`, `bestandAbsatz`). Keine eigene Rechenlogik.
+  Gezeigt werden Zeilen mit Gewinn über 0 und „Mind. verkauft/Tag“ (Vorgabe
+  5, gilt auch für Veredelungen); 200 Zeilen im DOM, „Mehr anzeigen“.
+- **Sofort aus dem Bestand:** Öffnen rechnet ohne Abruf, auch mit
+  abgelaufenen Werten; Alter je Zeile, alte Zeilen (Preise über 30 Min.,
+  Volumen über 60 Min.) dezent markiert, Leiste nennt „n von N frisch“.
+- **Laufender Hintergrundscan** über `PREISE.planer` (`hintergrund`, Gruppe
+  `scan`), „oben zuerst“: zuerst die aktuelle Rangliste von oben, dann der
+  Rest mit den ältesten Preisen; ohne Bestand Veredeln zuerst, dann die
+  Warengruppen. Startet erst nach dem ersten Öffnen des Reiters. Schalter
+  „Scan läuft/pausiert“ und „auch im Hintergrund-Tab“, beide gespeichert.
+  Ist gescrollt, bleibt die Reihenfolge stehen, Knopf „Neu sortieren (n
+  geändert)“.
+- **Scanumfang**, Vorgabe: T4 bis T8, alle Stufen, alle Warengruppen plus
+  fünf Veredelungsrohstoffe, Fertigung/Einkauf/Verkauf Lymhurst, ohne
+  Artefakt-Items: 3.203 Vorgänge, höchstens 202 Abrufe je Durchlauf (65 × 3
+  + 7), rund 6,7 Min. Mit Artefakt-Items rund 6.800 Crafts (in der
+  Oberfläche nicht getestet).
+- **Einstellungen** eingeklappt über der Liste, eigener Speicher
+  `albion_kostenrechner_gelegenheiten_v1`. Stationssätze, Tagesbonus und
+  Premium sind die gemeinsamen der App. **Zusatzbonus, eigene Preise und
+  Etwa-Null-Grenze der Detailreiter fließen bewusst nicht ein**, dieselbe
+  Zeile kann dort deshalb abweichen.
+- **Bestand-Obergrenze** (offen aus O1): beim Laden fällt weg, was älter als
+  7 Tage ist (`PREISE.BESTAND_MAX_ALTER_TAGE`).
+- **Für O4/O5 vorbereitet:** `GELEGENHEITEN.spalteErgaenzen({id, kopf,
+  titel, zelle, wert, auf})` und `aktionErgaenzen({id, text, titel,
+  ausfuehren})`; `maschine()` liefert die Instanz der App.
+- **Gemessen (Hauptsitzung, live):** Klick auf den Reiter, nach 0,3 s zehn
+  Zeilen aus dem Bestand; nach 20 s Scan 200 von 3.203 frisch (13 Abrufe,
+  0,6 MB). Umsetzer mit synthetischem Bestand (37.406 Preise): vollständige
+  Rangliste nach rund 0,2 s, längste Stockung unter 0,1 s.
+  `rechenkern-pruefer`: kein Rechenbefund, Bogen T5.3 und Barren T6.1 in
+  Python, Reiter und Detailreiter identisch. `oberflaechen-pruefer`: sechs
+  Punkte nachgezogen (sichtbares Warnschild bei fehlendem Stationssatz,
+  Tausenderpunkt in der Marge, durchgehend „verkauft/Tag“, ehrliche
+  Unterzeile, Tooltip der Abrufschätzung, Statusanzeige).
+- Selbsttest **769/769** grün (721 + 48 „gelegenheiten:“-Tests).
+
+**Offen aus O3:** „oberste 50 frisch in 15 s“ gilt bei ruhigen Preisen (3
+Abrufe); sortiert sich die Spitze um, wurden 12,3 s gemessen, garantiert ist
+es nicht. Bei 390 px liegen Gewinn und Marge hinter waagerechtem Scrollen
+(wie in den anderen Gewinn-Reitern). Läuft der Bestand im
+`localStorage`-Rückfall, sprengt ein Gesamtscan dessen Grenze (nicht
+behandelt). Abrufe anderer Reiter fließen erst beim nächsten Öffnen oder
+Scan-Block ein. **Ablesung erbeten:** Gegenstandswert eines veredelten
+Rohstoffs im Craft-Fenster (T5-Stoff am Weber): die App rechnet die Gebühr
+aus der Zutatensumme 31, der Dump nennt für den Stoff 32 (bestehendes
+Verhalten, `regeln.js` `itemWert` mit Rezept; 0,45 Silber je Stück bei Satz
+400).
 
 ## Nachtrag v3.16.0 (22.11.2026): Optimierungsrunde, Paket O2 „Abrufplaner“
 

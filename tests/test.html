@@ -72,6 +72,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 <script src="../js/preisvergleich.js"></script>
 <script src="../js/veredeln.js"></script>
 <script src="../js/craften.js"></script>
+<script src="../js/gelegenheiten.js"></script>
 <script src="../js/karte-daten.js"></script>
 <script src="../js/karte.js"></script>
 <script src="../js/eintopf-daten.js"></script>
@@ -103,6 +104,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   VEREDELN.selbsttest().forEach((e) => pruefe("veredeln: " + e.name, e.ok, e.details));
   // ---- js/craften.js (Reiter "Craften: Gewinn", v3.11.0, ersetzt "Schnelles Geld") ----
   CRAFTEN.selbsttest().forEach((e) => pruefe("craften: " + e.name, e.ok, e.details));
+  // ---- js/gelegenheiten.js (Reiter "Gelegenheiten", v3.17.0, OPTIMIERUNG-PLAN.md O3) ----
+  GELEGENHEITEN.selbsttest().forEach((e) => pruefe("gelegenheiten: " + e.name, e.ok, e.details));
   KARTE.selbsttest().forEach((e) => pruefe("karte: " + e.name, e.ok, e.details));
   pruefe(
     "craften: Reiter \"Schnelles Geld\" (CHANCEN) ist entfernt",
@@ -3925,6 +3928,383 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   }
 
   // -----------------------------------------------------------------------
+  // Asynchrone Tests: Reiter "Gelegenheiten" (v3.17.0, OPTIMIERUNG-PLAN.md O3)
+  //
+  // Maschine ohne DOM (GELEGENHEITEN.erzeugen), nachgebildetes fetch, eigene
+  // Testdatenbank, nachgebildete Uhr des Abrufplaners. Die Preise sind so
+  // gewaehlt, dass Crafts Gewinn zeigen (Zutaten billig, Produkte teuer);
+  // mit den Zufallspreisen aus SYNTH waere die Rangliste leer.
+  // -----------------------------------------------------------------------
+  async function gelegenheitenTests() {
+    const DB = PREISE.BESTAND_DB_NAME + "_test_gelegenheiten";
+    const LS = "albion_kostenrechner_preiscache_test_gelegenheiten";
+    const P = PREISE.planer;
+    const G = GELEGENHEITEN;
+    const echtesFetch = window.fetch;
+    const echtesNow = Date.now;
+    const { hash, DATUM, historieZeilen } = SYNTH;
+    const kurz = (ms) => new Promise((r) => setTimeout(r, ms == null ? 5 : ms));
+    const bis = async (fn, ms) => {
+      const ende = echtesNow() + (ms || 8000);
+      while (!fn()) {
+        if (echtesNow() > ende) return false;
+        await kurz(4);
+      }
+      return true;
+    };
+    let t = 2000000000000; // nachgebildete Uhr des Planers in ms
+    let verborgen = false;
+    let log = []; // {url, start, ende}
+    let zutaten = new Set();
+    const umgebung = { jetzt: () => t, warte: (ms) => ((t += ms), Promise.resolve()), verborgen: () => verborgen };
+    const stellen = () => PREISE.testEinstellen(Object.assign({ pauseMs: PREISE.PAUSE_MS, dbName: DB, lsKey: LS }, umgebung));
+    const preisZeile = (id, stadt, q) => {
+      const h = hash(stadt + "|" + id);
+      const sell = (zutaten.has(id) ? 50 + (h % 50) : 5000 + (h % 20000)) + q * 10;
+      return { item_id: id, city: stadt, quality: q, sell_price_min: sell, sell_price_min_date: DATUM, buy_price_max: Math.floor(sell * 0.8), buy_price_max_date: DATUM };
+    };
+    const antwortFuer = (url) => {
+      const u = decodeURIComponent(url);
+      const staedte = /[?&]locations=([^&]+)/.exec(u)[1].split(",");
+      const p = /\/prices\/(.+)\.json/.exec(u);
+      if (p) {
+        const qs = /[?&]qualities=([^&]+)/.exec(u)[1].split(",").map(Number);
+        return [].concat(...staedte.map((stadt) => [].concat(...p[1].split(",").map((id) => qs.map((q) => preisZeile(id, stadt, q))))));
+      }
+      const hi = /\/history\/(.+)\.json/.exec(u);
+      if (hi) return [].concat(...staedte.map((stadt) => [].concat(...hi[1].split(",").map((id) => historieZeilen(id, stadt)))));
+      return [];
+    };
+    window.fetch = async (url) => {
+      url = String(url);
+      const eintrag = { url, start: t, ende: null };
+      log.push(eintrag);
+      await new Promise((r) => setTimeout(r, 0));
+      t += 100; // ein Abruf dauert 100 ms
+      eintrag.ende = t;
+      return { status: 200, ok: true, json: async () => antwortFuer(url) };
+    };
+    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 300, Schmelze: 400, Gerberei: 250 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, fceAusnahmen: {}, spezialisierung: {} };
+    const maschinen = [];
+    const neu = (einstellungen) => {
+      const m = G.erzeugen({ einstellungen, einstellungenLesen: () => einst, warte: () => kurz(15) });
+      maschinen.push(m);
+      return m;
+    };
+    const UMFANG = {
+      warengruppen: ["sword", "axe"], rohstoffe: ["ore", "hide"], tiers: [4, 5, 6], stufen: [0, 1, 2, 3, 4], artefakte: false,
+      einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Lymhurst", "Thetford"], fertigungsstadt: "Lymhurst", minAbsatz: 0,
+    };
+    const zutatenMerken = (e) => {
+      zutaten = new Set();
+      G.kandidaten(G.einstellungenBereinigen(e)).forEach((x) => x.zutatIds.forEach((id) => zutaten.add(id)));
+    };
+    const FELDER = ["silber", "erloes", "gewinn", "marge", "stueckJeTag", "rrr", "gebuehr", "vkStadt"];
+
+    try {
+      await PREISE.testDatenbankLoeschen(DB);
+      localStorage.removeItem(LS);
+      await stellen();
+
+      // ---- Obergrenze des Bestands: 7 Tage ----
+      const TAG = 24 * 60 * 60 * 1000;
+      const jetzt0 = echtesNow();
+      const pe = (am) => ({ id: "X", stadt: "Lymhurst", sell: { preis: 100, datum: DATUM, kein: false }, buy: { preis: 80, datum: DATUM, kein: false }, abgerufenAm: am });
+      await PREISE.testBestandSchreiben("preise", [
+        [PREISE.cacheSchluessel("Lymhurst", "T4_GL_NEU", 1), pe(jetzt0 - 1000)],
+        [PREISE.cacheSchluessel("Lymhurst", "T4_GL_SECHS", 1), pe(jetzt0 - 6 * TAG)],
+        [PREISE.cacheSchluessel("Lymhurst", "T4_GL_ACHT", 1), pe(jetzt0 - 8 * TAG)],
+        [PREISE.cacheSchluessel("Lymhurst", "T4_GL_OHNE", 1), { sell: { preis: 1 }, buy: { preis: 1 } }],
+      ]);
+      await PREISE.testBestandSchreiben("volumen", [
+        ["Lymhurst::T4_GL_SECHS::a7", { abgerufenAm: jetzt0 - 6 * TAG, jeQ: { 1: { stueckJeTag: 3 } } }],
+        ["Lymhurst::T4_GL_ACHT::a7", { abgerufenAm: jetzt0 - 8 * TAG, jeQ: { 1: { stueckJeTag: 3 } } }],
+      ]);
+      const vorLaden = PREISE.bestandInfo();
+      const nachLaden = await stellen(); // Bestand schliessen und neu laden
+      const sechs = PREISE.bestandPreis("Lymhurst", "T4_GL_SECHS", 1);
+      const acht = PREISE.bestandPreis("Lymhurst", "T4_GL_ACHT", 1);
+      const volSechs = PREISE.bestandAbsatz("Lymhurst", "T4_GL_SECHS", 7);
+      const volAcht = PREISE.bestandAbsatz("Lymhurst", "T4_GL_ACHT", 7);
+      await PREISE.bestandGeschrieben();
+      const nochmal = await stellen(); // dauerhaft entfernt: beim zweiten Laden faellt nichts mehr weg
+      pruefe(
+        "gelegenheiten: Bestand-Obergrenze, beim Laden fallen Eintraege aelter als 7 Tage (benannte Konstante) und solche ohne Abrufzeit weg, 6 Tage alte bleiben",
+        PREISE.BESTAND_MAX_ALTER_TAGE === 7 && vorLaden.preise === 4 && vorLaden.volumen === 2 && nachLaden.entfernt === 3 && nachLaden.preise === 2 && nachLaden.volumen === 1 &&
+          sechs && !acht && volSechs && !volAcht && !PREISE.bestandPreis("Lymhurst", "T4_GL_OHNE", 1) && PREISE.bestandPreis("Lymhurst", "T4_GL_NEU", 1),
+        JSON.stringify({ vor: [vorLaden.preise, vorLaden.volumen], nach: [nachLaden.preise, nachLaden.volumen, nachLaden.entfernt] })
+      );
+      pruefe(
+        "gelegenheiten: Bestand-Obergrenze, das Entfernen ist dauerhaft (zweites Laden: 0 entfernt, gleicher Stand)",
+        nochmal.entfernt === 0 && nochmal.preise === 2 && nochmal.volumen === 1 && (nochmal.modus === "indexeddb" || nochmal.modus === "localstorage"),
+        JSON.stringify(nochmal)
+      );
+
+      // ---- Start ohne Oeffnen: kein Scan, kein Abruf ----
+      zutatenMerken(UMFANG);
+      await PREISE.testDatenbankLoeschen(DB);
+      await stellen();
+      log = [];
+      const mZu = neu(UMFANG);
+      await kurz(40);
+      pruefe(
+        "gelegenheiten: solange der Reiter nie geoeffnet wurde, laeuft kein Scan und kein Abruf, auch mit Schalter an",
+        log.length === 0 && mZu.status().scan === "aus" && mZu.status().scanAn === true && !mZu.status().geoeffnet && P.status().offen === 0,
+        log.length + " Abrufe, Scan " + mZu.status().scan
+      );
+      mZu.beenden();
+
+      // ---- Allererster Start ohne Bestand: Scan fuellt die Rangliste ----
+      const mScan = neu(UMFANG);
+      const sch = mScan.schaetzung();
+      const ersteZeilenNach = { abrufe: null };
+      mScan.beiAenderung((ev) => {
+        if (ev.typ === "zeilen" && ersteZeilenNach.abrufe == null && mScan.rangliste().zeilen.length) ersteZeilenNach.abrufe = log.length;
+      });
+      mScan.oeffnen();
+      const scanFertig = await bis(() => mScan.status().vorgaenge > 0 && mScan.status().frisch === mScan.status().vorgaenge && !mScan.status().rechnet);
+      await mScan.fertig();
+      const scanLog = log.slice();
+      // Die erste Einheit (50 Vorgaenge) besteht aus allen 30 Veredelungen und den ersten Crafts: ihr Normalpreis-Abruf traegt Erz und Fell.
+      const ersterUrl = decodeURIComponent((scanLog.slice(0, 2).find((e) => /qualities=1$/.test(decodeURIComponent(e.url))) || { url: "" }).url);
+      let minAbstand = Infinity;
+      for (let i = 1; i < scanLog.length; i++) minAbstand = Math.min(minAbstand, scanLog[i].start - scanLog[i - 1].ende);
+      const rangScan = mScan.rangliste();
+      pruefe(
+        "gelegenheiten: erster Start ohne Bestand, der Scan macht den ganzen Umfang frisch und bleibt unter der genannten Obergrenze an Abrufen",
+        scanFertig && scanLog.length > 0 && scanLog.length <= sch.abrufe && mScan.status().abrufe === scanLog.length,
+        scanLog.length + " Abrufe, Obergrenze " + sch.abrufe + ", " + mScan.status().frisch + " von " + mScan.status().vorgaenge + " frisch"
+      );
+      pruefe(
+        "gelegenheiten: feste Reihenfolge ohne Bestand, Veredeln zuerst (die erste Einheit holt Erz, Fell, Barren und Leder), Abrufe strikt nacheinander mit mindestens 1,5 s Abstand",
+        /qualities=1$/.test(ersterUrl) && /_ORE/.test(ersterUrl) && /_HIDE/.test(ersterUrl) && /_METALBAR/.test(ersterUrl) && /_LEATHER/.test(ersterUrl) && minAbstand >= PREISE.PAUSE_MS,
+        ersterUrl.slice(ersterUrl.indexOf("/prices/"), ersterUrl.indexOf("/prices/") + 60) + " ..., kleinster Abstand " + minAbstand + " ms"
+      );
+      pruefe(
+        "gelegenheiten: jeder abgeschlossene Block rechnet seine Zeilen sofort neu, erste Zeilen der Rangliste stehen lange vor dem Ende des Durchlaufs",
+        rangScan.zeilen.length >= 50 && ersteZeilenNach.abrufe != null && ersteZeilenNach.abrufe < scanLog.length && rangScan.zeilen.every((z) => !G.istAlt(z)),
+        rangScan.zeilen.length + " Zeilen, erste nach " + ersteZeilenNach.abrufe + " von " + scanLog.length + " Abrufen"
+      );
+      pruefe(
+        "gelegenheiten: alle Scan-Abrufe holen beide Verkaufsstaedte bzw. alle beteiligten Staedte in einem Abruf",
+        scanLog.every((e) => {
+          const st = /[?&]locations=([^&]+)/.exec(decodeURIComponent(e.url))[1].split(",");
+          return st.indexOf("Lymhurst") !== -1 && (st.indexOf("Thetford") !== -1 || st.indexOf("Martlock") !== -1) && st.length >= 2;
+        }),
+        ""
+      );
+      const nachRuhe = log.length;
+      await kurz(80); // mehrere weitere Pruefungen (Pause im Test 15 ms): nichts faellig, also kein Abruf
+      pruefe(
+        "gelegenheiten: ist alles frisch, ruht der Scan und ruft nichts ab; die weiteren Pruefungen zaehlen nicht als Durchlauf",
+        log.length === nachRuhe && mScan.status().scan === "ruht" && mScan.status().durchlaeufe === 1,
+        (log.length - nachRuhe) + " weitere Abrufe, " + mScan.status().durchlaeufe + " Durchlaeufe"
+      );
+      mScan.beenden();
+
+      // ---- Gleichheit mit den Detailreitern (gleiche Einstellungen, gleiche Preise) ----
+      log = [];
+      const mGleich = neu(Object.assign({}, UMFANG, { scanAn: false }));
+      const eG = mGleich.einstellungen();
+      await mGleich.oeffnen();
+      await mGleich.fertig();
+      const abrufeBeimOeffnen = log.length;
+      const auswahlC = G.auswahlCraften(eG);
+      const kandC = CRAFTEN.kandidaten(auswahlC);
+      const datenC = await CRAFTEN.datenAbrufen(kandC, auswahlC);
+      const zeilenC = CRAFTEN.zeilenRechnen(kandC, datenC.stadtDaten, auswahlC, einst);
+      const auswahlV = G.auswahlVeredeln(eG);
+      const kandV = VEREDELN.kandidaten(auswahlV);
+      const datenV = await VEREDELN.datenAbrufen(kandV, auswahlV);
+      const zeilenV = VEREDELN.zeilenRechnen(kandV, datenV.stadtDaten, auswahlV, einst);
+      const abweichungen = [];
+      let verglichenC = 0;
+      let verglichenV = 0;
+      let mitGewinnC = 0;
+      zeilenC.forEach((z) => {
+        const g = mGleich.zeile("c:" + z.marktId);
+        verglichenC++;
+        if (z.gewinn != null) mitGewinnC++;
+        if (!g || FELDER.some((f) => g[f] !== z[f])) abweichungen.push("c:" + z.marktId);
+      });
+      zeilenV.forEach((z) => {
+        const g = mGleich.zeile("v:" + z.marktId + ":" + z.rezeptIndex);
+        verglichenV++;
+        if (!g || FELDER.some((f) => g[f] !== z[f])) abweichungen.push("v:" + z.marktId + ":" + z.rezeptIndex);
+      });
+      pruefe(
+        "gelegenheiten: Rangliste steht beim Oeffnen ohne jeden Abruf aus dem Bestand",
+        abrufeBeimOeffnen === 0 && mGleich.rangliste().zeilen.length >= 50 && mGleich.status().scan === "aus",
+        abrufeBeimOeffnen + " Abrufe, " + mGleich.rangliste().zeilen.length + " Zeilen"
+      );
+      pruefe(
+        "gelegenheiten: jede Zeile ergibt in \"Craften: Gewinn\" mit denselben Einstellungen und Preisen dieselben Zahlen (Schwerter und Aexte, zwei Einkaufs- und zwei Verkaufsstaedte)",
+        verglichenC === kandC.length && verglichenC >= 80 && mitGewinnC >= 50 && !abweichungen.some((a) => a[0] === "c") && datenC.abrufe === 0,
+        verglichenC + " Zeilen verglichen, " + mitGewinnC + " mit Ergebnis, Abweichungen: " + (abweichungen.filter((a) => a[0] === "c").slice(0, 5).join(",") || "keine")
+      );
+      pruefe(
+        "gelegenheiten: jede Zeile ergibt in \"Veredeln leveln\" mit denselben Einstellungen und Preisen dieselben Zahlen (Erz und Fell)",
+        verglichenV === kandV.length && verglichenV >= 25 && zeilenV.filter((z) => z.gewinn != null).length >= 25 && !abweichungen.some((a) => a[0] === "v") && datenV.abrufe === 0,
+        verglichenV + " Zeilen verglichen, Abweichungen: " + (abweichungen.filter((a) => a[0] === "v").slice(0, 5).join(",") || "keine")
+      );
+      pruefe(
+        "gelegenheiten: die Maschine fuehrt genau die Vorgaenge der beiden Detailreiter (keine fehlt, keine zusaetzlich)",
+        mGleich.kandidaten().length === kandC.length + kandV.length,
+        mGleich.kandidaten().length + " = " + kandC.length + " + " + kandV.length
+      );
+
+      // ---- Rechen-Einstellungen: neu rechnen ohne Abruf ----
+      const beste = mGleich.rangliste().zeilen[0];
+      const vorher = { erloes: beste.erloes, silber: beste.silber };
+      log = [];
+      const art1 = mGleich.einstellen({ verkaufsweg: "sofort" });
+      await mGleich.fertig();
+      const nachSofort = mGleich.zeile(beste.schluessel);
+      const art2 = mGleich.einstellen({ kaufweg: "order", mitFokus: true, fertigungsstadt: "Martlock" });
+      await mGleich.fertig();
+      const nachOrder = mGleich.zeile(beste.schluessel);
+      const art3 = mGleich.einstellen({ minAbsatz: 40, art: "craften", sortierung: "stueck" });
+      const gefiltert = mGleich.rangliste();
+      pruefe(
+        "gelegenheiten: Verkaufsweg, Einkaufsweg, Fokus und Fertigungsstadt rechnen aus dem Bestand neu, ohne Abruf; Filter und Sortierung rechnen gar nicht",
+        art1 === "rechnen" && art2 === "rechnen" && art3 === "anzeige" && log.length === 0 && nachSofort.erloes !== vorher.erloes && nachSofort.silber === vorher.silber && nachOrder.silber !== vorher.silber &&
+          gefiltert.zeilen.length > 0 && gefiltert.zeilen.every((z) => z.art === "craften" && z.stueckJeTag >= 40) && gefiltert.ausgeblendet > 0 &&
+          gefiltert.zeilen.every((z, i, a) => i === 0 || a[i - 1].gewinn >= z.gewinn),
+        JSON.stringify({ art1, art2, art3, abrufe: log.length, zeilen: gefiltert.zeilen.length, ausgeblendet: gefiltert.ausgeblendet })
+      );
+      mGleich.beenden();
+
+      // ---- Alter Bestand: sofort gerechnet, als alt gekennzeichnet, oberste 50 zuerst frisch ----
+      const GROSS = Object.assign({}, UMFANG, { warengruppen: ["sword", "axe", "mace", "hammer", "bow", "spear"], tiers: [4, 5, 6, 7, 8] });
+      zutatenMerken(GROSS);
+      await PREISE.testDatenbankLoeschen(DB);
+      await stellen();
+      Date.now = () => echtesNow() - 3 * 60 * 60 * 1000; // der Bestand entsteht "vor drei Stunden"
+      const eGross = G.einstellungenBereinigen(GROSS);
+      await CRAFTEN.datenAbrufen(CRAFTEN.kandidaten(G.auswahlCraften(eGross)), G.auswahlCraften(eGross));
+      await VEREDELN.datenAbrufen(VEREDELN.kandidaten(G.auswahlVeredeln(eGross)), G.auswahlVeredeln(eGross));
+      Date.now = echtesNow;
+      await PREISE.bestandGeschrieben();
+      log = [];
+      const mAlt = neu(Object.assign({}, GROSS, { scanAn: false }));
+      await mAlt.oeffnen();
+      await mAlt.fertig();
+      const rangAlt = mAlt.rangliste();
+      const top50 = rangAlt.zeilen.slice(0, 50).map((z) => z.schluessel);
+      pruefe(
+        "gelegenheiten: ein drei Stunden alter Bestand fuellt die Rangliste sofort und ohne Abruf, jede Zeile ist als alt gekennzeichnet und nennt ihre Abrufzeit, 0 frisch",
+        log.length === 0 && rangAlt.zeilen.length >= 200 && top50.length === 50 && rangAlt.zeilen.every((z) => G.istAlt(z) && z.abrufAm > 0 && echtesNow() - z.abrufAm > 170 * 60000) &&
+          mAlt.status().frisch === 0 && mAlt.status().vorgaenge === mAlt.kandidaten().length,
+        rangAlt.zeilen.length + " Zeilen bei " + mAlt.status().vorgaenge + " Vorgaengen, " + mAlt.status().frisch + " frisch"
+      );
+      const t0 = t;
+      const topFrisch = { abrufe: null, ms: null };
+      const pruefeTop = () => {
+        if (topFrisch.abrufe != null) return;
+        if (top50.every((s) => !G.istAlt(mAlt.zeile(s)))) {
+          topFrisch.abrufe = log.length;
+          topFrisch.ms = (log.length ? log[log.length - 1].ende : t) - t0;
+        }
+      };
+      mAlt.beiAenderung((ev) => {
+        if (ev.typ === "zeilen") pruefeTop();
+      });
+      mAlt.einstellen({ scanAn: true });
+      const topOk = await bis(() => topFrisch.abrufe != null);
+      pruefe(
+        "gelegenheiten: oben zuerst, die obersten 50 Zeilen der Rangliste sind nach hoechstens 15 Sekunden frisch (Abrufe mal 1,5 s, nachgebildete Uhr)",
+        topOk && topFrisch.abrufe >= 1 && topFrisch.abrufe * (PREISE.PAUSE_MS / 1000) <= 15 && topFrisch.ms <= 15000,
+        topFrisch.abrufe + " Abrufe = " + (topFrisch.abrufe * PREISE.PAUSE_MS) / 1000 + " s Pause, auf der nachgebildeten Uhr " + topFrisch.ms + " ms, bei " + mAlt.status().vorgaenge + " Vorgaengen im Umfang"
+      );
+      const ersteScanUrl = decodeURIComponent(log[0].url);
+      pruefe(
+        "gelegenheiten: der erste Scan-Abruf gilt den Produkten der Ranglistenspitze (alle Qualitaeten), nicht der festen Reihenfolge",
+        /qualities=1,2,3,4,5/.test(ersteScanUrl) && top50.filter((s) => ersteScanUrl.indexOf(s.slice(2) + ",") !== -1 || ersteScanUrl.indexOf(s.slice(2) + ".json") !== -1).length >= 40,
+        ersteScanUrl.slice(ersteScanUrl.indexOf("/prices/"), ersteScanUrl.indexOf("/prices/") + 70)
+      );
+
+      // ---- Vordergrund ueberholt den Scan ----
+      const vorIndex = log.length;
+      const offenVorher = P.status().offenHintergrund;
+      const vordergrund = PREISE.preiseAbrufen(["T4_GL_VORDERGRUND"], { stadt: "Lymhurst", erzwingen: true });
+      await vordergrund;
+      const vPos = log.findIndex((e) => e.url.indexOf("T4_GL_VORDERGRUND") !== -1);
+      const scanDanach = await bis(() => log.length > vPos + 1);
+      pruefe(
+        "gelegenheiten: eine vom Nutzer ausgeloeste Suche ueberholt den laufenden Scan (hoechstens der gerade laufende Scan-Abruf liegt davor, der Scan macht danach weiter)",
+        vPos !== -1 && vPos <= vorIndex + 1 && offenVorher >= 1 && scanDanach && mAlt.status().frisch < mAlt.status().vorgaenge,
+        "Vordergrund an Stelle " + (vPos - vorIndex) + " nach dem Einreihen, Scan noch bei " + mAlt.status().frisch + " von " + mAlt.status().vorgaenge
+      );
+
+      // ---- Schalter: pausieren und fortsetzen ----
+      mAlt.einstellen({ scanAn: false });
+      await kurz(30); // ein gerade laufender Abruf endet noch
+      const beiPause = log.length;
+      const frischBeiPause = mAlt.status().frisch;
+      await kurz(60);
+      const pauseHaelt = log.length === beiPause && mAlt.status().scan === "aus" && P.status().offenHintergrund === 0;
+      mAlt.einstellen({ scanAn: true });
+      const laeuftWieder = await bis(() => log.length > beiPause + 2);
+      pruefe(
+        "gelegenheiten: Schalter pausiert den Scan (kein weiterer Abruf, nichts mehr in der Schlange) und setzt ihn fort",
+        pauseHaelt && laeuftWieder && mAlt.status().scan !== "aus" && frischBeiPause < mAlt.status().vorgaenge,
+        "bei Pause " + beiPause + " Abrufe, danach " + log.length
+      );
+
+      // ---- Verborgener Tab ----
+      verborgen = true;
+      P.sichtbarkeitGeaendert();
+      await kurz(30);
+      const beiVerborgen = log.length;
+      await kurz(60);
+      const ruhtVerborgen = log.length === beiVerborgen && P.status().zustand === "pausiert" && P.status().offenHintergrund >= 1;
+      const vgVerborgen = await PREISE.preiseAbrufen(["T4_GL_VERBORGEN"], { stadt: "Lymhurst", erzwingen: true });
+      const nurVordergrund = log.length === beiVerborgen + 1 && !!vgVerborgen.T4_GL_VERBORGEN;
+      mAlt.einstellen({ scanAuchVerborgen: true });
+      const laeuftVerborgen = await bis(() => log.length > beiVerborgen + 3);
+      mAlt.einstellen({ scanAuchVerborgen: false });
+      await kurz(30);
+      const wiederRuhe = log.length;
+      await kurz(60);
+      const ruhtWieder = log.length === wiederRuhe;
+      verborgen = false;
+      P.sichtbarkeitGeaendert();
+      const sichtbarWeiter = await bis(() => log.length > wiederRuhe + 1);
+      pruefe(
+        "gelegenheiten: bei verborgenem Tab ruht der Scan (Planer \"pausiert\", Vordergrund laeuft weiter), mit \"auch im Hintergrund-Tab\" laeuft er, wird der Tab sichtbar, macht er weiter",
+        ruhtVerborgen && nurVordergrund && laeuftVerborgen && ruhtWieder && sichtbarWeiter,
+        JSON.stringify({ ruhtVerborgen, nurVordergrund, laeuftVerborgen, ruhtWieder, sichtbarWeiter })
+      );
+
+      // ---- Scanumfang aendern setzt den Scan neu an ----
+      const fertigGross = await bis(() => mAlt.status().frisch === mAlt.status().vorgaenge, 15000);
+      const vorUmfang = log.length;
+      const art4 = mAlt.einstellen({ warengruppen: ["sword", "axe", "mace", "hammer", "bow", "spear", "dagger"] });
+      const neuerUmfang = await bis(() => mAlt.status().frisch === mAlt.status().vorgaenge && !mAlt.status().rechnet, 15000);
+      const dolchUrls = log.slice(vorUmfang).filter((e) => /DAGGER/.test(e.url)).length;
+      pruefe(
+        "gelegenheiten: wird der Scanumfang groesser, holt der Scan nur das Neue (Dolche), der Rest bleibt aus dem Bestand",
+        fertigGross && art4 === "umfang" && neuerUmfang && dolchUrls >= 2 && log.length - vorUmfang <= 8 && mAlt.rangliste().zeilen.some((z) => z.cc === "dagger"),
+        (log.length - vorUmfang) + " Abrufe nach der Aenderung, davon " + dolchUrls + " mit Dolchen"
+      );
+    } catch (e) {
+      pruefe("gelegenheiten: asynchrone Tests laufen ohne Ausnahme durch", false, (e && e.stack) || e);
+    } finally {
+      Date.now = echtesNow;
+      maschinen.forEach((m) => m.beenden());
+      window.fetch = echtesFetch;
+      try {
+        PREISE.planer.abbrechen({ prioritaet: "hintergrund" });
+        await PREISE.testEinstellen(null); // zurueck zum echten Bestand und zur echten Uhr
+        await PREISE.testDatenbankLoeschen(DB);
+        localStorage.removeItem(LS);
+      } catch (e) {
+        pruefe("gelegenheiten: Aufraeumen", false, e);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {
@@ -3951,9 +4331,9 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   renderErgebnisse(alleTests);
   (function () {
     const zsf = document.getElementById("zusammenfassung");
-    zsf.textContent += ", asynchrone Tests zu Preisbestand und Abrufplaner laufen ...";
+    zsf.textContent += ", asynchrone Tests zu Preisbestand, Abrufplaner und Gelegenheiten laufen ...";
     zsf.className = "zusammenfassung";
-    bestandTests().then(planerTests).then(() => {
+    bestandTests().then(planerTests).then(gelegenheitenTests).then(() => {
       renderErgebnisse(alleTests);
       document.body.dataset.testsFertig = "1";
     });
