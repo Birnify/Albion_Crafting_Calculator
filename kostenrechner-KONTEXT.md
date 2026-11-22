@@ -281,9 +281,15 @@ solange sich daran nichts ändert.
   über Freitext; `ALCOHOL` hängt noch im Koch-Baum (`CLAUDE.md`,
   `AUDIT-2026-09-13.md` Befund 4 und 11; wartet auf die Ablesungen unten).
 - Ancient Lands: Gerüst von `DRAGON-ISLANDS-002` nicht geprüft (v3.14.0).
-- Die Root-`CLAUDE.md` eine Ebene höher nennt im Spielerprofil noch „2.353
-  je Charge, 1.022 FCE“; die Kopie im Repo ist korrigiert, Abgleich steht
-  aus (v3.18.0).
+- **Die Root-`CLAUDE.md` eine Ebene höher läuft der Kopie im Repo hinterher.**
+  Spielerprofil und Bezugsgröße des Fokus (je Stück, FCE 34.242) sind am
+  22.11.2026 angeglichen. Weiter abweichend, in der Root-Datei fehlen die
+  Korrekturen seit 14.09.2026: „Belegte Spielformeln“ (Mutual gilt auch für
+  den eigenen Knoten, Veredeln ohne getrennten Meisterschaftsknoten,
+  Sammlerausrüstung, keine Gebühr bis T2, Global Discount, 1 Chancenpunkt =
+  1 %, Qualität bei Werkzeugen und Rohstoffen), API (`gold.json`, `history/`
+  je Qualität) und „Craft-Kategorie zu Gebäude“ (Wandlerstab, drei
+  Nebenhand-Bäume). Abgleich nur mit Zustimmung des Nutzers.
 
 **Oberfläche**
 
