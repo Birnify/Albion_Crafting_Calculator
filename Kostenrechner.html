@@ -172,7 +172,7 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 .vd-leiste{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 18px;margin-bottom:16px;
           background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);border-radius:var(--r-card)}
 :is(#tab-veredeln,#tab-craften) #vdStart{min-height:44px;padding:0 22px;border:0;border-radius:var(--r);font:800 15px "Manrope",sans-serif}
-:is(#tab-veredeln,#tab-craften) #vdPreiseReset{min-height:36px;border-radius:var(--r)}
+:is(#tab-veredeln,#tab-craften) :is(#vdPreiseReset,#vdFrisch){min-height:36px;border-radius:var(--r)}
 :is(#tab-veredeln,#tab-craften) label.vd-check{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--text);cursor:pointer}
 :is(#tab-veredeln,#tab-craften) label.vd-check input{width:auto;margin:0}
 #vdStatus{margin-left:auto;font-size:13px;color:var(--dim)}
@@ -214,7 +214,7 @@ tr.vd-gewinn .vd-wert,tr.vd-gewinn .vd-wert2{color:var(--good)}
 tr.vd-null .vd-wert,tr.vd-null .vd-wert2{color:var(--warn)}
 tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
 #tab-craften #cgStart{min-height:44px;padding:0 22px;border:0;border-radius:var(--r);font:800 15px "Manrope",sans-serif}
-#tab-craften #cgPreiseReset{min-height:36px;border-radius:var(--r)}
+#tab-craften :is(#cgPreiseReset,#cgFrisch){min-height:36px;border-radius:var(--r)}
 #cgStatus{margin-left:auto;font-size:13px;color:var(--dim)}
 #cgStatus.ok{color:var(--green)}
 #cgStatus.err{color:var(--red);font-weight:700}
@@ -1245,7 +1245,8 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 </div>
 
 <div class="vd-leiste">
-  <button type="button" id="cgStart" title="Ruft die aktuellen Preise und das Handelsvolumen der Auswahl frisch ab und rechnet.">Gelegenheiten suchen</button>
+  <button type="button" id="cgStart" title="Rechnet mit dem Preisbestand. Abgerufen wird nur, was fehlt oder zu alt ist (Preise 30 Min., Handelsvolumen 60 Min.).">Gelegenheiten suchen</button>
+  <button type="button" id="cgFrisch" class="mini" title="Umgeht den Preisbestand: ruft alle Preise und das Handelsvolumen der Auswahl neu ab und rechnet.">Frisch abrufen</button>
   <button type="button" id="cgPreiseReset" class="mini" hidden title="Alle eigenen Einkaufspreise entfernen, wieder mit den Marktpreisen rechnen.">Eigene Preise zurücksetzen</button>
   <label class="vd-check" title="Auch Vorgänge zeigen, die mehr als die Toleranz verlieren."><input type="checkbox" id="cgVerluste">Verluste zeigen</label>
   <span id="cgStatus" role="status"></span>
@@ -1327,7 +1328,8 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 </div>
 
 <div class="vd-leiste">
-  <button type="button" id="vdStart" title="Ruft die aktuellen Preise der Auswahl frisch ab und rechnet.">Gelegenheiten suchen</button>
+  <button type="button" id="vdStart" title="Rechnet mit dem Preisbestand. Abgerufen wird nur, was fehlt oder zu alt ist (Preise 30 Min., Handelsvolumen 60 Min.).">Gelegenheiten suchen</button>
+  <button type="button" id="vdFrisch" class="mini" title="Umgeht den Preisbestand: ruft alle Preise und das Handelsvolumen der Auswahl neu ab und rechnet.">Frisch abrufen</button>
   <button type="button" id="vdPreiseReset" class="mini" hidden title="Alle eigenen Einkaufspreise entfernen, wieder mit den Marktpreisen rechnen.">Eigene Preise zurücksetzen</button>
   <label class="vd-check" title="Auch Vorgänge zeigen, die mehr als die Toleranz verlieren."><input type="checkbox" id="vdVerluste">Verluste zeigen</label>
   <span id="vdStatus" role="status"></span>
@@ -1396,23 +1398,23 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 
 </div>
 
-<script src="rezepte.js?v=3.14.0"></script>
-<script src="item-namen.js?v=3.14.0"></script>
-<script src="js/preise.js?v=3.14.0"></script>
-<script src="js/regeln.js?v=3.14.0"></script>
-<script src="js/rechenkern.js?v=3.14.0"></script>
-<script src="js/ui.js?v=3.14.0"></script>
-<script src="js/eintopf-daten.js?v=3.14.0"></script>
-<script src="js/eintopf-preise.js?v=3.14.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.14.0"></script>
-<script src="js/eintopf-ui.js?v=3.14.0"></script>
-<script src="js/tabs.js?v=3.14.0"></script>
-<script src="js/preisvergleich.js?v=3.14.0"></script>
-<script src="js/veredeln.js?v=3.14.0"></script>
-<script src="js/craften.js?v=3.14.0"></script>
+<script src="rezepte.js?v=3.15.0"></script>
+<script src="item-namen.js?v=3.15.0"></script>
+<script src="js/preise.js?v=3.15.0"></script>
+<script src="js/regeln.js?v=3.15.0"></script>
+<script src="js/rechenkern.js?v=3.15.0"></script>
+<script src="js/ui.js?v=3.15.0"></script>
+<script src="js/eintopf-daten.js?v=3.15.0"></script>
+<script src="js/eintopf-preise.js?v=3.15.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.15.0"></script>
+<script src="js/eintopf-ui.js?v=3.15.0"></script>
+<script src="js/tabs.js?v=3.15.0"></script>
+<script src="js/preisvergleich.js?v=3.15.0"></script>
+<script src="js/veredeln.js?v=3.15.0"></script>
+<script src="js/craften.js?v=3.15.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.14.0"></script>
-<script src="js/karte.js?v=3.14.0"></script>
+<script src="js/karte-daten.js?v=3.15.0"></script>
+<script src="js/karte.js?v=3.15.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

@@ -1,12 +1,13 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-08 · Version: v3.14.1 · Ancient Lands: Leytor-Schlüsselsteine und Leytore
+Stand: 2026-11-22 · Version: v3.15.0 · Optimierungsrunde O1: gemeinsamer Preisbestand
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
 > Arbeit an diesem Projekt vollständig lesen.
 >
-> Der **Auftrag** steht in `kostenrechner-PLAN.md` und ändert sich kaum. Die
+> Der **Auftrag** steht in `kostenrechner-PLAN.md` und ändert sich kaum; die
+> laufende Optimierungsrunde (Pakete O1 bis O6) in `OPTIMIERUNG-PLAN.md`. Die
 > **Spielregeln und belegten Formeln** stehen in `CLAUDE.md`. Diese Datei hier
 > beschreibt, wie weit die Anwendung ist.
 
@@ -72,6 +73,58 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.15.0 (22.11.2026): Optimierungsrunde, Paket O1 „Gemeinsamer Preisbestand“
+
+Erstes Paket aus `OPTIMIERUNG-PLAN.md` (Ziele: ergonomische
+Gewinnmaximierung, Potenzialerkennung, Performance). Erstmals nach dem neuen
+Ablauf gebaut: Hauptsitzung steuert, ein Umsetzer-Subagent je Paket, Prüfung
+und Abschluss durch die Hauptsitzung (s. `CLAUDE.md`, „Arbeitsablauf“).
+
+- **Preisbestand in IndexedDB** (`albion_kostenrechner_bestand`) statt
+  `localStorage`, mit Arbeitskopie im Speicher: gelesen wird synchron aus dem
+  Speicher, geschrieben im Hintergrund. Kein Aufrufer in `ui.js`,
+  `rechenkern.js`, `regeln.js` geändert. Rückfall auf `localStorage`, wenn
+  IndexedDB fehlt oder nicht binnen 5 s öffnet (`PREISE.bestandInfo()`).
+  IndexedDB trägt unter `file://` in Chrome und Edge (vom Umsetzer mit
+  Playwright über einen Browser-Neustart belegt; Firefox ungeprüft). Alle
+  `file://`-Seiten teilen sich die Datenbank, also auch alle Versionsordner.
+- **Handelsvolumen mit Bestand**, gültig 60 Min. (`VOLUMEN_GUELTIG_MIN`),
+  Preise weiter 30 Min. Gilt auch für den Volumen-Knopf an gesperrten Knoten
+  im Kostenrechner und ersetzt dort die Entscheidung vom 05.09.2026 („nur
+  laufende Sitzung“). „Cache leeren“ leert Preise und Volumen.
+- **Gewinn-Reiter verwenden den Bestand wieder.** „Gelegenheiten suchen“
+  ruft nur ab, was fehlt oder zu alt ist; neuer Knopf „Frisch abrufen“
+  (`#vdFrisch`, `#cgFrisch`) erzwingt alles. Abruflogik als
+  `VEREDELN.datenAbrufen()` und `CRAFTEN.datenAbrufen()` herausgezogen. Was
+  ein Reiter holt, nutzt der andere. Merker `Stadt::ID::qA` für „alle
+  Qualitäten abgerufen“.
+- **Alter sichtbar:** Tooltip je Zeile, Statuszeile nennt Abrufzahl und
+  ältesten verwendeten Wert.
+- **Migration:** alter `localStorage`-Preisbestand wird einmalig übernommen
+  und der Schlüssel entfernt. Eigenpreise und Einstellungen unverändert.
+- **Nach Prüfung gehärtet (Hauptsitzung):** ein Eintrag aus der Zukunft
+  (Systemuhr zurückgestellt) gilt nicht mehr als frisch; eine ganz leere
+  `history/`-Antwort wird nicht mehr 60 Min. als „kein Handel“ gemerkt.
+- **Nutzerwunsch nebenbei:** neue Spalte **„Kosten gesamt“** in „Veredeln
+  leveln“ und „Craften: Gewinn“ (Kosten je Stück mal eingestellter Menge,
+  `z.kostenGesamt`).
+- **Gemessen:** live in „Veredeln leveln“ erste Suche 8 Abrufe, zweite 0,
+  nach Neuladen 0, Bestand in 0,12 s geladen. Umsetzer-Messung mit 50.000
+  Einträgen: Schreiben rund 2 s im Hintergrund, Laden rund 0,3 s, längste
+  Stockung unter 50 ms. `rechenkern-pruefer`: keine Rechenfehler, eine Zeile
+  in Python und Node identisch nachgerechnet (Guter Stoff T4.0, Kosten
+  244,54, Erlös 463,76).
+- Selbsttest **686/686** grün (660 + 26 neue „bestand:“-Tests). Die neuen
+  Tests laufen asynchron: fertig ist die Seite erst bei
+  `document.body.dataset.testsFertig === "1"`, vorher liest man 660.
+
+**Offen aus O1:** der Bestand löscht nichts nach Alter (Obergrenze
+spätestens in O3 entscheiden); 270.000 Einträge (Zielgröße des Gesamtscans)
+nicht gemessen; IDs, die die API in der Antwort weglässt, werden bei Preisen
+jedes Mal neu geholt; zwei offene Browser-Tabs sehen die Abrufe des anderen
+erst nach Neuladen; ein Rückfall auf `localStorage` ist in der Oberfläche
+nicht sichtbar.
 
 ## Nachtrag v3.14.1 (08.11.2026): Ancient Lands, Schlüsselsteine und Leytore
 

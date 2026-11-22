@@ -1,9 +1,10 @@
 // js/preise.js
 //
 // Preisschicht des Kostenrechners: Markt-ID-Bildung, ID-Sammler ueber den
-// Rezeptgraphen, gedrosselter Abruf gegen die Albion Data API, localStorage-
-// Zwischenspeicher mit Schema-Version, Eigenpreis-Ablage fuer nicht
-// handelbare Zutaten. Reine JS-Datei ohne DOM-Abhaengigkeit (kein
+// Rezeptgraphen, gedrosselter Abruf gegen die Albion Data API, gemeinsamer
+// Preis- und Volumenbestand (seit v3.15.0 in IndexedDB mit Arbeitskopie im
+// Speicher, Rueckfall localStorage, s. Abschnitt "Bestand"), Eigenpreis-Ablage
+// fuer nicht handelbare Zutaten (unveraendert localStorage). Reine JS-Datei ohne DOM-Abhaengigkeit (kein
 // document.*), per <script src="js/preise.js"></script> einbindbar.
 // Muss NACH rezepte.js geladen werden, sammleMarktIds() und marktId()
 // lesen aus dem globalen REZEPTGRAPH.
@@ -54,10 +55,28 @@ const PREISE = (function () {
   const PREIS_CACHE_KEY = "albion_kostenrechner_preiscache";
   const EIGENPREIS_KEY = "albion_kostenrechner_eigenpreise";
   const CACHE_GUELTIG_MIN_DEFAULT = 30;
+  // Handelsvolumen (history/) ist ein 7-Tage-Mittel und aendert sich langsam,
+  // deshalb laenger gueltig als ein Preis (OPTIMIERUNG-PLAN.md, Paket O1).
+  const VOLUMEN_GUELTIG_MIN = 60;
+
+  // Bestand in IndexedDB (v3.15.0). Ein Gesamtscan sind bis etwa 270.000
+  // Preiszeilen, das passt nicht in localStorage. Unter file:// belegt am
+  // 22.11.2026 (Chrome 158, Edge 157: schreiben, Browser neu starten, lesen).
+  // ACHTUNG: alle file://-Seiten teilen sich eine Herkunft, der Name muss
+  // deshalb eindeutig sein. Bei einer Formataenderung BESTAND_DB_VERSION
+  // hochzaehlen, die Speicher werden dann geleert und neu angelegt.
+  const BESTAND_DB_NAME = "albion_kostenrechner_bestand";
+  const BESTAND_DB_VERSION = 1;
+  const STORE_PREISE = "preise";
+  const STORE_VOLUMEN = "volumen";
+  const LADE_BLOCK = 10000; // Eintraege je Leseschritt beim Start, damit die Oberflaeche nicht stockt
+  const SCHREIB_BLOCK = 5000; // Eintraege je Schreibtransaktion
 
   const BLOCKGROESSE = 50; // im Eintopf-Rechner erprobt
   const PAUSE_MS = 1500; // Pause zwischen Bloecken
   const MAX_VERSUCHE = 5;
+  let pauseMs = PAUSE_MS; // nur von testEinstellen() veraendert (Tests mit nachgebildetem fetch)
+  let abrufe = 0; // gezaehlte HTTP-Anfragen dieser Sitzung, s. abrufZaehler()
 
   // ---------------------------------------------------------------------
   // Markt-ID
@@ -219,24 +238,334 @@ const PREISE = (function () {
   }
 
   // ---------------------------------------------------------------------
-  // localStorage-Preiscache
+  // Bestand: Preise und Handelsvolumen (v3.15.0, OPTIMIERUNG-PLAN.md O1)
+  //
+  // Entwurf: die Arbeitskopie liegt im Speicher (zwei Maps), wird beim Start
+  // asynchron aus IndexedDB geladen und bei jedem Abruf sofort im Speicher
+  // und im Hintergrund in IndexedDB fortgeschrieben (nur die geaenderten
+  // Eintraege, nicht wie frueher der ganze Bestand als ein JSON-Text).
+  // Gelesen wird ausschliesslich aus dem Speicher, also synchron; die
+  // Abruffunktionen warten vorher einmal auf bestand.bereit.
+  //
+  // Rueckfall: ist IndexedDB nicht verfuegbar, laeuft der Preisbestand wie
+  // bis v3.14.1 ueber localStorage (PREIS_CACHE_KEY, Schema 3); das
+  // Handelsvolumen bleibt dann wie frueher nur fuer die Sitzung im Speicher.
+  //
+  // Migration: ein vorhandener localStorage-Preisbestand wird beim ersten
+  // Start mit IndexedDB einmalig uebernommen und danach aus localStorage
+  // entfernt (nicht doppelt gefuehrt). Eigenpreise und Einstellungen bleiben
+  // in localStorage.
   // ---------------------------------------------------------------------
 
   function leererPreisCache() {
     return { schema: PREIS_CACHE_SCHEMA_VERSION, eintraege: {} };
   }
 
-  function preisCacheLesen() {
+  function lsPreisCacheLesen(lsKey) {
     try {
-      const roh = localStorage.getItem(PREIS_CACHE_KEY);
-      if (!roh) return leererPreisCache();
+      const roh = localStorage.getItem(lsKey);
+      if (!roh) return null;
       const daten = JSON.parse(roh);
-      if (!daten || daten.schema !== PREIS_CACHE_SCHEMA_VERSION) return leererPreisCache();
-      if (!daten.eintraege) daten.eintraege = {};
+      if (!daten || daten.schema !== PREIS_CACHE_SCHEMA_VERSION || !daten.eintraege) return null;
       return daten;
     } catch (e) {
-      return leererPreisCache();
+      return null;
     }
+  }
+
+  function lsEntfernen(lsKey) {
+    try {
+      localStorage.removeItem(lsKey);
+    } catch (e) {
+      /* ignorieren */
+    }
+  }
+
+  function idbOeffnen(name) {
+    return new Promise((resolve, reject) => {
+      let fertig = false;
+      const ende = (fn, wert) => {
+        if (fertig) return;
+        fertig = true;
+        fn(wert);
+      };
+      let req;
+      try {
+        req = indexedDB.open(name, BESTAND_DB_VERSION);
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        [STORE_PREISE, STORE_VOLUMEN].forEach((store) => {
+          if (db.objectStoreNames.contains(store)) db.deleteObjectStore(store);
+          db.createObjectStore(store);
+        });
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        // Eine andere Seite will das Format anheben: Verbindung freigeben.
+        db.onversionchange = () => db.close();
+        ende(resolve, db);
+      };
+      req.onerror = () => ende(reject, req.error || new Error("IndexedDB nicht verfuegbar"));
+      req.onblocked = () => ende(reject, new Error("IndexedDB blockiert"));
+      setTimeout(() => ende(reject, new Error("IndexedDB antwortet nicht")), 5000);
+    });
+  }
+
+  /** Liest einen Speicher blockweise in die Map (LADE_BLOCK je Schritt). */
+  async function idbInMapLesen(db, store, map) {
+    let ab = null;
+    for (;;) {
+      const teil = await new Promise((resolve, reject) => {
+        const tx = db.transaction(store, "readonly");
+        const os = tx.objectStore(store);
+        const bereich = ab == null ? null : IDBKeyRange.lowerBound(ab, true);
+        const kReq = os.getAllKeys(bereich, LADE_BLOCK);
+        const vReq = os.getAll(bereich, LADE_BLOCK);
+        tx.oncomplete = () => resolve([kReq.result, vReq.result]);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+      const keys = teil[0];
+      const werte = teil[1];
+      for (let i = 0; i < keys.length; i++) map.set(keys[i], werte[i]);
+      if (keys.length < LADE_BLOCK) return;
+      ab = keys[keys.length - 1];
+    }
+  }
+
+  function idbSchreiben(db, store, paare) {
+    return new Promise((resolve, reject) => {
+      let tx;
+      try {
+        tx = db.transaction(store, "readwrite", { durability: "relaxed" });
+      } catch (e) {
+        reject(e);
+        return;
+      }
+      const os = tx.objectStore(store);
+      paare.forEach((p) => os.put(p[1], p[0]));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  function idbLeeren(db) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE_PREISE, STORE_VOLUMEN], "readwrite");
+      tx.objectStore(STORE_PREISE).clear();
+      tx.objectStore(STORE_VOLUMEN).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+
+  /**
+   * Legt einen Bestand an und beginnt sofort mit dem Laden.
+   * @param {object} [o]
+   * @param {string} [o.dbName]          IndexedDB-Name (Tests nutzen einen eigenen)
+   * @param {string} [o.lsKey]           localStorage-Schluessel fuer Rueckfall und Migration
+   * @param {boolean} [o.ohneIndexedDb]  Rueckfall erzwingen (Test)
+   * @returns Bestand mit preise/volumen (Map), modus, bereit (Promise),
+   *          schreiben(), leeren(), geschrieben()
+   */
+  function bestandAnlegen(o) {
+    o = o || {};
+    const dbName = o.dbName || BESTAND_DB_NAME;
+    const lsKey = o.lsKey || PREIS_CACHE_KEY;
+    const b = {
+      preise: new Map(),
+      volumen: new Map(),
+      modus: "laedt", // "indexeddb" | "localstorage"
+      db: null,
+      ladeMs: null,
+      migriert: 0,
+      fehler: null,
+      kette: Promise.resolve(),
+    };
+
+    function lsSchreiben() {
+      try {
+        const eintraege = {};
+        b.preise.forEach((wert, key) => {
+          eintraege[key] = wert;
+        });
+        localStorage.setItem(lsKey, JSON.stringify({ schema: PREIS_CACHE_SCHEMA_VERSION, eintraege }));
+      } catch (e) {
+        // Speicher voll/gesperrt: die laufende Abfrage funktioniert trotzdem,
+        // nur ohne dauerhaften Bestand.
+      }
+    }
+
+    /**
+     * Eintraege in den Bestand schreiben: sofort in die Arbeitskopie, im
+     * Hintergrund dauerhaft. Wirft nie; ein Schreibfehler kostet nur den
+     * dauerhaften Bestand, nicht die laufende Rechnung.
+     * @param {"preise"|"volumen"} store
+     * @param {Array<[string, object]>} paare
+     */
+    b.schreiben = function (store, paare) {
+      if (!paare || !paare.length) return;
+      const map = store === STORE_VOLUMEN ? b.volumen : b.preise;
+      paare.forEach((p) => map.set(p[0], p[1]));
+      if (b.modus === "indexeddb") {
+        for (let i = 0; i < paare.length; i += SCHREIB_BLOCK) {
+          const teil = paare.slice(i, i + SCHREIB_BLOCK);
+          b.kette = b.kette.then(() => idbSchreiben(b.db, store, teil)).catch((e) => {
+            b.fehler = e;
+          });
+        }
+      } else if (b.modus === "localstorage" && store === STORE_PREISE) {
+        lsSchreiben();
+      }
+    };
+
+    b.leeren = function () {
+      b.preise.clear();
+      b.volumen.clear();
+      lsEntfernen(lsKey);
+      b.kette = b.kette
+        .then(() => b.bereit)
+        .then(() => (b.modus === "indexeddb" ? idbLeeren(b.db) : null))
+        .catch((e) => {
+          b.fehler = e;
+        });
+    };
+
+    /** Promise, das erfuellt ist, sobald alle bisherigen Schreibvorgaenge dauerhaft sind. */
+    b.geschrieben = function () {
+      return b.kette;
+    };
+
+    b.schliessen = function () {
+      if (b.db) b.db.close();
+      b.db = null;
+    };
+
+    b.bereit = (async function () {
+      const start = typeof performance !== "undefined" ? performance.now() : Date.now();
+      let db = null;
+      if (!o.ohneIndexedDb && typeof indexedDB !== "undefined" && indexedDB) {
+        try {
+          db = await idbOeffnen(dbName);
+          await idbInMapLesen(db, STORE_PREISE, b.preise);
+          await idbInMapLesen(db, STORE_VOLUMEN, b.volumen);
+        } catch (e) {
+          b.fehler = e;
+          if (db) db.close();
+          db = null;
+          b.preise.clear();
+          b.volumen.clear();
+        }
+      }
+      const alt = lsPreisCacheLesen(lsKey);
+      if (db) {
+        b.db = db;
+        b.modus = "indexeddb";
+        // Migration des localStorage-Bestands (einmalig): uebernehmen, was
+        // neuer ist als ein schon vorhandener Eintrag, dann den alten
+        // Schluessel entfernen. Ein Bestand mit fremdem Schema wird verworfen.
+        if (alt) {
+          const paare = [];
+          Object.keys(alt.eintraege).forEach((key) => {
+            const e = alt.eintraege[key];
+            const da = b.preise.get(key);
+            if (e && e.abgerufenAm && (!da || !(da.abgerufenAm >= e.abgerufenAm))) paare.push([key, e]);
+          });
+          b.schreiben(STORE_PREISE, paare);
+          b.migriert = paare.length;
+        }
+        lsEntfernen(lsKey);
+      } else {
+        b.modus = "localstorage";
+        if (alt) Object.keys(alt.eintraege).forEach((key) => b.preise.set(key, alt.eintraege[key]));
+      }
+      b.ladeMs = (typeof performance !== "undefined" ? performance.now() : Date.now()) - start;
+      return b;
+    })();
+
+    return b;
+  }
+
+  let bestand = bestandAnlegen();
+
+  /** Erfuellt, sobald der Bestand geladen ist (IndexedDB oder Rueckfall). */
+  function bestandBereit() {
+    return bestand.bereit.then(() => bestandInfo());
+  }
+
+  /** Kennzahlen des Bestands, fuer Statusanzeige und Tests. */
+  function bestandInfo() {
+    return {
+      modus: bestand.modus,
+      preise: bestand.preise.size,
+      volumen: bestand.volumen.size,
+      ladeMs: bestand.ladeMs,
+      migriert: bestand.migriert,
+      fehler: bestand.fehler ? String(bestand.fehler) : null,
+    };
+  }
+
+  /** Erfuellt, sobald alle bisherigen Schreibvorgaenge dauerhaft abgelegt sind. */
+  function bestandGeschrieben() {
+    return bestand.geschrieben();
+  }
+
+  /**
+   * Nur fuer Tests: Bestand auf eine eigene Datenbank umstellen (die echte
+   * bleibt unberuehrt, alle file://-Seiten teilen sich eine Herkunft) und die
+   * Pause zwischen Bloecken verkuerzen. Ohne Argument: zurueck zum echten
+   * Bestand und zur echten Pause. Liefert ein Promise auf bestandInfo().
+   */
+  async function testEinstellen(o) {
+    await bestand.bereit;
+    await bestand.geschrieben();
+    bestand.schliessen();
+    if (!o) {
+      pauseMs = PAUSE_MS;
+      bestand = bestandAnlegen();
+    } else {
+      pauseMs = o.pauseMs != null ? o.pauseMs : PAUSE_MS;
+      bestand = bestandAnlegen({
+        dbName: o.dbName || BESTAND_DB_NAME + "_test",
+        lsKey: o.lsKey || PREIS_CACHE_KEY + "_test",
+        ohneIndexedDb: !!o.ohneIndexedDb,
+      });
+    }
+    return bestandBereit();
+  }
+
+  /** Nur fuer Tests: Eintraege direkt in den Bestand schreiben (Messung mit vielen Eintraegen). */
+  function testBestandSchreiben(store, paare) {
+    bestand.schreiben(store, paare);
+    return bestand.geschrieben();
+  }
+
+  /** Nur fuer Tests: Datenbank eines Testbestands loeschen. */
+  function testDatenbankLoeschen(dbName) {
+    return new Promise((resolve) => {
+      if (typeof indexedDB === "undefined" || !indexedDB) return resolve();
+      const req = indexedDB.deleteDatabase(dbName);
+      req.onsuccess = req.onerror = req.onblocked = () => resolve();
+    });
+  }
+
+  /**
+   * Sicht auf den Preisbestand im Format von vor v3.15.0
+   * ({schema, eintraege}), synchron aus der Arbeitskopie. Vor Ablauf von
+   * bestandBereit() ist sie leer.
+   */
+  function preisCacheLesen() {
+    const cache = leererPreisCache();
+    bestand.preise.forEach((wert, key) => {
+      cache.eintraege[key] = wert;
+    });
+    return cache;
   }
 
   /**
@@ -258,21 +587,25 @@ const PREISE = (function () {
     return stadt + "::" + id + "::q" + q;
   }
 
-  function preisCacheSchreiben(cache) {
-    try {
-      localStorage.setItem(PREIS_CACHE_KEY, JSON.stringify(cache));
-    } catch (e) {
-      // Speicher voll/gesperrt (z.B. manche Browser bei file://) - die
-      // laufende Abfrage funktioniert trotzdem, nur ohne Zwischenspeicher.
-    }
+  /**
+   * Schluessel des Merkers "alle Qualitaeten dieser ID in dieser Stadt
+   * wurden in EINEM Abruf geholt" (preiseAlleQualitaetenAbrufen). Der Merker
+   * haelt Abrufzeit und die gelieferten Qualitaeten; die Preiszeilen selbst
+   * liegen unter cacheSchluessel(stadt, id, q) und dienen damit auch
+   * preiseAbrufen() mit derselben Qualitaet.
+   */
+  function alleQSchluessel(stadt, id) {
+    return stadt + "::" + id + "::qA";
   }
 
+  /** Schluessel im Volumenbestand. art: "a" = Absatz je Qualitaet, "v" = 7-Tage-Summe. */
+  function volumenSchluessel(art, stadt, id, tageFenster) {
+    return stadt + "::" + id + "::" + art + tageFenster;
+  }
+
+  /** Leert den ganzen Bestand (Preise und Handelsvolumen), Arbeitskopie sofort, dauerhaft im Hintergrund. */
   function preisCacheLeeren() {
-    try {
-      localStorage.removeItem(PREIS_CACHE_KEY);
-    } catch (e) {
-      /* ignorieren */
-    }
+    bestand.leeren();
   }
 
   /** Alter eines Cache-Eintrags in Minuten, oder null wenn kein Eintrag. */
@@ -283,7 +616,8 @@ const PREISE = (function () {
 
   function istFrisch(eintrag, maxAlterMin) {
     const alter = eintragAlterMinuten(eintrag);
-    return alter !== null && alter <= maxAlterMin;
+    // alter >= 0: ein Eintrag aus der Zukunft (Systemuhr zurueckgestellt) gilt nicht als frisch.
+    return alter !== null && alter >= 0 && alter <= maxAlterMin;
   }
 
   // "0001-01-01..." ist der Marker der API fuer "kein Angebot". Ein fehlendes
@@ -325,6 +659,7 @@ const PREISE = (function () {
     let letzterFehler = null;
     for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
       try {
+        abrufe++;
         const antwort = await fetch(url);
         if (antwort.status === 429) {
           await warte(PAUSE_MS * Math.pow(2, versuch + 1));
@@ -341,8 +676,8 @@ const PREISE = (function () {
   }
 
   /**
-   * Ruft Preise fuer die gegebenen Markt-IDs ab. Bereits frische Cache-
-   * Eintraege werden nicht neu abgerufen. Der Rest wird sequenziell in
+   * Ruft Preise fuer die gegebenen Markt-IDs ab. Bereits frische Eintraege
+   * im Bestand (s. Abschnitt "Bestand") werden nicht neu abgerufen. Der Rest wird sequenziell in
    * 50er-Bloecken mit Pause geholt, bei HTTP 429 mit wachsender Wartezeit
    * wiederholt (1,5s * 2^n).
    *
@@ -376,16 +711,17 @@ const PREISE = (function () {
     const erzwingen = !!opts.erzwingen;
     const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
 
-    const cache = preisCacheLesen();
+    const b = bestand;
+    await b.bereit;
     const eindeutigeIds = Array.from(new Set(ids));
 
     const zuHolen = erzwingen
       ? eindeutigeIds
-      : eindeutigeIds.filter((id) => !istFrisch(cache.eintraege[cacheSchluessel(stadt, id, qualitaet)], maxAlterMin));
+      : eindeutigeIds.filter((id) => !istFrisch(b.preise.get(cacheSchluessel(stadt, id, qualitaet)), maxAlterMin));
 
     const ergebnis = {};
     eindeutigeIds.forEach((id) => {
-      ergebnis[id] = cache.eintraege[cacheSchluessel(stadt, id, qualitaet)] || null;
+      ergebnis[id] = b.preise.get(cacheSchluessel(stadt, id, qualitaet)) || null;
     });
 
     const gesamt = eindeutigeIds.length;
@@ -397,12 +733,14 @@ const PREISE = (function () {
     for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
       const zeilen = await holeBlock(block, stadt, qualitaet);
       const gesehen = new Set();
+      const neu = [];
       (zeilen || []).forEach((zeile) => {
         const eintrag = normalisierePreisZeile(zeile);
-        cache.eintraege[cacheSchluessel(stadt, eintrag.id, qualitaet)] = eintrag;
+        neu.push([cacheSchluessel(stadt, eintrag.id, qualitaet), eintrag]);
         ergebnis[eintrag.id] = eintrag;
         gesehen.add(eintrag.id);
       });
+      b.schreiben(STORE_PREISE, neu);
       // IDs, die die API nicht in der Antwort mitliefert (statt einer
       // Nullzeile), bleiben "nie abgefragt" statt faelschlich "kein Angebot".
       block.forEach((id) => {
@@ -410,8 +748,7 @@ const PREISE = (function () {
       });
       erledigt += block.length;
       aufFortschritt(erledigt, gesamt);
-      preisCacheSchreiben(cache);
-      await warte(PAUSE_MS);
+      await warte(pauseMs);
     }
 
     return ergebnis;
@@ -438,26 +775,57 @@ const PREISE = (function () {
 
   /**
    * Preise in allen fuenf Qualitaeten, ein Abruf je 50er-Block (dieselbe
-   * Anzahl Anfragen wie preiseAbrufen, nur groessere Antworten). Immer frisch,
-   * ohne Zwischenspeicher, gleiche Drossel-Disziplin.
+   * Anzahl Anfragen wie preiseAbrufen, nur groessere Antworten), gleiche
+   * Drossel-Disziplin. Seit v3.15.0 aus dem Bestand, soweit der Merker
+   * alleQSchluessel() frisch ist; opts.erzwingen holt alles neu.
+   * @param {string[]} ids
+   * @param {object} [opts]
+   * @param {string} [opts.stadt=STADT_DEFAULT]
+   * @param {number} [opts.cacheMaxAlterMin=30]
+   * @param {boolean} [opts.erzwingen=false]
+   * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
    * @returns {Promise<Object<string, Object<number, object>>>} id -> qualitaet -> Eintrag ({} = nichts geliefert)
    */
   async function preiseAlleQualitaetenAbrufen(ids, opts) {
     opts = opts || {};
     const stadt = opts.stadt || STADT_DEFAULT;
+    const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : CACHE_GUELTIG_MIN_DEFAULT;
+    const erzwingen = !!opts.erzwingen;
     const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
+    const b = bestand;
+    await b.bereit;
     const eindeutigeIds = Array.from(new Set(ids));
     const ergebnis = {};
-    let erledigt = 0;
-    aufFortschritt(erledigt, eindeutigeIds.length);
-    for (const block of bloecke(eindeutigeIds, BLOCKGROESSE)) {
-      const teil = preiseJeQualitaetAusAntwort(await holeBlock(block, stadt, "1,2,3,4,5"));
-      block.forEach((id) => {
-        ergebnis[id] = teil[id] || {};
+    const zuHolen = [];
+    eindeutigeIds.forEach((id) => {
+      const merker = erzwingen ? null : b.preise.get(alleQSchluessel(stadt, id));
+      if (!istFrisch(merker, maxAlterMin)) {
+        zuHolen.push(id);
+        return;
+      }
+      const jeQ = {};
+      (merker.qualitaeten || []).forEach((q) => {
+        const e = b.preise.get(cacheSchluessel(stadt, id, q));
+        if (e) jeQ[q] = e;
       });
+      ergebnis[id] = jeQ;
+    });
+    let erledigt = eindeutigeIds.length - zuHolen.length;
+    aufFortschritt(erledigt, eindeutigeIds.length);
+    for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
+      const teil = preiseJeQualitaetAusAntwort(await holeBlock(block, stadt, "1,2,3,4,5"));
+      const jetzt = Date.now();
+      const neu = [];
+      block.forEach((id) => {
+        const jeQ = teil[id] || {};
+        ergebnis[id] = jeQ;
+        Object.keys(jeQ).forEach((q) => neu.push([cacheSchluessel(stadt, id, Number(q)), jeQ[q]]));
+        neu.push([alleQSchluessel(stadt, id), { alleQ: true, qualitaeten: Object.keys(jeQ).map(Number), abgerufenAm: jetzt }]);
+      });
+      b.schreiben(STORE_PREISE, neu);
       erledigt += block.length;
       aufFortschritt(erledigt, eindeutigeIds.length);
-      await warte(PAUSE_MS);
+      await warte(pauseMs);
     }
     return ergebnis;
   }
@@ -474,8 +842,9 @@ const PREISE = (function () {
   // gehandelt wird. Nutzer-Entscheidung 05.09.2026: nur per Knopfdruck
   // (kein automatischer Abruf), 7-Tage-Summe von item_count plus
   // mengengewichteter Durchschnittspreis (wie eintopf_update.py
-  // volumen_holen(), Kennzahlen d7/avg dort), nur fuer die Sitzung im
-  // Speicher gehalten (kein localStorage-Cache, kein Schema noetig).
+  // volumen_holen(), Kennzahlen d7/avg dort). Bis v3.14.1 nur fuer die
+  // Sitzung im Speicher gehalten; seit v3.15.0 im Volumenbestand mit
+  // Abrufzeit, gueltig VOLUMEN_GUELTIG_MIN Minuten.
   // ---------------------------------------------------------------------
 
   async function holeHistorieBlock(ids, stadt) {
@@ -483,6 +852,7 @@ const PREISE = (function () {
     let letzterFehler = null;
     for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
       try {
+        abrufe++;
         const antwort = await fetch(url);
         if (antwort.status === 429) {
           await warte(PAUSE_MS * Math.pow(2, versuch + 1));
@@ -568,6 +938,7 @@ const PREISE = (function () {
     const url = `${API_BASE}/gold.json?count=${anzahl}`;
     for (let versuch = 0; versuch < MAX_VERSUCHE; versuch++) {
       try {
+        abrufe++;
         const antwort = await fetch(url);
         if (antwort.status === 429) {
           await warte(PAUSE_MS * Math.pow(2, versuch + 1));
@@ -612,50 +983,68 @@ const PREISE = (function () {
   }
 
   /**
-   * Ruft das 7-Tage-Handelsvolumen fuer die gegebenen Markt-IDs ab. Bewusst
-   * OHNE localStorage-Cache (Nutzer-Entscheidung 05.09.2026, "nur laufende
-   * Sitzung"): der Aufrufer (ui.js) haelt das Ergebnis selbst im
-   * Seitenspeicher, solange die Seite offen ist. Sequenziell in 50er-
-   * Bloecken mit Pause, bei HTTP 429 mit wachsender Wartezeit wiederholt -
-   * dieselbe Drossel-Disziplin wie preiseAbrufen().
+   * Ruft das 7-Tage-Handelsvolumen fuer die gegebenen Markt-IDs ab. Seit
+   * v3.15.0 aus dem Volumenbestand, soweit der Eintrag hoechstens
+   * VOLUMEN_GUELTIG_MIN Minuten alt ist (auch ein "nichts geliefert" wird
+   * gemerkt). Sequenziell in 50er-Bloecken mit Pause, bei HTTP 429 mit
+   * wachsender Wartezeit wiederholt, dieselbe Drossel-Disziplin wie
+   * preiseAbrufen().
    *
    * @param {string[]} ids Markt-IDs, typischerweise die aktuell gesperrten Kaufen-Knoten im Bauplan-Baum
    * @param {object} [opts]
    * @param {string} [opts.stadt=STADT_DEFAULT]
    * @param {number} [opts.tageFenster=7]
+   * @param {number} [opts.cacheMaxAlterMin=VOLUMEN_GUELTIG_MIN]
+   * @param {boolean} [opts.erzwingen=false]
    * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
-   * @returns {Promise<Object<string, {umsatz7Tage:number, mengengewichteterPreis:?number}|null>>}
+   * @returns {Promise<Object<string, {umsatz7Tage:number, mengengewichteterPreis:?number, abgerufenAm:number}|null>>}
    *   null = history/ lieferte fuer diese ID keine (oder keine auswertbare) Zeile.
    */
   async function volumenAbrufen(ids, opts) {
     opts = opts || {};
     const stadt = opts.stadt || STADT_DEFAULT;
     const tageFenster = opts.tageFenster || 7;
+    const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : VOLUMEN_GUELTIG_MIN;
+    const erzwingen = !!opts.erzwingen;
     const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
+    const b = bestand;
+    await b.bereit;
 
     const eindeutigeIds = Array.from(new Set(ids));
     const ergebnis = {};
     const gesamt = eindeutigeIds.length;
-    let erledigt = 0;
+    const zuHolen = [];
+    eindeutigeIds.forEach((id) => {
+      const da = erzwingen ? null : b.volumen.get(volumenSchluessel("v", stadt, id, tageFenster));
+      if (istFrisch(da, maxAlterMin)) ergebnis[id] = da.wert;
+      else zuHolen.push(id);
+    });
+    let erledigt = gesamt - zuHolen.length;
     aufFortschritt(erledigt, gesamt);
-    if (!gesamt) return ergebnis;
+    if (!zuHolen.length) return ergebnis;
 
-    for (const block of bloecke(eindeutigeIds, BLOCKGROESSE)) {
+    for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
       const zeilen = await holeHistorieBlock(block, stadt);
-      const gesehen = new Set();
+      const jetzt = Date.now();
+      const teil = {};
       (zeilen || []).forEach((zeile) => {
         const eintrag = normalisiereHistorieZeile(zeile, tageFenster);
         if (eintrag) {
-          ergebnis[eintrag.id] = eintrag;
-          gesehen.add(eintrag.id);
+          eintrag.abgerufenAm = jetzt;
+          teil[eintrag.id] = eintrag;
         }
       });
+      const neu = [];
       block.forEach((id) => {
-        if (!gesehen.has(id)) ergebnis[id] = null;
+        ergebnis[id] = teil[id] || null;
+        neu.push([volumenSchluessel("v", stadt, id, tageFenster), { abgerufenAm: jetzt, wert: ergebnis[id] }]);
       });
+      // Eine ganz leere Antwort (HTTP 200 ohne Zeilen) nicht als "kein Handel" merken:
+      // sonst fiele der ganze Block 60 Minuten lang durch den Volumenfilter.
+      if (zeilen && zeilen.length) b.schreiben(STORE_VOLUMEN, neu);
       erledigt += block.length;
       aufFortschritt(erledigt, gesamt);
-      await warte(PAUSE_MS);
+      await warte(pauseMs);
     }
     return ergebnis;
   }
@@ -748,14 +1137,18 @@ const PREISE = (function () {
   }
 
   /**
-   * Ruft den erfassten Tagesabsatz je Qualitaet ab. Wie volumenAbrufen()
-   * bewusst OHNE localStorage-Cache, nur fuer die laufende Sitzung; gleiche
-   * Drossel-Disziplin (50er-Bloecke, 1,5 s Pause, Backoff bei 429).
+   * Ruft den erfassten Tagesabsatz je Qualitaet ab. Seit v3.15.0 aus dem
+   * Volumenbestand, soweit der Eintrag hoechstens VOLUMEN_GUELTIG_MIN
+   * Minuten alt ist (auch "nichts erfasst" wird gemerkt); gleiche
+   * Drossel-Disziplin (50er-Bloecke, 1,5 s Pause, Backoff bei 429). Jeder
+   * Qualitaetseintrag traegt zusaetzlich abgerufenAm.
    *
    * @param {string[]} ids Markt-IDs
    * @param {object} [opts]
    * @param {string} [opts.stadt=STADT_DEFAULT]
    * @param {number} [opts.tageFenster=7]
+   * @param {number} [opts.cacheMaxAlterMin=VOLUMEN_GUELTIG_MIN]
+   * @param {boolean} [opts.erzwingen=false]
    * @param {(erledigt:number, gesamt:number)=>void} [opts.aufFortschritt]
    * @returns {Promise<Object<string, Object<number, object>>>} id -> qualitaet -> Eintrag ({} = nichts erfasst)
    */
@@ -763,26 +1156,51 @@ const PREISE = (function () {
     opts = opts || {};
     const stadt = opts.stadt || STADT_DEFAULT;
     const tageFenster = opts.tageFenster || 7;
+    const maxAlterMin = opts.cacheMaxAlterMin != null ? opts.cacheMaxAlterMin : VOLUMEN_GUELTIG_MIN;
+    const erzwingen = !!opts.erzwingen;
     const aufFortschritt = typeof opts.aufFortschritt === "function" ? opts.aufFortschritt : function () {};
+    const b = bestand;
+    await b.bereit;
 
     const eindeutigeIds = Array.from(new Set(ids));
     const ergebnis = {};
     const gesamt = eindeutigeIds.length;
-    let erledigt = 0;
+    const zuHolen = [];
+    eindeutigeIds.forEach((id) => {
+      const da = erzwingen ? null : b.volumen.get(volumenSchluessel("a", stadt, id, tageFenster));
+      if (istFrisch(da, maxAlterMin)) ergebnis[id] = da.jeQ || {};
+      else zuHolen.push(id);
+    });
+    let erledigt = gesamt - zuHolen.length;
     aufFortschritt(erledigt, gesamt);
-    if (!gesamt) return ergebnis;
+    if (!zuHolen.length) return ergebnis;
 
-    for (const block of bloecke(eindeutigeIds, BLOCKGROESSE)) {
+    for (const block of bloecke(zuHolen, BLOCKGROESSE)) {
       const zeilen = await holeHistorieBlock(block, stadt);
-      const teil = absatzAusAntwort(zeilen, tageFenster);
+      const jetzt = Date.now();
+      const teil = absatzAusAntwort(zeilen, tageFenster, jetzt);
+      const neu = [];
       block.forEach((id) => {
-        ergebnis[id] = teil[id] || {};
+        const jeQ = teil[id] || {};
+        Object.keys(jeQ).forEach((q) => {
+          jeQ[q].abgerufenAm = jetzt;
+        });
+        ergebnis[id] = jeQ;
+        neu.push([volumenSchluessel("a", stadt, id, tageFenster), { abgerufenAm: jetzt, jeQ }]);
       });
+      // Eine ganz leere Antwort (HTTP 200 ohne Zeilen) nicht als "kein Handel" merken:
+      // sonst fiele der ganze Block 60 Minuten lang durch den Volumenfilter.
+      if (zeilen && zeilen.length) b.schreiben(STORE_VOLUMEN, neu);
       erledigt += block.length;
       aufFortschritt(erledigt, gesamt);
-      await warte(PAUSE_MS);
+      await warte(pauseMs);
     }
     return ergebnis;
+  }
+
+  /** Zahl der HTTP-Anfragen dieser Sitzung (Preise, Handelsvolumen, Gold), fuer Statuszeilen und Tests. */
+  function abrufZaehler() {
+    return abrufe;
   }
 
   // ---------------------------------------------------------------------
@@ -811,7 +1229,7 @@ const PREISE = (function () {
     try {
       localStorage.setItem(EIGENPREIS_KEY, JSON.stringify(speicher));
     } catch (e) {
-      /* ignorieren, s. preisCacheSchreiben */
+      /* ignorieren: Speicher voll oder gesperrt */
     }
   }
 
@@ -1110,6 +1528,17 @@ const PREISE = (function () {
     QUALITAET,
     PREIS_CACHE_SCHEMA_VERSION,
     EIGENPREIS_SCHEMA_VERSION,
+    PREIS_GUELTIG_MIN: CACHE_GUELTIG_MIN_DEFAULT,
+    VOLUMEN_GUELTIG_MIN,
+    BESTAND_DB_NAME,
+    cacheSchluessel,
+    bestandBereit,
+    bestandInfo,
+    bestandGeschrieben,
+    abrufZaehler,
+    testEinstellen,
+    testBestandSchreiben,
+    testDatenbankLoeschen,
     marktId,
     sammleMarktIds,
     sammleQualitaetsMarktIds,

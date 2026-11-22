@@ -3011,6 +3011,348 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   })();
 
   // -----------------------------------------------------------------------
+  // Asynchrone Tests: gemeinsamer Preisbestand (v3.15.0, OPTIMIERUNG-PLAN.md O1)
+  //
+  // Laufen nach den synchronen Selbsttests, mit nachgebildetem fetch (kein
+  // Netzzugriff) und in EIGENEN Testdatenbanken: alle file://-Seiten teilen
+  // sich eine Herkunft, der echte Bestand der App darf nicht beruehrt werden.
+  // Fertig, sobald document.body.dataset.testsFertig === "1".
+  // -----------------------------------------------------------------------
+  document.body.dataset.testsAsync = "1";
+
+  async function bestandTests() {
+    const DB = PREISE.BESTAND_DB_NAME + "_test";
+    const DB_GROSS = PREISE.BESTAND_DB_NAME + "_test_gross";
+    const LS = "albion_kostenrechner_preiscache_test";
+    const hatIdb = typeof indexedDB !== "undefined" && !!indexedDB;
+    const echtesFetch = window.fetch;
+    const log = [];
+    const hash = (text) => {
+      let x = 7;
+      for (let i = 0; i < text.length; i++) x = (x * 31 + text.charCodeAt(i)) % 100003;
+      return x;
+    };
+    const DATUM = "2026-11-22T10:00:00";
+    const JETZT = Date.parse("2026-11-22T10:30:00Z");
+    // Feste synthetische Preise: allein aus Stadt, Markt-ID und Qualitaet abgeleitet.
+    const preisZeile = (id, stadt, q) => {
+      const sell = 100 + (hash(stadt + "|" + id) % 5000) + q * 10;
+      return { item_id: id, city: stadt, quality: q, sell_price_min: sell, sell_price_min_date: DATUM, buy_price_max: Math.floor(sell * 0.8), buy_price_max_date: DATUM };
+    };
+    const historieZeilen = (id, stadt) =>
+      [1, 2].map((q) => ({
+        location: stadt,
+        item_id: id,
+        quality: q,
+        data: [{ item_count: 7 * (1 + (hash(id + stadt) % 30)) * q, avg_price: 500, timestamp: new Date(Date.now() - 86400000).toISOString().slice(0, 19) }],
+      }));
+    const antwortFuer = (url) => {
+      const u = decodeURIComponent(url);
+      const stadt = /[?&]locations=([^&]+)/.exec(u)[1];
+      const p = /\/prices\/(.+)\.json/.exec(u);
+      if (p) {
+        const qs = /[?&]qualities=([^&]+)/.exec(u)[1].split(",").map(Number);
+        return [].concat(...p[1].split(",").map((id) => qs.map((q) => preisZeile(id, stadt, q))));
+      }
+      const hi = /\/history\/(.+)\.json/.exec(u);
+      if (hi) return [].concat(...hi[1].split(",").map((id) => historieZeilen(id, stadt)));
+      return [];
+    };
+    window.fetch = async (url) => {
+      log.push(String(url));
+      return { status: 200, ok: true, json: async () => antwortFuer(String(url)) };
+    };
+    const ohneAbrufzeit = (wert) => JSON.stringify(wert, (k, v) => (k === "abgerufenAm" ? undefined : v));
+    const stockungMessen = () => {
+      let max = 0;
+      let letzte = performance.now();
+      let an = true;
+      (function tick() {
+        const j = performance.now();
+        max = Math.max(max, j - letzte);
+        letzte = j;
+        if (an) setTimeout(tick, 0);
+      })();
+      return () => {
+        an = false;
+        return Math.round(max);
+      };
+    };
+
+    try {
+      await PREISE.testDatenbankLoeschen(DB);
+      await PREISE.testDatenbankLoeschen(DB_GROSS);
+      localStorage.removeItem(LS);
+      let info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS });
+      pruefe(
+        "bestand: Testbestand ist leer und laeuft in IndexedDB (ohne IndexedDB im Rueckfall localStorage)",
+        info.preise === 0 && info.volumen === 0 && info.modus === (hatIdb ? "indexeddb" : "localstorage"),
+        JSON.stringify(info)
+      );
+      pruefe("bestand: Gueltigkeit Preise 30 Min., Handelsvolumen 60 Min. (benannte Konstanten)", PREISE.PREIS_GUELTIG_MIN === 30 && PREISE.VOLUMEN_GUELTIG_MIN === 60);
+
+      // ---- Anzeige des Alters ----
+      const T0 = Date.parse("2026-11-22T12:00:00Z");
+      pruefe(
+        "bestand: aeltesteAbrufzeit nimmt den aeltesten Eintrag und uebergeht fehlende",
+        VEREDELN.aeltesteAbrufzeit([{ abgerufenAm: 500 }, null, { abgerufenAm: 200 }, {}, { abgerufenAm: 900 }]) === 200 && VEREDELN.aeltesteAbrufzeit([null, {}]) === null
+      );
+      pruefe(
+        "bestand: abrufAlterText (gerade eben, Minuten, Stunden, Tage, leer ohne Angabe)",
+        VEREDELN.abrufAlterText(T0 - 20000, T0) === "gerade eben" &&
+          VEREDELN.abrufAlterText(T0 - 27 * 60000, T0) === "vor 27 Min." &&
+          VEREDELN.abrufAlterText(T0 - 5 * 3600000, T0) === "vor 5 Std." &&
+          VEREDELN.abrufAlterText(T0 - 3 * 86400000, T0) === "vor 3 Tagen" &&
+          VEREDELN.abrufAlterText(null, T0) === "",
+        VEREDELN.abrufAlterText(T0 - 27 * 60000, T0)
+      );
+      const stText = VEREDELN.bestandStatusText(0, T0 - 27 * 60000, T0);
+      pruefe(
+        "bestand: Statuszeile nennt Abrufzahl und den aeltesten verwendeten Wert",
+        /^Alles aus dem Preisbestand, kein Abruf\. Ältester verwendeter Wert: abgerufen um \d\d:\d\d \(vor 27 Min\.\)\.$/.test(stText) &&
+          VEREDELN.bestandStatusText(3, null, T0) === "3 Abrufe, Rest aus dem Preisbestand." &&
+          VEREDELN.bestandStatusText(1, null, T0, true) === "1 Abruf, alles frisch abgerufen.",
+        stText
+      );
+
+      // ---- Craften: Gewinn, zweite Suche derselben Auswahl ----
+      const einstC = { premium: true, stationssaetze: { Kriegerschmiede: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null };
+      const auswahlC = CRAFTEN.einstellungenBereinigen({
+        warengruppen: ["sword"], tiers: [4, 5], stufen: [0, 1], einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Lymhurst"], verkaufsweg: "order",
+      });
+      const kandC = CRAFTEN.kandidaten(auswahlC);
+      const c1 = await CRAFTEN.datenAbrufen(kandC, auswahlC);
+      const nachErster = log.length;
+      pruefe("bestand: erste Suche (Craften) ruft ab, Zaehler stimmt mit den fetch-Aufrufen ueberein", nachErster > 0 && c1.abrufe === nachErster, c1.abrufe + " gemeldet, " + nachErster + " fetch");
+      const c2 = await CRAFTEN.datenAbrufen(kandC, auswahlC);
+      pruefe("bestand: zweite Suche derselben Auswahl (Craften) loest 0 Abrufe aus", c2.abrufe === 0 && log.length === nachErster, c2.abrufe + " gemeldet, " + (log.length - nachErster) + " fetch");
+      const zeilenC1 = CRAFTEN.zeilenRechnen(kandC, c1.stadtDaten, auswahlC, einstC, JETZT);
+      const zeilenC2 = CRAFTEN.zeilenRechnen(kandC, c2.stadtDaten, auswahlC, einstC, JETZT);
+      pruefe(
+        "bestand: Zeilen aus dem Bestand sind identisch mit denen des frischen Abrufs (Craften)",
+        zeilenC1.length > 0 && zeilenC1.some((z) => z.gewinn != null) && JSON.stringify(zeilenC1) === JSON.stringify(zeilenC2),
+        zeilenC1.length + " Zeilen, " + zeilenC1.filter((z) => z.gewinn != null).length + " mit Ergebnis"
+      );
+      // Gegenprobe ohne Bestand: dieselben synthetischen Antworten direkt
+      // normalisiert, so wie die Suche bis v3.14.1 ihre Daten bekam.
+      const idsC = CRAFTEN.benoetigteMarktIds(kandC);
+      const direktC = ["Lymhurst", "Martlock"].map((stadt) => {
+        const e = { stadt };
+        e.preiseRoh = {};
+        idsC.zutaten.forEach((id) => {
+          e.preiseRoh[id] = PREISE.preiseJeQualitaetAusAntwort([preisZeile(id, stadt, 1)])[id][1];
+        });
+        if (stadt === "Lymhurst") {
+          e.produktJeQ = PREISE.preiseJeQualitaetAusAntwort([].concat(...idsC.produkte.map((id) => [1, 2, 3, 4, 5].map((q) => preisZeile(id, stadt, q)))));
+          e.absatz = PREISE.absatzAusAntwort([].concat(...idsC.produkte.map((id) => historieZeilen(id, stadt))), 7);
+        }
+        return e;
+      });
+      const zeilenDirekt = CRAFTEN.zeilenRechnen(kandC, direktC, auswahlC, einstC, JETZT);
+      pruefe(
+        "bestand: Rechenergebnis mit Bestand ist identisch zum Rechenergebnis ohne Bestand bei gleichen Preisen (Craften)",
+        ohneAbrufzeit(zeilenC2) === ohneAbrufzeit(zeilenDirekt),
+        "erste Abweichung: " + (zeilenC2.findIndex((z, i) => ohneAbrufzeit(z) !== ohneAbrufzeit(zeilenDirekt[i])))
+      );
+      const c3 = await CRAFTEN.datenAbrufen(kandC, auswahlC, { frisch: true });
+      pruefe("bestand: \"Frisch abrufen\" (Craften) umgeht den Bestand und holt alles neu", c3.abrufe === c1.abrufe, c3.abrufe + " gegen " + c1.abrufe);
+      const vorAblauf = log.length;
+      await PREISE.preiseAbrufen(idsC.zutaten.slice(0, 3), { stadt: "Lymhurst", qualitaet: 1, cacheMaxAlterMin: -1 });
+      pruefe("bestand: ein Eintrag jenseits der Gueltigkeit wird neu abgerufen", log.length === vorAblauf + 1, log.length - vorAblauf);
+
+      // ---- Veredeln leveln, dann Craften: Gewinn mit denselben Schluesseln ----
+      const einstV = { stationssaetze: { Schmelze: 400, Gerberei: 400 }, fce: 0, premium: true, maxPreisAlterMin: null, fceAusnahmen: {}, spezialisierung: {} };
+      const auswahlV = VEREDELN.einstellungenBereinigen({
+        rohstoffe: ["ore", "hide"], tiers: [4, 5], stufen: [0, 1], einkaufStaedte: ["Thetford"], verkaufStaedte: ["Thetford"],
+      });
+      const kandV = VEREDELN.kandidaten(auswahlV);
+      const vorV = log.length;
+      const v1 = await VEREDELN.datenAbrufen(kandV, auswahlV);
+      pruefe("bestand: erste Suche (Veredeln) ruft ab", v1.abrufe > 0 && log.length - vorV === v1.abrufe, v1.abrufe);
+      const v2 = await VEREDELN.datenAbrufen(kandV, auswahlV);
+      pruefe("bestand: zweite Suche derselben Auswahl (Veredeln) loest 0 Abrufe aus", v2.abrufe === 0, v2.abrufe);
+      const zeilenV1 = VEREDELN.zeilenRechnen(kandV, v1.stadtDaten, auswahlV, einstV, JETZT);
+      const zeilenV2 = VEREDELN.zeilenRechnen(kandV, v2.stadtDaten, auswahlV, einstV, JETZT);
+      const direktV = [{ stadt: "Thetford", preiseRoh: {}, absatz: PREISE.absatzAusAntwort([].concat(...v1.produktIds.map((id) => historieZeilen(id, "Thetford"))), 7) }];
+      v1.zutatIds.concat(v1.produktIds).forEach((id) => {
+        direktV[0].preiseRoh[id] = PREISE.preiseJeQualitaetAusAntwort([preisZeile(id, "Thetford", 1)])[id][1];
+      });
+      pruefe(
+        "bestand: Rechenergebnis mit Bestand ist identisch zum Rechenergebnis ohne Bestand bei gleichen Preisen (Veredeln)",
+        zeilenV1.some((z) => z.gewinn != null) &&
+          JSON.stringify(zeilenV1) === JSON.stringify(zeilenV2) &&
+          ohneAbrufzeit(zeilenV2) === ohneAbrufzeit(VEREDELN.zeilenRechnen(kandV, direktV, auswahlV, einstV, JETZT)),
+        zeilenV1.length + " Zeilen"
+      );
+      const auswahlC2 = Object.assign({}, CRAFTEN.einstellungenBereinigen({ warengruppen: ["sword"], tiers: [4, 5], stufen: [0, 1], artefakte: false, einkaufStaedte: ["Thetford"] }), { verkaufStaedte: [] });
+      const kandC2 = CRAFTEN.kandidaten(auswahlC2);
+      const zutatenC2 = CRAFTEN.benoetigteMarktIds(kandC2).zutaten;
+      const vomVeredeln = new Set(v1.zutatIds.concat(v1.produktIds));
+      pruefe(
+        "bestand: alle Schwert-Zutaten ohne Artefakt-Items (T4/T5, .0/.1) sind Markt-IDs, die Veredeln leveln fuer Erz und Haut geholt hat",
+        zutatenC2.length > 0 && zutatenC2.every((id) => vomVeredeln.has(id)),
+        zutatenC2.filter((id) => !vomVeredeln.has(id)).join(",")
+      );
+      const c4 = await CRAFTEN.datenAbrufen(kandC2, auswahlC2);
+      pruefe("bestand: was Veredeln leveln geholt hat, nutzt Craften: Gewinn ohne neuen Abruf (gleiche Stadt, ID, Qualitaet)", c4.abrufe === 0, c4.abrufe);
+      pruefe(
+        "bestand: Craften bekommt dabei dieselben Preise wie Veredeln",
+        zutatenC2.every((id) => c4.stadtDaten[0].preiseRoh[id] && c4.stadtDaten[0].preiseRoh[id].sell.preis === v1.stadtDaten[0].preiseRoh[id].sell.preis)
+      );
+      const vorAndereStadt = log.length;
+      await PREISE.preiseAbrufen(zutatenC2, { stadt: "Bridgewatch", qualitaet: 1 });
+      pruefe("bestand: eine andere Stadt wird nicht aus dem Bestand einer fremden Stadt bedient", log.length > vorAndereStadt);
+
+      // ---- Handelsvolumen ----
+      const vorVol = log.length;
+      const vol1 = await PREISE.volumenAbrufen(["T4_BAG", "T5_BAG"], { stadt: "Lymhurst" });
+      const vol2 = await PREISE.volumenAbrufen(["T4_BAG", "T5_BAG"], { stadt: "Lymhurst" });
+      pruefe(
+        "bestand: volumenAbrufen legt mit Abrufzeit ab, zweiter Aufruf ohne Abruf und mit denselben Werten",
+        log.length === vorVol + 1 && vol1.T4_BAG && vol1.T4_BAG.abgerufenAm > 0 && JSON.stringify(vol1) === JSON.stringify(vol2),
+        JSON.stringify(vol2.T4_BAG)
+      );
+      const abs1 = await PREISE.absatzAbrufen(["T4_BAG"], { stadt: "Lymhurst", tageFenster: 7 });
+      const vorAbs = log.length;
+      const abs2 = await PREISE.absatzAbrufen(["T4_BAG"], { stadt: "Lymhurst", tageFenster: 7 });
+      await PREISE.absatzAbrufen(["T4_BAG"], { stadt: "Lymhurst", tageFenster: 7, erzwingen: true });
+      pruefe(
+        "bestand: absatzAbrufen je Qualitaet aus dem Bestand, erzwingen holt neu",
+        log.length === vorAbs + 1 && abs2.T4_BAG[1].abgerufenAm > 0 && abs2.T4_BAG[2].stueckJeTag === abs1.T4_BAG[2].stueckJeTag,
+        JSON.stringify(abs2.T4_BAG)
+      );
+
+      // ---- Dauerhaft: Bestand neu oeffnen, ohne Abruf weiterarbeiten ----
+      await PREISE.bestandGeschrieben();
+      const vorNeu = PREISE.bestandInfo();
+      info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS });
+      const vorNeuLog = log.length;
+      const c5 = await CRAFTEN.datenAbrufen(kandC, auswahlC);
+      pruefe(
+        "bestand: nach dem Neuoeffnen sind alle Eintraege wieder da und die Suche loest 0 Abrufe aus",
+        info.preise === vorNeu.preise && info.volumen === (hatIdb ? vorNeu.volumen : 0) && (hatIdb ? c5.abrufe === 0 && log.length === vorNeuLog : true),
+        JSON.stringify({ vorher: vorNeu, nachher: info, abrufe: c5.abrufe })
+      );
+      PREISE.preisCacheLeeren();
+      await PREISE.bestandGeschrieben();
+      info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS });
+      pruefe("bestand: Leeren raeumt Arbeitskopie und dauerhaften Bestand", info.preise === 0 && info.volumen === 0, JSON.stringify(info));
+
+      // ---- Migration des alten localStorage-Bestands ----
+      if (hatIdb) {
+        const altEintrag = PREISE.preiseJeQualitaetAusAntwort([preisZeile("T4_MIGRATION", "Lymhurst", 1)]).T4_MIGRATION[1];
+        localStorage.setItem(LS, JSON.stringify({ schema: PREISE.PREIS_CACHE_SCHEMA_VERSION, eintraege: { [PREISE.cacheSchluessel("Lymhurst", "T4_MIGRATION", 1)]: altEintrag } }));
+        info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS });
+        const vorMig = log.length;
+        const mig = await PREISE.preiseAbrufen(["T4_MIGRATION"], { stadt: "Lymhurst" });
+        pruefe(
+          "bestand: alter localStorage-Preisbestand wird einmalig uebernommen und dort entfernt (nicht doppelt gefuehrt)",
+          info.migriert === 1 && localStorage.getItem(LS) === null && log.length === vorMig && mig.T4_MIGRATION.sell.preis === altEintrag.sell.preis,
+          JSON.stringify(info)
+        );
+        localStorage.setItem(LS, JSON.stringify({ schema: -1, eintraege: { x: { abgerufenAm: Date.now() } } }));
+        info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS });
+        pruefe(
+          "bestand: localStorage-Bestand mit fremdem Schema wird verworfen und entfernt",
+          info.migriert === 0 && localStorage.getItem(LS) === null && !("x" in PREISE.preisCacheLesen().eintraege),
+          JSON.stringify(info)
+        );
+      }
+
+      // ---- Rueckfall ohne IndexedDB: Preise wie bis v3.14.1 in localStorage ----
+      localStorage.removeItem(LS);
+      info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS, ohneIndexedDb: true });
+      const vorRf = log.length;
+      await PREISE.preiseAbrufen(["T4_BAG", "T5_BAG"], { stadt: "Lymhurst" });
+      const abgelegt = JSON.parse(localStorage.getItem(LS) || "null");
+      info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS, ohneIndexedDb: true });
+      await PREISE.preiseAbrufen(["T4_BAG", "T5_BAG"], { stadt: "Lymhurst" });
+      pruefe(
+        "bestand: ohne IndexedDB laeuft der Preisbestand ueber localStorage (Schema " + PREISE.PREIS_CACHE_SCHEMA_VERSION + ") und ueberlebt das Neuoeffnen",
+        info.modus === "localstorage" && log.length === vorRf + 1 && abgelegt && abgelegt.schema === PREISE.PREIS_CACHE_SCHEMA_VERSION &&
+          !!abgelegt.eintraege[PREISE.cacheSchluessel("Lymhurst", "T4_BAG", 1)] && info.preise === 2,
+        JSON.stringify(info) + ", fetch " + (log.length - vorRf)
+      );
+      localStorage.removeItem(LS);
+
+      // ---- Messung: 50.000 synthetische Eintraege ----
+      if (hatIdb) {
+        await PREISE.testEinstellen({ pauseMs: 0, dbName: DB_GROSS, lsKey: LS });
+        const N = 50000;
+        const STAEDTE7 = VEREDELN.STAEDTE;
+        const paare = [];
+        const jetzt = Date.now();
+        for (let i = 0; i < N; i++) {
+          const stadt = STAEDTE7[i % 7];
+          const id = "T4_SYNTH_" + Math.floor(i / 35); // je ID 7 Staedte x 5 Qualitaeten
+          const q = 1 + (Math.floor(i / 7) % 5);
+          const e = PREISE.preiseJeQualitaetAusAntwort([preisZeile(id, stadt, q)])[id][q];
+          e.abgerufenAm = jetzt;
+          paare.push([PREISE.cacheSchluessel(stadt, id, q), e]);
+        }
+        const eindeutig = new Set(paare.map((p) => p[0])).size;
+        let stopp = stockungMessen();
+        let t = performance.now();
+        await PREISE.testBestandSchreiben("preise", paare);
+        const schreibMs = Math.round(performance.now() - t);
+        const schreibStockung = stopp();
+        stopp = stockungMessen();
+        t = performance.now();
+        info = await PREISE.testEinstellen({ pauseMs: 0, dbName: DB_GROSS, lsKey: LS });
+        const ladeMs = Math.round(performance.now() - t);
+        const ladeStockung = stopp();
+        // Lesen aus der Arbeitskopie: 1.400 IDs einer Stadt in allen fuenf
+        // Qualitaeten (7.000 Abfragen), alles im Bestand, kein Abruf.
+        const leseIds = [];
+        for (let i = 0; i < 1400; i++) leseIds.push("T4_SYNTH_" + i);
+        const vorLesen = log.length;
+        t = performance.now();
+        const cache = PREISE.preisCacheLesen();
+        const sichtMs = Math.round(performance.now() - t);
+        t = performance.now();
+        let treffer = 0;
+        for (let q = 1; q <= 5; q++) {
+          const r = await PREISE.preiseAbrufen(leseIds, { stadt: "Lymhurst", qualitaet: q, cacheMaxAlterMin: 1e9 });
+          treffer += Object.keys(r).filter((id) => r[id]).length;
+        }
+        const leseMs = Math.round(performance.now() - t);
+        const leseAbrufe = log.length - vorLesen;
+        // Ein gewoehnlicher Abrufblock (50 IDs, 5 Qualitaeten) in den vollen Bestand.
+        const blockIds = [];
+        for (let i = 0; i < 50; i++) blockIds.push("T4_BLOCK_" + i);
+        stopp = stockungMessen();
+        t = performance.now();
+        await PREISE.preiseAlleQualitaetenAbrufen(blockIds, { stadt: "Lymhurst" });
+        await PREISE.bestandGeschrieben();
+        const blockMs = Math.round(performance.now() - t);
+        const blockStockung = stopp();
+        const messung =
+          N + " Eintraege (" + eindeutig + " Schluessel): schreiben " + schreibMs + " ms (laengste Stockung " + schreibStockung + " ms), laden beim Start " +
+          ladeMs + " ms (intern " + Math.round(info.ladeMs) + " ms, laengste Stockung " + ladeStockung + " ms), 7.000 Abfragen aus der Arbeitskopie " + leseMs +
+          " ms (" + treffer + " Treffer, " + leseAbrufe + " Abrufe), ganze Sicht bauen " + sichtMs + " ms, ein Abrufblock (300 Eintraege) schreiben " + blockMs + " ms (Stockung " + blockStockung + " ms)";
+        pruefe(
+          "bestand: Messung 50.000 Eintraege, alle wieder geladen, Lesen ohne Abruf, Laden unter 3 s, Schreiben unter 10 s",
+          eindeutig === N && info.preise === N && leseAbrufe === 0 && treffer === 7000 && Object.keys(cache.eintraege).length === N && ladeMs < 3000 && schreibMs < 10000,
+          messung
+        );
+        window.BESTAND_MESSUNG = messung;
+      }
+    } catch (e) {
+      pruefe("bestand: asynchrone Tests laufen ohne Ausnahme durch", false, (e && e.stack) || e);
+    } finally {
+      window.fetch = echtesFetch;
+      try {
+        await PREISE.testEinstellen(null); // zurueck zum echten Bestand der App
+        await PREISE.testDatenbankLoeschen(DB);
+        await PREISE.testDatenbankLoeschen(DB_GROSS);
+        localStorage.removeItem(LS);
+      } catch (e) {
+        pruefe("bestand: Aufraeumen der Testdatenbanken", false, e);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {
@@ -3035,6 +3377,15 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     zsf.className = "zusammenfassung " + (ok === ergebnisse.length ? "gruen" : "rot");
   }
   renderErgebnisse(alleTests);
+  (function () {
+    const zsf = document.getElementById("zusammenfassung");
+    zsf.textContent += ", asynchrone Tests zum Preisbestand laufen ...";
+    zsf.className = "zusammenfassung";
+    bestandTests().then(() => {
+      renderErgebnisse(alleTests);
+      document.body.dataset.testsFertig = "1";
+    });
+  })();
 
   // -----------------------------------------------------------------------
   // Abschnitt 2: Live-Test aus P2 (unveraendert uebernommen)

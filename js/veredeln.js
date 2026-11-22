@@ -441,6 +441,7 @@ const VEREDELN = (function () {
     z.marge = craft.silber > 0 ? z.gewinn / craft.silber : null;
     z.gewinnJeVorgang = z.gewinn * kandidat.menge;
     z.gewinnGesamt = z.gewinn * menge;
+    z.kostenGesamt = z.silber * menge;
     z.einstufung = einstufen(z.gewinn, craft.silber, toleranz);
     z.zutatenPreise.forEach((x) => {
       x.hoechstpreis = hoechstpreis(z.gewinn, x.basisPreis, x.effektiveMenge, kaufFaktor);
@@ -709,7 +710,7 @@ const VEREDELN = (function () {
     const zeile = zeileBauen(kand[0], "Lymhurst", craft, erloes, { stueckJeTag: 50 }, { menge: 1000, toleranzProzent: 5 });
     pruefe(
       "zeileBauen: Sofortverkauf 300 mit 4 % Steuer = 288, Gewinn = 288 - 253,16, insgesamt mal Menge",
-      Math.abs(zeile.gewinn - (288 - 400 / 1.58)) < 0.01 && Math.abs(zeile.gewinnGesamt - zeile.gewinn * 1000) < 0.01 && zeile.einstufung === "gewinn" && zeile.stadtbonus,
+      Math.abs(zeile.gewinn - (288 - 400 / 1.58)) < 0.01 && Math.abs(zeile.gewinnGesamt - zeile.gewinn * 1000) < 0.01 && Math.abs(zeile.kostenGesamt - zeile.silber * 1000) < 0.01 && zeile.kostenGesamt > 0 &&zeile.einstufung === "gewinn" && zeile.stadtbonus,
       JSON.stringify({ gewinn: zeile.gewinn, gesamt: zeile.gewinnGesamt, einstufung: zeile.einstufung })
     );
     const ohneBonus = craftKandidatAus(RECHENKERN.kosten("T4_CLOTH", 0, 1, Object.assign({}, optsBasis, { stadt: "Martlock" })), 0, false);
@@ -1088,6 +1089,77 @@ const VEREDELN = (function () {
   // Oberflaeche
   // -----------------------------------------------------------------------
 
+  // ---- Preisbestand (v3.15.0, OPTIMIERUNG-PLAN.md O1) ----
+
+  /** Aelteste Abrufzeit (ms seit Epoch) unter den Bestandseintraegen, null ohne Angabe. */
+  function aeltesteAbrufzeit(eintraege) {
+    let t = null;
+    (eintraege || []).forEach((e) => {
+      if (e && e.abgerufenAm > 0 && (t == null || e.abgerufenAm < t)) t = e.abgerufenAm;
+    });
+    return t;
+  }
+
+  /** "vor 12 Min." fuer eine Abrufzeit; leer ohne Angabe. */
+  function abrufAlterText(abgerufenAm, jetzt) {
+    if (!(abgerufenAm > 0)) return "";
+    const min = ((jetzt == null ? Date.now() : jetzt) - abgerufenAm) / 60000;
+    if (min < 1) return "gerade eben";
+    return "vor " + (min < 90 ? Math.round(min) + " Min." : min < 2880 ? Math.round(min / 60) + " Std." : Math.round(min / 1440) + " Tagen");
+  }
+
+  /** Satz fuer die Statuszeile: Zahl der Abrufe und aeltester verwendeter Wert. */
+  function bestandStatusText(abrufe, aeltesteZeit, jetzt, frisch) {
+    const teil =
+      abrufe > 0
+        ? abrufe + (abrufe === 1 ? " Abruf" : " Abrufe") + (frisch ? ", alles frisch abgerufen." : ", Rest aus dem Preisbestand.")
+        : "Alles aus dem Preisbestand, kein Abruf.";
+    if (!(aeltesteZeit > 0)) return teil;
+    return (
+      teil + " Ältester verwendeter Wert: abgerufen um " +
+      new Date(aeltesteZeit).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) +
+      " (" + abrufAlterText(aeltesteZeit, jetzt) + ")."
+    );
+  }
+
+  /**
+   * Preise und Handelsvolumen der Auswahl beschaffen: aus dem Bestand, was
+   * frisch ist, der Rest per Abruf (Staedte nacheinander, PREISE drosselt).
+   * opts.frisch erzwingt den Abruf von allem. Ohne DOM, mit nachgebildetem
+   * fetch testbar.
+   * @returns {Promise<{stadtDaten:Array, zutatIds:string[], produktIds:string[], abrufe:number}>}
+   */
+  async function datenAbrufen(kand, auswahl, opts) {
+    opts = opts || {};
+    const status = typeof opts.aufStatus === "function" ? opts.aufStatus : function () {};
+    const frisch = !!opts.frisch;
+    const produktIds = Array.from(new Set(kand.map((k) => k.marktId)));
+    const zutatIds = Array.from(new Set([].concat(...kand.map((k) => k.zutaten.map((zt) => marktIdVon(zt.n, zt.stufe))))));
+    const staedte = STAEDTE.filter((s) => auswahl.einkaufStaedte.indexOf(s) !== -1 || auswahl.verkaufStaedte.indexOf(s) !== -1);
+    const start = PREISE.abrufZaehler();
+    const stadtDaten = [];
+    for (let i = 0; i < staedte.length; i++) {
+      const stadt = staedte[i];
+      const ek = auswahl.einkaufStaedte.indexOf(stadt) !== -1;
+      const vk = auswahl.verkaufStaedte.indexOf(stadt) !== -1;
+      const ids = Array.from(new Set([].concat(ek ? zutatIds : [], vk ? produktIds : [])));
+      const vorsatz = stadt + " (" + (i + 1) + "/" + staedte.length + "): ";
+      const preiseRoh = await PREISE.preiseAbrufen(ids, {
+        stadt,
+        erzwingen: frisch,
+        qualitaet: 1,
+        aufFortschritt: (f, g) => status(vorsatz + "Preise " + f + "/" + g + " ..."),
+      });
+      let absatz = {};
+      if (vk) {
+        status(vorsatz + "Handelsvolumen ...");
+        absatz = await PREISE.absatzAbrufen(produktIds, { stadt, tageFenster: TAGE_FENSTER, erzwingen: frisch });
+      }
+      stadtDaten.push({ stadt, preiseRoh, absatz });
+    }
+    return { stadtDaten, zutatIds, produktIds, abrufe: PREISE.abrufZaehler() - start };
+  }
+
   function boot() {
     const wurzel = document.getElementById("tab-veredeln");
     if (!wurzel) return; // z.B. tests/test.html
@@ -1107,6 +1179,7 @@ const VEREDELN = (function () {
     const zusatzbonusEl = el("vdZusatzbonus");
     const mehrTextEl = el("vdMehrText");
     const startEl = el("vdStart");
+    const frischEl = el("vdFrisch");
     const statusEl = el("vdStatus");
     const ausgabeEl = el("vdAusgabe");
     const stationenEl = el("vdStationen");
@@ -1115,7 +1188,7 @@ const VEREDELN = (function () {
     let auswahl = standardEinstellungen();
     let letzteZeilen = null;
     // Daten der letzten Suche, fuer Nachrechnen ohne Abruf:
-    // { stadtDaten: [{stadt, preiseRoh, absatz}], ids: Set, einkauf: Set, verkauf: Set, zeit }
+    // { stadtDaten: [{stadt, preiseRoh, absatz}], ids: Set, einkauf: Set, verkauf: Set, abrufe }
     let daten = null;
     let laeuft = false;
 
@@ -1495,11 +1568,12 @@ const VEREDELN = (function () {
           const name = nameVon(x.n, x.stufe);
           const m = marktSeite(x, kontext.kaufweg);
           const alter = alterText(m.alter);
+          const abruf = abrufAlterText(x.roh && x.roh.abgerufenAm);
           const herkunft = x.uebersteuert
             ? "Eigener Preis für " + x.stadt + (m.preis != null ? ", Markt: " + fmt(m.preis) + (alter ? " (" + alter + " alt)" : "") : ", kein Marktpreis")
-            : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + " in " + x.stadt + (alter ? ", " + alter + " alt" : "");
+            : (order ? "Höchste Kauforder" : "Günstigste Verkaufsorder") + " in " + x.stadt + (alter ? ", " + alter + " alt" : "") + (abruf ? ", abgerufen " + abruf : "");
           const titel = kontext.mehrEk && x.alle && x.alle.length > 1
-            ? staedteListe(x.alle.map((a) => ({ stadt: a.stadt, wert: a.basis })), x.stadt, false) + "\n\nKlicken zum Überschreiben."
+            ? staedteListe(x.alle.map((a) => ({ stadt: a.stadt, wert: a.basis })), x.stadt, false) + (abruf && !x.uebersteuert ? "\n\nAbgerufen " + abruf + "." : "") + "\n\nKlicken zum Überschreiben."
             : herkunft + ". Klicken zum Überschreiben.";
           const wert = Math.round(x.basisPreis * 100) / 100;
           const feld =
@@ -1543,10 +1617,22 @@ const VEREDELN = (function () {
       return (
         "<thead><tr><th>Produkt</th><th>Einkauf je Vorgang</th><th>Verkauf</th>" +
         sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
+        "<th class='num' title='Kosten je Stück mal der eingestellten Menge: so viel Silber kostet die ganze Menge, Material nach Rückgewinnung plus Stationsgebühr.'>Kosten gesamt</th>" +
         sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
         sortTh("marge", "Marge", "Gewinn bezogen auf die eigenen Kosten. Klicken sortiert absteigend.") +
         sortTh("gesamt", "Gewinn gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
         "</tr></thead>"
+      );
+    }
+
+    /** Aelteste Abrufzeit der in dieser Zeile verwendeten Werte (Zutaten, Produktpreis, Handelsvolumen). */
+    function zeileAbrufAm(z) {
+      const d = daten ? daten.stadtDaten.find((x) => x.stadt === z.vkStadt) : null;
+      return aeltesteAbrufzeit(
+        (z.zutatenPreise || [])
+          .filter((x) => !x.uebersteuert)
+          .map((x) => x.roh)
+          .concat(d ? [(d.preiseRoh || {})[z.marktId], ((d.absatz || {})[z.marktId] || {})[1]] : [])
       );
     }
 
@@ -1564,12 +1650,15 @@ const VEREDELN = (function () {
           const name = nameVon(z.item, z.stufe);
           const tierTitel = z.ausbeute > 1 ? "Ein Vorgang ergibt " + z.ausbeute + " Stück." : "";
           const fokus = z.fokusJeVorgang > 0 ? "<div class='vd-klein'>" + fmtFokus(z.fokusJeVorgang) + " Fokus/Vorgang</div>" : "";
-          const preisTitel = vkTitel + (z.vkStadt ? " in " + z.vkStadt : "") + (z.produktAlterMin != null ? ", " + alterText(z.produktAlterMin) + " alt" : "");
+          const vkDaten = daten ? daten.stadtDaten.find((x) => x.stadt === z.vkStadt) : null;
+          const preisAbruf = abrufAlterText(vkDaten && (vkDaten.preiseRoh || {})[z.marktId] && vkDaten.preiseRoh[z.marktId].abgerufenAm);
+          const preisTitel = vkTitel + (z.vkStadt ? " in " + z.vkStadt : "") + (z.produktAlterMin != null ? ", " + alterText(z.produktAlterMin) + " alt" : "") + (preisAbruf ? ", abgerufen " + preisAbruf : "");
+          const zeilenAbruf = abrufAlterText(zeileAbrufAm(z));
           const handel =
             "<div class='vd-klein' title='Erfasster Handel des Produkts in " + esc(z.vkStadt || "") + ", Mittel der letzten " + TAGE_FENSTER +
             " Tage. Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.'>verkauft/Tag " + stueck(z.stueckJeTag) + "</div>";
           return (
-            "<tr class='" + klasse + "'>" +
+            "<tr class='" + klasse + "'" + (zeilenAbruf ? " title='" + esc("Ältester verwendeter Wert dieser Zeile: abgerufen " + zeilenAbruf + ".") + "'" : "") + ">" +
             "<td><div class='vd-produkt'>" + icon(z.item, 48, name) + "<div><div class='vd-pname'>" + esc(name) + "</div>" +
             "<div class='vd-klein'" + (tierTitel ? " title='" + esc(tierTitel) + "'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + "</div></div></div></td>" +
             "<td><div class='vd-zutaten" + (kontext.mehrEk ? "" : " ohne-stadt") + "'>" + zutatenHtml(z, kontext) + "</div></td>" +
@@ -1580,6 +1669,7 @@ const VEREDELN = (function () {
             (kontext.mehrVk ? "<div>" + stadtSchild(z.vkStadt, "Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "</div>" : "") +
             handel + "</td>" +
             "<td class='num'>" + fmt(z.silber) + fokus + "</td>" +
+            "<td class='num'>" + fmt(z.kostenGesamt) + "</td>" +
             "<td class='num vd-wert' title='" + einstufung + "'>" + fmt(z.gewinn) + "</td>" +
             "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
             "<td class='num vd-wert'>" + fmt(z.gewinnGesamt) + "</td>" +
@@ -1613,7 +1703,7 @@ const VEREDELN = (function () {
       statusEl.textContent =
         "Fertig: " + zeilen.filter((z) => z.einstufung === "gewinn").length + " mit Gewinn, " + zeilen.filter((z) => z.einstufung === "null").length + " etwa Null" +
         (zeilen.length - mitErgebnis ? ", " + (zeilen.length - mitErgebnis) + " von " + zeilen.length + " ohne vollständige Preise" : "") +
-        ". Preise frisch abgerufen um " + daten.zeit + "." +
+        ". " + bestandStatusText(daten.abrufe, aeltesteAbrufzeit(zeilen.filter((z) => z.gewinn != null).map((z) => ({ abgerufenAm: zeileAbrufAm(z) }))), null, daten.frisch) +
         (fehlend.length ? " Stationssatz fehlt für " + fehlend.join(", ") + ", mit 0 gerechnet." : "");
       return zeilen;
     }
@@ -1624,16 +1714,18 @@ const VEREDELN = (function () {
       letzteZeilen.zeilen.forEach((z) => {
         if (z.gewinn == null) return;
         z.gewinnGesamt = z.gewinn * auswahl.menge;
+        z.kostenGesamt = z.silber * auswahl.menge;
         z.einstufung = einstufen(z.gewinn, z.silber, toleranz);
       });
       const gefiltert = filtereUndSortiere(letzteZeilen.zeilen, { verlusteZeigen: auswahl.verlusteZeigen, sortierung: auswahl.sortierung });
       render(gefiltert, letzteZeilen.zeilen.length, Object.assign({}, letzteZeilen.kontext, { sortierung: auswahl.sortierung }));
     }
 
-    // Ein Knopf (v3.10.0): ruft immer frische Preise der Auswahl ab
-    // (Zwischenspeicher umgangen), Staedte nacheinander wie bisher, damit
-    // die API-Drosselung greift (PREISE wartet zwischen den Bloecken).
-    async function suchen() {
+    // "Gelegenheiten suchen" (v3.15.0): rechnet mit dem Preisbestand und
+    // ruft nur ab, was fehlt oder zu alt ist. "Frisch abrufen" (frisch = true)
+    // umgeht den Bestand und holt alles neu. Staedte nacheinander, damit die
+    // API-Drosselung greift (PREISE wartet zwischen den Bloecken).
+    async function suchen(frisch) {
       if (laeuft) return;
       felderLesen();
       if (!auswahl.einkaufStaedte.length || !auswahl.verkaufStaedte.length || !auswahl.rohstoffe.length || !auswahl.tiers.length || !auswahl.stufen.length) {
@@ -1643,41 +1735,24 @@ const VEREDELN = (function () {
       }
       laeuft = true;
       startEl.disabled = true;
+      if (frischEl) frischEl.disabled = true;
       statusEl.className = "";
       ausgabeEl.innerHTML = "";
       try {
         const kand = kandidaten(auswahl);
-        const produktIds = Array.from(new Set(kand.map((k) => k.marktId)));
-        const zutatIds = Array.from(new Set([].concat(...kand.map((k) => k.zutaten.map((zt) => marktIdVon(zt.n, zt.stufe))))));
-        const staedte = STAEDTE.filter((s) => auswahl.einkaufStaedte.indexOf(s) !== -1 || auswahl.verkaufStaedte.indexOf(s) !== -1);
-        const stadtDaten = [];
-        for (let i = 0; i < staedte.length; i++) {
-          const stadt = staedte[i];
-          const ek = auswahl.einkaufStaedte.indexOf(stadt) !== -1;
-          const vk = auswahl.verkaufStaedte.indexOf(stadt) !== -1;
-          const ids = Array.from(new Set([].concat(ek ? zutatIds : [], vk ? produktIds : [])));
-          const vorsatz = stadt + " (" + (i + 1) + "/" + staedte.length + "): ";
-          const preiseRoh = await PREISE.preiseAbrufen(ids, {
-            stadt,
-            erzwingen: true,
-            qualitaet: 1,
-            aufFortschritt: (f, g) => {
-              statusEl.textContent = vorsatz + "Preise " + f + "/" + g + " ...";
-            },
-          });
-          let absatz = {};
-          if (vk) {
-            statusEl.textContent = vorsatz + "Handelsvolumen ...";
-            absatz = await PREISE.absatzAbrufen(produktIds, { stadt, tageFenster: TAGE_FENSTER });
-          }
-          stadtDaten.push({ stadt, preiseRoh, absatz });
-        }
+        const geholt = await datenAbrufen(kand, auswahl, {
+          frisch: !!frisch,
+          aufStatus: (text) => {
+            statusEl.textContent = text;
+          },
+        });
         daten = {
-          stadtDaten,
-          ids: new Set(zutatIds.concat(produktIds)),
+          stadtDaten: geholt.stadtDaten,
+          ids: new Set(geholt.zutatIds.concat(geholt.produktIds)),
           einkauf: new Set(auswahl.einkaufStaedte),
           verkauf: new Set(auswahl.verkaufStaedte),
-          zeit: new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+          abrufe: geholt.abrufe,
+          frisch: !!frisch,
         };
         laeuft = false;
         rechnen();
@@ -1688,6 +1763,7 @@ const VEREDELN = (function () {
       } finally {
         laeuft = false;
         startEl.disabled = false;
+        if (frischEl) frischEl.disabled = false;
       }
     }
 
@@ -1698,7 +1774,8 @@ const VEREDELN = (function () {
     preiseResetAktualisieren();
     felderSetzen();
     fertigungInfo();
-    startEl.addEventListener("click", () => suchen());
+    startEl.addEventListener("click", () => suchen(false));
+    if (frischEl) frischEl.addEventListener("click", () => suchen(true));
   }
 
   if (typeof document !== "undefined") {
@@ -1733,6 +1810,10 @@ const VEREDELN = (function () {
     einkaufsBasisPreis,
     einkaufWaehlen,
     verkaufWaehlen,
+    aeltesteAbrufzeit,
+    abrufAlterText,
+    bestandStatusText,
+    datenAbrufen,
     selbsttest,
   };
 })();
