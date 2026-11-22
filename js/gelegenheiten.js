@@ -36,6 +36,14 @@
 //
 // Fuer O4 und O5 vorbereitet: spalteErgaenzen() (weitere Spalten samt
 // Sortierung) und aktionErgaenzen() (Knoepfe je Zeile).
+//
+// v3.19.0 (O5, "Von der Gelegenheit zur Tat"): je Zeile ein Zaehler fuer die
+// Einkaufsliste (CRAFTEN.einkaufsliste, dieselbe Funktion wie in "Craften:
+// Gewinn", hier mit dem Zeilenschluessel statt der Markt-ID), ein Merkstern
+// (Merkliste mit den Zahlen im Moment des Merkens, Filter "Gemerkt" zeigt
+// damals gegen jetzt), Kopierknopf am Produktnamen und der Sprung in den
+// Kostenrechner (UI.itemOeffnen). Plan und Merkliste liegen im
+// Reiter-Speicher (einstellungen.plan, einstellungen.merkliste).
 
 const GELEGENHEITEN = (function () {
   "use strict";
@@ -89,7 +97,105 @@ const GELEGENHEITEN = (function () {
       scanAn: true,
       scanAuchVerborgen: false,
       einstellungenOffen: false, // der eingeklappte Block ueber der Rangliste
+      plan: {}, // v3.19.0 (O5): Zeilenschluessel -> geplante Stueckzahl (Einkaufsliste)
+      merkliste: {}, // v3.19.0 (O5): Zeilenschluessel -> Zahlen im Moment des Merkens, s. merkEintrag()
     };
+  }
+
+  // -----------------------------------------------------------------------
+  // v3.19.0 (O5): Zeilenschluessel, Plan, Merkliste
+  // -----------------------------------------------------------------------
+
+  const MERK_MAX = 200; // mehr Eintraege fuehrt die Merkliste nicht, die aeltesten fallen weg
+
+  /**
+   * Zerlegt einen Zeilenschluessel ("c:<Markt-ID>" fuer Crafts,
+   * "v:<Markt-ID>:<Rezeptindex>" fuer Veredelungen). Damit laesst sich ein
+   * geplantes oder gemerktes Produkt auch benennen, wenn seine Zeile gerade
+   * nicht gerechnet ist (anderer Scanumfang).
+   * @returns {{art:string, marktId:string, item:string, stufe:number, tier:number|null, rezeptIndex:number|null}|null}
+   */
+  function schluesselTeile(schluessel) {
+    const m = /^c:([^:]+)$|^v:([^:]+):(\d+)$/.exec(String(schluessel == null ? "" : schluessel));
+    if (!m) return null;
+    const marktId = m[1] || m[2];
+    const teile = marktId.split("@");
+    const t = /^T(\d)_/.exec(teile[0]);
+    return { art: m[1] ? "craften" : "veredeln", marktId, item: teile[0], stufe: Number(teile[1]) || 0, tier: t ? Number(t[1]) : null, rezeptIndex: m[3] != null ? Number(m[3]) : null };
+  }
+
+  /** Plan der Einkaufsliste: nur gueltige Zeilenschluessel mit ganzen Stueckzahlen > 0. */
+  function planBereinigen(roh) {
+    const sauber = C.planBereinigen(roh);
+    const out = {};
+    Object.keys(sauber).forEach((k) => {
+      if (schluesselTeile(k)) out[k] = sauber[k];
+    });
+    return out;
+  }
+
+  const zahlOderNull = (x) => (x != null && x !== "" && typeof x !== "boolean" && isFinite(Number(x)) ? Number(x) : null);
+
+  /**
+   * Die Zahlen einer Zeile im Moment des Merkens: Gewinn/Stueck, Marge,
+   * Gewinn/Tag, Kosten/Stueck, Erloes/Stueck, Produktpreis, Verkaufsstadt und
+   * je Zutat Menge, Einkaufsstadt und Preis je Stueck (ohne Einstellgebuehr).
+   */
+  function merkEintrag(z, jetzt) {
+    return {
+      am: jetzt == null ? Date.now() : jetzt,
+      gewinn: zahlOderNull(z.gewinn),
+      marge: zahlOderNull(z.marge),
+      gewinnJeTag: zahlOderNull(z.gewinnJeTag),
+      silber: zahlOderNull(z.silber),
+      erloes: zahlOderNull(z.erloes),
+      produktPreis: zahlOderNull(z.produktPreis),
+      vkStadt: z.vkStadt || null,
+      zutaten: (z.zutatenPreise || []).map((x) => ({ marktId: String(x.marktId || ""), n: String(x.n || ""), stufe: Number(x.stufe) || 0, menge: zahlOderNull(x.menge), stadt: x.stadt || null, preis: zahlOderNull(x.basisPreis) })),
+    };
+  }
+
+  /** Gespeicherte Merkliste pruefen: gueltiger Schluessel, Zeitpunkt > 0, Zahlen oder null; hoechstens MERK_MAX, die juengsten bleiben. */
+  function merklisteBereinigen(roh) {
+    const out = {};
+    if (!roh || typeof roh !== "object" || Array.isArray(roh)) return out;
+    const gueltig = Object.keys(roh).filter((k) => {
+      const x = roh[k];
+      return schluesselTeile(k) && x && typeof x === "object" && isFinite(Number(x.am)) && Number(x.am) > 0;
+    });
+    const behalten = gueltig.length > MERK_MAX ? new Set(gueltig.slice().sort((a, b) => Number(roh[b].am) - Number(roh[a].am)).slice(0, MERK_MAX)) : null;
+    gueltig.forEach((k) => {
+      if (behalten && !behalten.has(k)) return;
+      const x = roh[k];
+      out[k] = {
+        am: Number(x.am),
+        gewinn: zahlOderNull(x.gewinn),
+        marge: zahlOderNull(x.marge),
+        gewinnJeTag: zahlOderNull(x.gewinnJeTag),
+        silber: zahlOderNull(x.silber),
+        erloes: zahlOderNull(x.erloes),
+        produktPreis: zahlOderNull(x.produktPreis),
+        vkStadt: STAEDTE.indexOf(x.vkStadt) !== -1 ? x.vkStadt : null,
+        zutaten: (Array.isArray(x.zutaten) ? x.zutaten : [])
+          .filter((y) => y && typeof y === "object" && y.marktId)
+          .slice(0, 12)
+          .map((y) => ({ marktId: String(y.marktId), n: String(y.n || ""), stufe: Number(y.stufe) || 0, menge: zahlOderNull(y.menge), stadt: STAEDTE.indexOf(y.stadt) !== -1 ? y.stadt : null, preis: zahlOderNull(y.preis) })),
+      };
+    });
+    return out;
+  }
+
+  /**
+   * Richtung von damals zu jetzt: 1 besser, -1 schlechter, 0 gleich oder
+   * nicht vergleichbar. Verglichen wird auf der angezeigten Genauigkeit
+   * (skala 1 = ganze Silber, 1000 = Zehntelprozent der Marge).
+   */
+  function damalsRichtung(damals, jetzt, skala) {
+    if (damals == null || jetzt == null || !isFinite(damals) || !isFinite(jetzt)) return 0;
+    const f = skala || 1;
+    const a = Math.round(damals * f);
+    const b = Math.round(jetzt * f);
+    return b > a ? 1 : b < a ? -1 : 0;
   }
 
   /** Gespeicherten Stand gegen die erlaubten Werte pruefen; Unbekanntes faellt weg, Fehlendes kommt aus dem Standard. */
@@ -117,6 +223,8 @@ const GELEGENHEITEN = (function () {
       scanAn: roh.scanAn == null ? true : !!roh.scanAn,
       scanAuchVerborgen: !!roh.scanAuchVerborgen,
       einstellungenOffen: !!roh.einstellungenOffen,
+      plan: planBereinigen(roh.plan),
+      merkliste: merklisteBereinigen(roh.merkliste),
     };
   }
 
@@ -420,6 +528,29 @@ const GELEGENHEITEN = (function () {
     return { zeilen: sortiere(bleibt, e.sortierung), ausgeblendet };
   }
 
+  /**
+   * Die Merkliste als Zeilen (v3.19.0): ALLE gemerkten Schluessel, auch wenn
+   * die Zeile gerade keinen Gewinn zeigt, unter dem Volumenfilter liegt oder
+   * (z = null) nicht im Scanumfang ist. Sortiert wie die Rangliste nach den
+   * heutigen Werten, Zeilen ohne Wert ans Ende.
+   * @returns {{schluessel:string, damals:object, z:object|null}[]}
+   */
+  function gemerkteZeilen(merkliste, zeileVon, sortierung) {
+    const s = SORTIERER[sortierung] || SORTIERER.tag;
+    const w = (x) => {
+      const v = x.z ? s.wert(x.z) : null;
+      return v == null || isNaN(v) ? null : v;
+    };
+    return Object.keys(merkliste || {})
+      .map((k) => ({ schluessel: k, damals: merkliste[k], z: zeileVon(k) || null }))
+      .sort((a, b) => {
+        const x = w(a);
+        const y = w(b);
+        if (x == null || y == null) return (x == null) - (y == null) || (a.schluessel < b.schluessel ? -1 : a.schluessel > b.schluessel ? 1 : 0);
+        return (s.auf ? x - y : y - x) || (a.schluessel < b.schluessel ? -1 : a.schluessel > b.schluessel ? 1 : 0);
+      });
+  }
+
   // -----------------------------------------------------------------------
   // Scan: Reihenfolge, Faelligkeit, Schaetzung
   // -----------------------------------------------------------------------
@@ -452,13 +583,21 @@ const GELEGENHEITEN = (function () {
    * die gerade in der Rangliste stehen, in deren Reihenfolge; dann der Rest,
    * die aeltesten Preise zuerst (nie abgerufen = am aeltesten), bei
    * Gleichstand in der festen Reihenfolge von kandidaten().
+   *
+   * v3.19.0 (O5): gemerkte Zeilen (`zuerst`) stehen noch VOR der Spitze der
+   * Rangliste. Begruendung: der Nutzer verfolgt sie ausdruecklich, es sind
+   * wenige, und gerade die, die keinen Gewinn mehr zeigen, stuenden sonst im
+   * Rest und kaemen erst nach Minuten an die Reihe. Sie teilen sich die erste
+   * Einheit (50 Vorgaenge) mit der Spitze, kosten also in der Regel keinen
+   * zusaetzlichen Abruf.
    * @param liste Kandidaten
    * @param rangSchluessel Zeilenschluessel der Rangliste, bester zuerst
    * @param standVon (kandidat) => {preisAm, volAm}
+   * @param [zuerst] Zeilenschluessel der Merkliste
    */
-  function scanReihenfolge(liste, rangSchluessel, standVon) {
+  function scanReihenfolge(liste, rangSchluessel, standVon, zuerst) {
     const rang = new Map();
-    (rangSchluessel || []).forEach((s, i) => {
+    (zuerst || []).concat(rangSchluessel || []).forEach((s, i) => {
       if (!rang.has(s)) rang.set(s, i);
     });
     const oben = [];
@@ -772,7 +911,7 @@ const GELEGENHEITEN = (function () {
      */
     function naechsteEinheit() {
       const t = jetzt();
-      const reihenfolge = scanReihenfolge(liste, rangliste().zeilen.map((z) => z.schluessel), (x) => kandidatStand(x, e, lesen));
+      const reihenfolge = scanReihenfolge(liste, rangliste().zeilen.map((z) => z.schluessel), (x) => kandidatStand(x, e, lesen), Object.keys(e.merkliste));
       const einheit = [];
       for (let i = 0; i < reihenfolge.length && einheit.length < PREISE.BLOCKGROESSE; i++) {
         if (faelligFuer([reihenfolge[i]], e, lesen, t, scan.versucht).abrufe) einheit.push(reihenfolge[i]);
@@ -920,6 +1059,8 @@ const GELEGENHEITEN = (function () {
       fertig,
       rangliste,
       zeile: (schluessel) => zeilen.get(schluessel) || null,
+      /** Die Merkliste als Zeilen, s. gemerkteZeilen(). */
+      gemerkt: () => gemerkteZeilen(e.merkliste, (k) => zeilen.get(k) || null, e.sortierung),
       kandidaten: () => liste,
       schaetzung: () => abrufSchaetzung(liste),
       status,
@@ -1302,6 +1443,149 @@ const GELEGENHEITEN = (function () {
       );
     })();
 
+    // ---- v3.19.0 (O5): Plan, Merkliste, Einkaufsliste, Scanvorrang ----
+    (function () {
+      const b = einstellungenBereinigen({
+        plan: { "c:T5_MAIN_SWORD": 3, "v:T5_METALBAR:0": "10", "c:X": 0, kaputt: 4, "v:T5_METALBAR": 2 },
+        merkliste: {
+          "c:T5_MAIN_SWORD": { am: 5, gewinn: "141", marge: 0.2, vkStadt: "Atlantis", zutaten: [{ marktId: "T5_METALBAR", stadt: "Atlantis", preis: 100, menge: 16 }, null, { stadt: "Lymhurst" }] },
+          "c:OHNEZEIT": { gewinn: 1 },
+          quatsch: { am: 1 },
+        },
+      });
+      const mb = b.merkliste["c:T5_MAIN_SWORD"];
+      pruefe(
+        "o5 Vorgaben und Bereiniger: Plan und Merkliste starten leer; ungueltige Schluessel, Stueckzahlen <= 0, Eintraege ohne Zeitpunkt und unbekannte Staedte fallen weg; der bereinigte Stand uebersteht Speichern und Laden unveraendert",
+        JSON.stringify(std.plan) === "{}" && JSON.stringify(std.merkliste) === "{}" && JSON.stringify(b.plan) === JSON.stringify({ "c:T5_MAIN_SWORD": 3, "v:T5_METALBAR:0": 10 }) &&
+          Object.keys(b.merkliste).join() === "c:T5_MAIN_SWORD" && mb.am === 5 && mb.gewinn === 141 && mb.marge === 0.2 && mb.gewinnJeTag === null && mb.vkStadt === null &&
+          mb.zutaten.length === 1 && mb.zutaten[0].stadt === null && mb.zutaten[0].preis === 100 && mb.zutaten[0].menge === 16 &&
+          JSON.stringify(einstellungenBereinigen(JSON.parse(JSON.stringify(b)))) === JSON.stringify(b),
+        JSON.stringify({ plan: b.plan, merk: b.merkliste })
+      );
+      const viele = {};
+      for (let i = 0; i < MERK_MAX + 5; i++) viele["c:T4_X" + i] = { am: 1000 + i, gewinn: i };
+      const gekappt = merklisteBereinigen(viele);
+      pruefe(
+        "o5 merklisteBereinigen: hoechstens " + MERK_MAX + " Eintraege, die aeltesten fallen weg",
+        Object.keys(gekappt).length === MERK_MAX && !gekappt["c:T4_X0"] && !gekappt["c:T4_X4"] && !!gekappt["c:T4_X5"] && !!gekappt["c:T4_X" + (MERK_MAX + 4)],
+        Object.keys(gekappt).length
+      );
+      const t1 = schluesselTeile("c:T5_MAIN_SWORD@2");
+      const t2 = schluesselTeile("v:T5_METALBAR_LEVEL1@1:0");
+      pruefe(
+        "o5 schluesselTeile: Art, Markt-ID, Item, Stufe, Tier und Rezeptindex aus dem Zeilenschluessel; Unbekanntes ergibt null",
+        t1.art === "craften" && t1.marktId === "T5_MAIN_SWORD@2" && t1.item === "T5_MAIN_SWORD" && t1.stufe === 2 && t1.tier === 5 && t1.rezeptIndex === null &&
+          t2.art === "veredeln" && t2.item === "T5_METALBAR_LEVEL1" && t2.stufe === 1 && t2.rezeptIndex === 0 && schluesselTeile("x:1") === null && schluesselTeile(null) === null &&
+          kl.every((x) => schluesselTeile(x.schluessel) && schluesselTeile(x.schluessel).marktId === x.produktId),
+        JSON.stringify(t2)
+      );
+      const me = merkEintrag(zBreit, T0);
+      pruefe(
+        "o5 merkEintrag: haelt Zeitpunkt, Gewinn/Stueck, Marge, Gewinn/Tag, Kosten, Erloes, Produktpreis, Verkaufsstadt und je Zutat Menge, Stadt und Preis fest (Breitschwert: 16 Barren a 100, 8 Leder a 200, Produktpreis 2.900)",
+        me.am === T0 && me.gewinn === zBreit.gewinn && me.marge === zBreit.marge && me.gewinnJeTag === zBreit.gewinnJeTag && me.silber === zBreit.silber && me.erloes === zBreit.erloes && me.produktPreis === 2900 &&
+          me.vkStadt === "Lymhurst" && me.zutaten.length === 2 && me.zutaten.map((x) => x.marktId + ":" + x.menge + ":" + x.preis + ":" + x.stadt).sort().join() === "T5_LEATHER:8:200:Lymhurst,T5_METALBAR:16:100:Lymhurst" &&
+          JSON.stringify(merklisteBereinigen({ "c:T5_MAIN_SWORD": me })["c:T5_MAIN_SWORD"]) === JSON.stringify(me),
+        JSON.stringify(me)
+      );
+      pruefe(
+        "o5 damalsRichtung: 141 -> 96 schlechter, 96 -> 141 besser, gleiche Anzeige (Marge 20,0 % -> 20,04 %) gleich, fehlender Wert nicht vergleichbar",
+        damalsRichtung(141, 96) === -1 && damalsRichtung(96, 141) === 1 && damalsRichtung(0.2, 0.2004, 1000) === 0 && damalsRichtung(0.2, 0.202, 1000) === 1 && damalsRichtung(null, 5) === 0 && damalsRichtung(5, null) === 0,
+        ""
+      );
+      const zm = {
+        "c:A": { schluessel: "c:A", gewinn: 10, gewinnJeTag: 50, marge: 0.1 },
+        "c:B": { schluessel: "c:B", gewinn: -30, gewinnJeTag: -90, marge: -0.2 },
+        "c:C": { schluessel: "c:C", gewinn: 40, gewinnJeTag: null, marge: 0.3, stueckJeTag: 0 },
+        "c:D": { schluessel: "c:D", gewinn: null, gewinnJeTag: null, marge: null },
+      };
+      const merk = { "c:D": { am: 1 }, "c:FEHLT": { am: 2 }, "c:B": { am: 3, gewinn: 20 }, "c:C": { am: 4 }, "c:A": { am: 5 } };
+      const gz = gemerkteZeilen(merk, (k) => zm[k], "tag");
+      pruefe(
+        "o5 gemerkteZeilen: alle gemerkten Schluessel, auch mit Verlust, ohne erfassten Handel, ohne Ergebnis und ausserhalb des Scanumfangs (z = null); sortiert nach den heutigen Werten, ohne Wert ans Ende",
+        gz.map((x) => x.schluessel).join() === "c:A,c:B,c:C,c:D,c:FEHLT" && gz[4].z === null && gz[1].damals.gewinn === 20 && gz[1].z.gewinn === -30 &&
+          gemerkteZeilen(merk, (k) => zm[k], "stueck").map((x) => x.schluessel).join() === "c:C,c:A,c:B,c:D,c:FEHLT" && gemerkteZeilen({}, (k) => zm[k], "tag").length === 0 &&
+          filtereUndSortiere(Object.keys(zm).map((k) => Object.assign({ art: "craften" }, zm[k])), { minAbsatz: 5, art: "beides", sortierung: "tag" }).zeilen.length === 0,
+        gz.map((x) => x.schluessel).join()
+      );
+      const kA = { schluessel: "A" };
+      const kB = { schluessel: "B" };
+      const kC = { schluessel: "C" };
+      const kD = { schluessel: "D" };
+      const st = { A: 500, B: 0, C: 300, D: 900 };
+      const folge = (rang, zuerst) => scanReihenfolge([kA, kB, kC, kD], rang, (x) => ({ preisAm: st[x.schluessel] }), zuerst).map((x) => x.schluessel).join();
+      pruefe(
+        "o5 scanReihenfolge: gemerkte Zeilen stehen vor der Spitze der Rangliste, auch wenn sie nicht in der Rangliste sind; ohne Merkliste wie bisher; Unbekanntes wird uebergangen, nichts doppelt",
+        folge(["C"], ["D"]) === "D,C,B,A" && folge(["C", "A"], ["A", "GIBTSNICHT"]) === "A,C,B,D" && folge(["C"], []) === "C,B,A,D" && folge(["C"]) === "C,B,A,D" && folge([], ["D", "B"]) === "D,B,C,A",
+        folge(["C"], ["D"])
+      );
+
+      // Einkaufsliste im Reiter: ein Craft und eine Veredelung teilen sich den
+      // Stahlbarren, zwei Einkaufsstaedte. Handrechnung (Fertigung Lymhurst,
+      // Stationssatz 0, Sofortkauf, Verkaufsorder mit Premium):
+      //   Breitschwert T5.0: 16 Stahlbarren (Lymhurst 100, Martlock 120) + 8 Leder (Lymhurst 200, Martlock 150)
+      //     Einkauf je Stueck 16 x 100 + 8 x 150 = 2.800; Kosten 2.800 / 1,33 (Schwert-Bonus); Erloes 2.900 x 0,935 = 2.711,5
+      //   Titanstahlbarren T6: 4 Erz (Lymhurst 80, Martlock 90) + 1 Stahlbarren (100)
+      //     Einkauf je Stueck 420; Kosten 420 / 1,18 (kein Erz-Bonus in Lymhurst); Erloes 700 x 0,935 = 654,5
+      //   Plan 3 Schwerter und 10 Barren:
+      //     Stahlbarren Lymhurst 3 x 16 + 10 x 1 = 58 a 100 = 5.800
+      //     Leder Martlock 3 x 8 = 24 a 150 = 3.600
+      //     Erz Lymhurst 10 x 4 = 40 a 80 = 3.200          Einkauf gesamt 12.600
+      //     Erloes gesamt 3 x 2.711,5 + 10 x 654,5 = 14.679,5
+      //     Gewinn gesamt 14.679,5 - 3 x 2.800 / 1,33 - 10 x 420 / 1,18 = 4.804,39
+      const e2 = einstellungenBereinigen({ warengruppen: ["sword"], rohstoffe: ["ore"], tiers: [5, 6], stufen: [0], einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Lymhurst"] });
+      const k2 = kandidaten(e2);
+      const d2 = {
+        "Lymhurst::T5_METALBAR::q1": preis(100, 80, am),
+        "Martlock::T5_METALBAR::q1": preis(120, 90, am),
+        "Lymhurst::T5_LEATHER::q1": preis(200, 150, am),
+        "Martlock::T5_LEATHER::q1": preis(150, 120, am),
+        "Lymhurst::T6_ORE::q1": preis(80, 60, am),
+        "Martlock::T6_ORE::q1": preis(90, 70, am),
+        "Lymhurst::T5_MAIN_SWORD::qA": { abgerufenAm: am, jeQ: { 1: preis(2900, 2500, am) } },
+        "Lymhurst::T5_MAIN_SWORD::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 6 } } },
+        "Lymhurst::T6_METALBAR::q1": preis(700, 600, am),
+        "Lymhurst::T6_METALBAR::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 900 } } },
+      };
+      const zl = zeilenRechnen([k2.find((x) => x.schluessel === "c:T5_MAIN_SWORD"), k2.find((x) => x.schluessel === "v:T6_METALBAR:0")], e2, einst, leser(d2), T0);
+      const liste = C.einkaufsliste(zl, { "c:T5_MAIN_SWORD": 3, "v:T6_METALBAR:0": 10 }, (z) => z.schluessel);
+      const posten = (id) => liste.posten.find((p) => p.marktId === id) || {};
+      pruefe(
+        "o5 Einkaufsliste im Reiter: Craft (3 Breitschwerter) und Veredelung (10 Titanstahlbarren) teilen sich den Stahlbarren (3 x 16 + 10 = 58, vor Rueckgewinnung), zwei Einkaufsstaedte (Barren und Erz Lymhurst, Leder Martlock)",
+        liste.posten.length === 3 && posten("T5_METALBAR").menge === 58 && posten("T5_METALBAR").stadt === "Lymhurst" && posten("T5_METALBAR").kosten === 5800 &&
+          posten("T5_LEATHER").menge === 24 && posten("T5_LEATHER").stadt === "Martlock" && posten("T5_LEATHER").kosten === 3600 &&
+          posten("T6_ORE").menge === 40 && posten("T6_ORE").stadt === "Lymhurst" && posten("T6_ORE").kosten === 3200 && liste.fehlend.length === 0,
+        JSON.stringify(liste.posten.map((p) => [p.marktId, p.stadt, p.menge, p.kosten]))
+      );
+      pruefe(
+        "o5 Einkaufsliste im Reiter: Einkauf gesamt 12.600, Erloes gesamt 14.679,5, Gewinn gesamt 4.804,39 (Erloes minus Kosten nach Rueckgewinnung: 3 x 2.800 / 1,33 und 10 x 420 / 1,18), je Produkt die Zahlen der Zeile mal Menge",
+        liste.summe === 12600 && Math.abs(liste.erloes - 14679.5) < 1e-6 && Math.abs(liste.gewinn - (14679.5 - (3 * 2800) / 1.33 - (10 * 420) / 1.18)) < 1e-6 && Math.abs(liste.gewinn - 4804.39) < 0.005 &&
+          liste.ergebnisVollstaendig && Math.abs(liste.produkte[0].gewinn - 3 * zl[0].gewinn) < 1e-9 && Math.abs(liste.produkte[1].erloes - 6545) < 1e-6 && liste.produkte[1].art === "veredeln" &&
+          liste.summe > liste.erloes - liste.gewinn &&
+          // Kosten nach Rueckgewinnung 3 x 2.800 / 1,33 + 10 x 420 / 1,18 = 9.875,11; Erloes minus diese Kosten = Gewinn
+          Math.abs(liste.kostenNetto - 9875.11) < 0.005 && Math.abs(liste.erloes - liste.kostenNetto - liste.gewinn) < 1e-6 && liste.kostenNetto < liste.summe,
+        JSON.stringify({ einkauf: liste.summe, kostenNetto: liste.kostenNetto, erloes: liste.erloes, gewinn: liste.gewinn })
+      );
+      pruefe(
+        "o5 Einkaufsliste im Reiter: dieselbe Funktion wie in \"Craften: Gewinn\"; fuer das Schwert allein dieselben Posten wie dort ueber die Markt-ID",
+        (function () {
+          const hier = C.einkaufsliste(zl, { "c:T5_MAIN_SWORD": 3 }, (z) => z.schluessel);
+          const dort = C.einkaufsliste(zl, { T5_MAIN_SWORD: 3 });
+          return JSON.stringify(hier.posten) === JSON.stringify(dort.posten) && hier.summe === dort.summe && hier.summe === 3 * 2800;
+        })(),
+        ""
+      );
+      // Maschine: Plan und Merkliste sind Anzeige-Einstellungen (kein Neurechnen), gemerkt() liefert auch Zeilen ausserhalb der Rangliste.
+      const mm = erzeugen({ einstellungen: Object.assign({}, e2, { scanAn: false, minAbsatz: 50 }), lesen: leser(d2), jetzt: () => T0, einstellungenLesen: () => einst });
+      const art = mm.einstellen({ plan: { "c:T5_MAIN_SWORD": 2 }, merkliste: { "c:T5_MAIN_SWORD": me, "c:T9_GIBTSNICHT": { am: 7 } } });
+      pruefe(
+        "o5 Maschine: Plan und Merkliste aendern nur die Anzeige; gemerkt() fuehrt die Zeile auch, bevor gerechnet ist und wenn sie nicht im Scanumfang liegt",
+        art === "anzeige" && mm.einstellungen().plan["c:T5_MAIN_SWORD"] === 2 && mm.gemerkt().length === 2 && mm.gemerkt().every((x) => x.z === null) && mm.einstellen({ minAbsatz: 60 }) === "anzeige" &&
+          mm.einstellungen().plan["c:T5_MAIN_SWORD"] === 2 && Object.keys(mm.einstellungen().merkliste).length === 2,
+        art
+      );
+      mm.beenden();
+    })();
+
     return ergebnisse;
   }
 
@@ -1333,6 +1617,10 @@ const GELEGENHEITEN = (function () {
     const minAbsatzEl = el("glMinAbsatz");
     const artEl = el("glArt");
     const anteilEl = el("glAnteil");
+    const listeEl = el("glEinkaufsliste");
+    const gemerktEl = el("glGemerkt");
+    const zurListeEl = el("glZurListe");
+    let nurGemerkt = false; // Filter "Gemerkt"; bewusst nicht gespeichert, die App startet mit der ganzen Rangliste
 
     let gespeichert = null;
     try {
@@ -1368,7 +1656,7 @@ const GELEGENHEITEN = (function () {
     const zahl = (n) => Math.round(n).toLocaleString("de-DE");
     const prozent = prozentText;
     const stueck = (n) => (n == null ? "k. A." : n >= 10 ? Math.round(n).toLocaleString("de-DE") : n.toFixed(1).replace(".", ","));
-    const minText = (n) => String(n).replace(".", ",");
+    const minText = (n) => Number(n).toLocaleString("de-DE", { maximumFractionDigits: 2 }); // mit Tausenderpunkt: "100.000"
     const uhrzeit = (ms) => new Date(ms).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
     const TRANSPORT = "Transportkosten, Gewicht und Reiserisiko sind nicht eingerechnet.";
 
@@ -1535,11 +1823,11 @@ const GELEGENHEITEN = (function () {
       return (
         "<thead><tr><th>Produkt</th><th title='Zutaten je Vorgang mit dem Einkaufspreis je Stück, ohne Einstellgebühr.'>Einkauf je Vorgang</th>" +
         "<th title='Erlös je Stück nach Steuer, bei eigener Verkaufsorder auch nach 2,5 % Einstellgebühr.'>Verkauf</th>" +
-        sortTh("volumen", "verkauft/Tag", "Erfasster Handel des Produkts in der Verkaufsstadt, Mittel der letzten " + TAGE_FENSTER + " Tage. Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen. Klicken sortiert absteigend.") +
-        sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
-        sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
+        sortTh("volumen", "verkauft<br>/Tag", "Erfasster Handel des Produkts in der Verkaufsstadt, Mittel der letzten " + TAGE_FENSTER + " Tage. Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen. Klicken sortiert absteigend.") +
+        sortTh("kosten", "Kosten<br>/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
+        sortTh("stueck", "Gewinn<br>/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
         sortTh("marge", "Marge", V.KOPF_TITEL.marge) +
-        sortTh("tag", "Gewinn/Tag", V.KOPF_TITEL.tag(UI.einstellungenLesen().absatzAnteilProzent)) +
+        sortTh("tag", "Gewinn<br>/Tag", V.KOPF_TITEL.tag(UI.einstellungenLesen().absatzAnteilProzent)) +
         sortTh("jefokus", "Mehrgewinn<br>je Fokus", V.KOPF_TITEL.jefokus) +
         zusatzSpalten.map((s) => (typeof s.wert === "function" ? sortTh(s.id, esc(s.kopf), s.titel || "") : "<th class='num'" + (s.titel ? " title='" + esc(s.titel) + "'" : "") + ">" + esc(s.kopf) + "</th>")).join("") +
         sortTh("alter", "Alter", "Ältester verwendeter Wert der Zeile (Preise oder verkauft/Tag). Klicken zeigt die frischesten zuerst.") +
@@ -1570,7 +1858,84 @@ const GELEGENHEITEN = (function () {
         .join("");
     }
 
-    function zeileHtml(z, k) {
+    // ---- v3.19.0 (O5): Zaehler, Merkstern, Kopieren, Kostenrechner je Zeile ----
+
+    const fmtN = (n) => (n == null || !isFinite(n) ? "k. A." : fmt(n));
+    const prozentN = (a) => (a == null || !isFinite(a) ? "k. A." : prozent(a));
+    const datumText = (ms) => new Date(ms).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const STERN_AUS = "Merken: hält die heutigen Zahlen dieser Zeile fest. Der Filter „Gemerkt“ zeigt sie später gegen den dann aktuellen Stand, der Scan frischt gemerkte Zeilen zuerst auf.";
+    const STERN_AN = "Gemerkt. Erneut klicken entfernt die Zeile aus der Merkliste.";
+
+    function nameAusSchluessel(schluessel) {
+      const t = schluesselTeile(schluessel);
+      return t ? nameVon(t.item, t.stufe) : String(schluessel);
+    }
+
+    function zaehlerHtml(z, name) {
+      const n = e().plan[z.schluessel] || 0;
+      const schritt = z.ausbeute || 1;
+      const t = schritt > 1 ? " (ein Vorgang ergibt " + schritt + " Stück)" : "";
+      return (
+        "<div class='cg-zaehler" + (n ? " an" : "") + "' data-gl-plan='" + esc(z.schluessel) + "' data-gl-schritt='" + schritt + "'>" +
+        "<button type='button' class='cg-zb' data-gl-delta='-1' aria-label='" + esc(name) + ": weniger einplanen' title='Weniger" + esc(t) + "'>−</button>" +
+        "<input type='number' class='cg-zn' min='0' step='" + schritt + "' value='" + n + "' aria-label='Geplante Stückzahl " + esc(name) + "' title='Geplante Stückzahl für die Einkaufsliste" + esc(t) + "'>" +
+        "<button type='button' class='cg-zb' data-gl-delta='1' aria-label='" + esc(name) + ": auf die Einkaufsliste' title='Auf die Einkaufsliste" + esc(t) + "'>+</button></div>"
+      );
+    }
+
+    function sternHtml(schluessel, name) {
+      const an = !!e().merkliste[schluessel];
+      return (
+        "<button type='button' class='gl-stern' data-gl-merk='" + esc(schluessel) + "' aria-pressed='" + (an ? "true" : "false") + "' aria-label='" + esc(name + " merken") + "' title='" + esc(an ? STERN_AN : STERN_AUS) + "'>★</button>"
+      );
+    }
+
+    function kopierKnopfHtml(text) {
+      return " <button type='button' class='mini cg-kopie' data-gl-kopie='" + esc(text) + "' title='„" + esc(text) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button>";
+    }
+
+    /** Tooltip "damals gegen jetzt" einer gemerkten Zeile; z = null, wenn sie gerade nicht gerechnet ist. */
+    function damalsTitel(d, z) {
+      const paar = (text, alt, neu, f) => text + ": " + (alt == null ? "k. A." : f(alt)) + " → " + (neu == null || !isFinite(neu) ? "k. A." : f(neu));
+      const preis = (n) => fmt(Math.round(n * 100) / 100);
+      const zeilen = [
+        "Gemerkt am " + datumText(d.am) + ". Damals → jetzt:",
+        paar("Gewinn/Stück", d.gewinn, z && z.gewinn, fmt),
+        paar("Marge", d.marge, z && z.marge, prozent),
+        paar("Gewinn/Tag", d.gewinnJeTag, z && z.gewinnJeTag, (n) => zahl(n)),
+        paar("Kosten/Stück", d.silber, z && z.silber, fmt),
+        paar("Produktpreis" + (d.vkStadt ? " (" + d.vkStadt + ")" : ""), d.produktPreis, z && z.produktPreis, preis),
+      ];
+      (d.zutaten || []).forEach((x) => {
+        const heute = z ? (z.zutatenPreise || []).find((y) => y.marktId === x.marktId) : null;
+        zeilen.push(paar((x.menge != null ? Math.round(x.menge * 100) / 100 + "× " : "") + nameVon(x.n, x.stufe), x.preis, heute ? heute.basisPreis : null, preis));
+      });
+      return zeilen.join("\n");
+    }
+
+    /**
+     * Der Wert im Moment des Merkens ueber dem heutigen (nur im Filter
+     * "Gemerkt"): "damals 21.815" in Textfarbe, dahinter ein Zeichen fuer die
+     * Richtung bis heute (▲ besser, ▼ schlechter). Der Tooltip mit den
+     * Einzelheiten haengt an der ganzen Zelle, s. damalsZelle().
+     */
+    function damalsHtml(d, z, feld, text, skala) {
+      if (!d) return "";
+      const r = damalsRichtung(d[feld], z ? z[feld] : null, skala);
+      const zeichen = r > 0 ? "<span class='gl-besser' aria-label='heute besser'>▲</span>" : r < 0 ? "<span class='gl-schlechter' aria-label='heute schlechter'>▼</span>" : "";
+      return "<div class='gl-damals'><span class='gl-damals-wort'>damals</span> " + (d[feld] == null ? "k. A." : text(d[feld])) + zeichen + "</div>";
+    }
+    /** title-Attribut der ganzen Zelle im Filter "Gemerkt", sonst leer. */
+    const damalsZelle = (d, z) => (d ? " title='" + esc(damalsTitel(d, z)) + "'" : "");
+    /** Unterzeile am Produkt im Filter "Gemerkt": "gemerkt vor 3 Std.". */
+    function gemerktAmHtml(d, jetzt) {
+      if (!d) return "";
+      const alter = alterText(d.am, jetzt);
+      return "<div class='vd-klein gl-gemerkt-am' title='" + esc("Gemerkt am " + datumText(d.am) + ". Die Zahlen hinter „damals“ sind der Stand von diesem Zeitpunkt.") + "'>★ gemerkt " + (alter === "gerade eben" ? alter : "vor " + alter) + "</div>";
+    }
+
+    /** @param [d] Merkeintrag: dann zeigt die Zeile damals gegen jetzt. */
+    function zeileHtml(z, k, d) {
       const name = nameVon(z.item, z.stufe);
       const istCraft = z.art === "craften";
       const artText = (istCraft ? "Craften" : "Veredeln") + " · " + (GRUPPEN_LABEL[z.cc] || z.cc);
@@ -1591,28 +1956,191 @@ const GELEGENHEITEN = (function () {
         "Erfasster Handel in " + (z.vkStadt || "") + ", Mittel der letzten " + TAGE_FENSTER + " Tage" + (istCraft && z.qualifizierbar ? ", alle Qualitäten zusammen" : "") +
         ". Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.";
       const alt = istAlt(z, k.jetzt);
-      const knoepfe = aktionen.length
-        ? "<div class='gl-aktionen'>" + aktionen.map((a) => "<button type='button' class='mini' data-gl-aktion='" + esc(a.id) + "'" + (a.titel ? " title='" + esc(a.titel) + "'" : "") + ">" + esc(a.text) + "</button>").join("") + "</div>"
-        : "";
+      const weitere = aktionen.map((a) => "<button type='button' class='mini' data-gl-aktion='" + esc(a.id) + "'" + (a.titel ? " title='" + esc(a.titel) + "'" : "") + ">" + esc(a.text) + "</button>").join("");
+      const klasse = z.gewinn == null ? "vd-null" : z.gewinn > 0 ? "vd-gewinn" : "vd-verlust";
       return (
-        "<tr class='vd-gewinn" + (alt ? " gl-alt" : "") + "' data-gl-zeile='" + esc(z.schluessel) + "'>" +
-        "<td><div class='vd-produkt'>" + icon(z.marktId, 40, name) + "<div><div class='vd-pname'>" + esc(name) + "</div>" +
+        "<tr class='" + klasse + (alt ? " gl-alt" : "") + "' data-gl-zeile='" + esc(z.schluessel) + "'>" +
+        "<td><div class='vd-produkt'>" + icon(z.marktId, 40, name) + "<div><div class='vd-pname'>" + esc(name) + kopierKnopfHtml(C.suchName(name, z.item, z.stufe)) + "</div>" +
         "<div class='vd-klein'" + (z.ausbeute > 1 ? " title='Ein Vorgang ergibt " + z.ausbeute + " Stück.'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + " · " + esc(artText) + (z.stadtbonus ? " · Stadtbonus" : "") + "</div>" +
-        knoepfe + "</div></div></td>" +
+        gemerktAmHtml(d, k.jetzt) +
+        "<div class='gl-aktionen'>" + zaehlerHtml(z, name) + sternHtml(z.schluessel, name) + V.krKnopfHtml(z, esc, name) + weitere + "</div></div></div></td>" +
         "<td><div class='gl-zutaten" + (k.mehrEk ? " mit-stadt" : "") + "'>" + zutatenHtml(z, k.mehrEk, k.kauforder) + "</div></td>" +
-        "<td><div class='vd-erloes' title='" + esc(erloesTitel) + "'>" + fmt(z.erloes) + "</div>" +
-        "<div class='vd-klein' title='" + esc(preisTitel) + "'>Preis " + fmt(z.produktPreis) + (qText ? " (" + qText + ")" : "") + "</div>" +
+        "<td><div class='vd-erloes' title='" + esc(erloesTitel) + "'>" + fmtN(z.erloes) + "</div>" +
+        "<div class='vd-klein' title='" + esc(preisTitel) + "'>Preis " + fmtN(z.produktPreis) + (qText ? " (" + qText + ")" : "") + "</div>" +
         (k.mehrVk && z.vkStadt ? "<div><span class='vd-stadt' title='" + esc("Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "'>" + esc(z.vkStadt) + "</span></div>" : "") +
         "</td>" +
         "<td class='num' title='" + esc(volTitel) + "'>" + stueck(z.stueckJeTag) + "</td>" +
-        "<td class='num'>" + fmt(z.silber) + (z.fokusJeVorgang > 0 ? "<div class='vd-klein'>" + fmtFokus(z.fokusJeVorgang) + " Fokus/Vorgang</div>" : "") + "</td>" +
-        "<td class='num vd-wert'>" + fmt(z.gewinn) + "</td>" +
-        "<td class='num vd-wert2'>" + prozent(z.marge) + "</td>" +
-        V.kennzahlZellenHtml(z, esc) +
+        "<td class='num'>" + fmtN(z.silber) + (z.fokusJeVorgang > 0 ? "<div class='vd-klein vd-umbruch'>" + fmtFokus(z.fokusJeVorgang) + "&nbsp;Fokus je&nbsp;Vorgang</div>" : "") + "</td>" +
+        "<td class='num vd-wert'" + damalsZelle(d, z) + ">" + damalsHtml(d, z, "gewinn", fmt, 1) + fmtN(z.gewinn) + "</td>" +
+        "<td class='num vd-wert2'" + damalsZelle(d, z) + ">" + damalsHtml(d, z, "marge", prozent, 1000) + prozentN(z.marge) + "</td>" +
+        V.kennzahlZellenHtml(z, esc, damalsHtml(d, z, "gewinnJeTag", (n) => zahl(n), 1), d ? damalsTitel(d, z) : "") +
         zusatzSpalten.map((s) => "<td class='num'>" + s.zelle(z) + "</td>").join("") +
         "<td class='num gl-alter' title='" + esc(alterTitel(z, k.jetzt)) + "'>" + alterText(z.abrufAm, k.jetzt) + "</td>" +
         "</tr>"
       );
+    }
+
+    /** Gemerkte Zeile, die gerade nicht im Scanumfang liegt: Name, Stern zum Entfernen, die Zahlen von damals. */
+    function stubHtml(schluessel, d) {
+      const name = nameAusSchluessel(schluessel);
+      const t = schluesselTeile(schluessel);
+      return (
+        "<tr class='gl-stub' data-gl-zeile='" + esc(schluessel) + "'>" +
+        "<td><div class='vd-produkt'>" + (t ? icon(t.marktId, 40, name) : "") + "<div><div class='vd-pname'>" + esc(name) + "</div>" +
+        "<div class='vd-klein'>" + (t && t.tier ? "T" + t.tier + "." + t.stufe + " · " : "") + (t && t.art === "veredeln" ? "Veredeln" : "Craften") + "</div>" +
+        gemerktAmHtml(d, Date.now()) +
+        "<div class='gl-aktionen'>" + sternHtml(schluessel, name) + "</div></div></div></td>" +
+        "<td colspan='" + (9 + zusatzSpalten.length) + "' class='vd-klein' title='" + esc(damalsTitel(d, null)) + "'>Liegt nicht im Scanumfang. Gemerkt am " + esc(datumText(d.am)) +
+        " mit Gewinn/Stück " + (d.gewinn == null ? "k. A." : fmt(d.gewinn)) + ".</td></tr>"
+      );
+    }
+
+    /** Fokus ueber ein Neuzeichnen retten: liefert eine Funktion, die ihn auf das entsprechende neue Element setzt. */
+    function fokusMerken(behaelter) {
+      const a = document.activeElement;
+      if (!a || !behaelter.contains(a)) return function () {};
+      const attr = Array.from(a.attributes).find((x) => /^data-(gl|vd)-/.test(x.name));
+      if (!attr) return function () {};
+      const q = (s) => String(s).replace(/["\\]/g, "\\$&");
+      const tr = a.closest("tr[data-gl-zeile]");
+      const sel = (tr ? 'tr[data-gl-zeile="' + q(tr.dataset.glZeile) + '"] ' : "") + "[" + attr.name + '="' + q(attr.value) + '"]';
+      return function () {
+        const neu = behaelter.querySelector(sel);
+        if (neu && document.activeElement !== neu) neu.focus({ preventScroll: true });
+      };
+    }
+
+    function leisteKnoepfeSetzen() {
+      const s = e();
+      const gemerktN = Object.keys(s.merkliste).length;
+      const planN = Object.keys(s.plan).length;
+      if (gemerktEl) {
+        gemerktEl.textContent = "★ Gemerkt (" + zahl(gemerktN) + ")";
+        gemerktEl.setAttribute("aria-pressed", nurGemerkt ? "true" : "false");
+      }
+      if (zurListeEl) {
+        zurListeEl.hidden = !planN;
+        zurListeEl.textContent = "Einkaufsliste (" + zahl(planN) + ")";
+      }
+    }
+
+    function planSetzen(schluessel, stueckzahl) {
+      const n = Math.max(0, Math.floor(Number(stueckzahl)) || 0);
+      const plan = Object.assign({}, e().plan);
+      if (n > 0) plan[schluessel] = n;
+      else delete plan[schluessel];
+      m.einstellen({ plan });
+      speichern();
+      wurzel.querySelectorAll(".cg-zaehler[data-gl-plan]").forEach((w) => {
+        if (w.dataset.glPlan !== schluessel) return;
+        w.classList.toggle("an", n > 0);
+        const inp = w.querySelector(".cg-zn");
+        if (inp && document.activeElement !== inp) inp.value = n;
+      });
+      leisteKnoepfeSetzen();
+      listeRendern();
+    }
+
+    function merkUmschalten(schluessel) {
+      const liste = Object.assign({}, e().merkliste);
+      if (liste[schluessel]) delete liste[schluessel];
+      else {
+        const z = m.zeile(schluessel);
+        if (!z) return;
+        liste[schluessel] = merkEintrag(z, Date.now());
+      }
+      m.einstellen({ merkliste: liste });
+      speichern();
+      if (nurGemerkt) {
+        zeichnen();
+        return;
+      }
+      const an = !!liste[schluessel];
+      wurzel.querySelectorAll("button[data-gl-merk]").forEach((b) => {
+        if (b.dataset.glMerk !== schluessel) return;
+        b.setAttribute("aria-pressed", an ? "true" : "false");
+        b.title = an ? STERN_AN : STERN_AUS;
+      });
+      leisteKnoepfeSetzen();
+    }
+
+    // ---- Einkaufsliste (dieselbe Funktion wie in "Craften: Gewinn", Schluessel = Zeilenschluessel) ----
+
+    function planListe() {
+      const plan = e().plan;
+      return C.einkaufsliste(Object.keys(plan).map((k) => m.zeile(k)).filter(Boolean), plan, (z) => z.schluessel);
+    }
+
+    let listeHtmlAlt = null;
+    function listeRendern() {
+      if (!listeEl) return;
+      const s = e();
+      const keys = Object.keys(s.plan);
+      if (!keys.length) {
+        listeEl.hidden = true;
+        listeEl.innerHTML = "";
+        listeHtmlAlt = null;
+        return;
+      }
+      const st = m.status();
+      // Solange der Reiter noch rechnet, fehlen Zeilen nur voruebergehend: nicht als "fehlend" melden.
+      if (!st.geoeffnet || (st.rechnet && keys.some((k) => !m.zeile(k)))) return;
+      const liste = planListe();
+      const rang = new Set(m.rangliste().zeilen.map((z) => z.schluessel));
+      const order = s.kaufweg === "order";
+      const mehrEk = V.schilderZeigen(s.einkaufStaedte);
+      const produkte = liste.produkte
+        .map((p) => {
+          const name = nameVon(p.item, p.stufe);
+          const imRang = rang.has(p.schluessel);
+          const titel =
+            (imRang ? "" : "Steht gerade nicht in der Rangliste (Filter, verkauft/Tag oder kein Gewinn), bleibt aber geplant. ") +
+            "Erlös und Gewinn für " + zahl(p.hergestellt) + " Stück: die Zahlen der Zeile mal Menge.";
+          return (
+            "<span class='cg-plan-produkt" + (imRang ? "" : " gl-ausser-rang") + "' title='" + esc(titel) + "'>" + icon(p.marktId, 24, name) +
+            "<span class='gl-plan-text'><span>" + zahl(p.stueck) + "× " + esc(name) + " <span class='vd-klein'>T" + p.tier + "." + (p.vorgangsStufe != null ? p.vorgangsStufe : p.stufe) +
+            (p.ausbeute > 1 ? ", " + p.vorgaenge + " Vorgänge = " + zahl(p.hergestellt) + " Stück" : "") + "</span></span>" +
+            "<span class='vd-klein'>Erlös " + fmtN(p.erloes) + " · Gewinn <b class='" + (p.gewinn == null ? "" : p.gewinn >= 0 ? "gl-plus" : "gl-minus") + "'>" + fmtN(p.gewinn) + "</b></span></span>" +
+            "<button type='button' class='vd-reset cg-plan-weg' data-gl-weg='" + esc(p.schluessel) + "' title='Aus der Planung nehmen' aria-label='" + esc(name) + " aus der Planung nehmen'>×</button></span>"
+          );
+        })
+        .join("");
+      const zeilenHtml = liste.posten
+        .map((x) => {
+          const name = nameVon(x.n, x.stufe);
+          const such = C.suchName(name, x.n, x.stufe);
+          return (
+            "<tr><td><div class='cg-el-name'>" + icon(x.n, 30, name) + "<span>" + esc(name) + "</span>" +
+            "<button type='button' class='mini cg-kopie' data-gl-kopie='" + esc(such) + "' title='„" + esc(such) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button></div></td>" +
+            "<td class='num'>" + zahl(x.menge) + "</td>" +
+            (mehrEk ? "<td>" + (x.stadt ? "<span class='vd-stadt' title='" + esc("Günstigste angehakte Einkaufsstadt. " + TRANSPORT) + "'>" + esc(x.stadt) + "</span>" : "") + "</td>" : "") +
+            "<td class='num'>" + (x.basisPreis != null ? fmt(Math.round(x.basisPreis * 100) / 100) : "k. A.") + "</td>" +
+            "<td class='num'>" + fmt(x.kosten) + "</td></tr>"
+          );
+        })
+        .join("");
+      const fehlt = liste.fehlend.length
+        ? "<div class='vd-erkl'>" + liste.fehlend.length + (liste.fehlend.length === 1 ? " geplantes Produkt hat" : " geplante Produkte haben") +
+          " gerade keine Zutatenpreise oder liegt außerhalb des Scanumfangs: " + liste.fehlend.map((id) => esc(nameAusSchluessel(id))).join(", ") +
+          ". <button type='button' class='mini' data-gl-fehlend-weg='1' title='Nimmt diese Produkte aus der Planung. Die übrige Liste bleibt.'>Entfernen</button></div>"
+        : "";
+      const html =
+        "<div class='cg-el-kopf'><h2 class='vd-kt' tabindex='-1'>Einkaufsliste</h2>" +
+        "<span class='vd-klein' title='Mengen, die für die geplanten Vorgänge im Inventar liegen müssen. Die Rückgewinnung gibt einen Teil davon nach dem Craften zurück; die Kosten in der Rangliste sind deshalb niedriger.'>vor Rückgewinnung</span>" +
+        "<span class='cg-el-knoepfe'><button type='button' class='mini' data-gl-alle-kopieren='1' title='Alle Zeilen als „Menge Name 4.1“ kopieren'>Alles kopieren</button>" +
+        "<button type='button' class='mini' data-gl-leeren='1' title='Setzt alle Zähler auf 0 und leert die Einkaufsliste. Die Merkliste bleibt.'>Liste leeren</button></span></div>" +
+        "<div class='cg-plan'>" + produkte + "</div>" + fehlt +
+        (liste.posten.length
+          ? "<div class='vd-tabrahmen'><table class='vd-tabelle cg-el-tabelle'><thead><tr><th>Zutat</th><th class='num'>Menge</th>" +
+            (mehrEk ? "<th>Stadt</th>" : "") + "<th class='num'>" + (order ? "Orderpreis" : "Preis") + "/Stück</th><th class='num'>Kosten</th></tr></thead><tbody>" +
+            zeilenHtml + "</tbody>" + C.einkaufslisteSummenHtml(liste, { spalten: mehrEk ? 4 : 3, order, fmt, esc }) + "</table></div>"
+          : "");
+      if (html === listeHtmlAlt && !listeEl.hidden) return;
+      const fokus = fokusMerken(listeEl);
+      listeEl.hidden = false;
+      listeEl.innerHTML = html;
+      listeHtmlAlt = html;
+      fokus();
     }
 
     function zeichnen() {
@@ -1626,8 +2154,23 @@ const GELEGENHEITEN = (function () {
       const r = m.rangliste();
       const s = e();
       const st = m.status();
+      const fokus = fokusMerken(ausgabeEl);
+      const leer = (text) => "<div class='vd-leer'>" + esc(text) + "</div>";
+      const tabelle = (zeilenHtml, danach) =>
+        "<div class='vd-tabrahmen'><table class='vd-tabelle gl-tabelle'>" + kopfHtml(s.sortierung) + "<tbody>" + zeilenHtml + "</tbody></table></div>" + (danach || "");
       gezeichnet = new Set();
-      if (!r.zeilen.length) {
+      let html;
+      if (nurGemerkt) {
+        // Filter "Gemerkt": alle gemerkten Zeilen, auch ohne Gewinn oder unter dem Volumenfilter, damals gegen jetzt.
+        const liste = m.gemerkt();
+        if (!liste.length) html = leer("Noch nichts gemerkt. Der Stern an einer Zeile merkt sie mit den heutigen Zahlen.");
+        else if (!st.geoeffnet || (st.rechnet && liste.some((x) => !x.z))) html = leer("Rechne aus dem Preisbestand ...");
+        else {
+          const k = zeilenKontext();
+          liste.forEach((x) => gezeichnet.add(x.schluessel));
+          html = tabelle(liste.map((x) => (x.z ? zeileHtml(x.z, k, x.damals) : stubHtml(x.schluessel, x.damals))).join(""));
+        }
+      } else if (!r.zeilen.length) {
         const info = PREISE.bestandInfo();
         let text;
         if (!st.geoeffnet || st.rechnet) text = "Rechne aus dem Preisbestand ...";
@@ -1638,20 +2181,21 @@ const GELEGENHEITEN = (function () {
           text =
             "Von " + zahl(r.vorgaenge) + " Produkten im Scanumfang zeigt gerade keines Gewinn bei mindestens " + minText(s.minAbsatz) + " verkauft/Tag" +
             (r.ausgeblendet ? " (" + zahl(r.ausgeblendet) + " mit Gewinn unter „Mind. verkauft/Tag“)" : "") + ".";
-        ausgabeEl.innerHTML = "<div class='vd-leer'>" + esc(text) + "</div>";
-        statusSetzen();
-        return;
+        html = leer(text);
+      } else {
+        const k = zeilenKontext();
+        const sichtbar = r.zeilen.slice(0, grenze);
+        sichtbar.forEach((z) => gezeichnet.add(z.schluessel));
+        html = tabelle(sichtbar.map((z) => zeileHtml(z, k)).join(""), mehrKnopfHtml(r.zeilen.length - sichtbar.length));
+        if (messung.geoeffnetUm != null && messung.ersteZeilenMs == null) {
+          messung.ersteZeilenMs = performance.now() - messung.geoeffnetUm;
+          messung.zeilenBeimErsten = sichtbar.length;
+        }
       }
-      const k = zeilenKontext();
-      const sichtbar = r.zeilen.slice(0, grenze);
-      sichtbar.forEach((z) => gezeichnet.add(z.schluessel));
-      const rest = r.zeilen.length - sichtbar.length;
-      ausgabeEl.innerHTML =
-        "<div class='vd-tabrahmen'><table class='vd-tabelle gl-tabelle'>" + kopfHtml(s.sortierung) + "<tbody>" + sichtbar.map((z) => zeileHtml(z, k)).join("") + "</tbody></table></div>" + mehrKnopfHtml(rest);
-      if (messung.geoeffnetUm != null && messung.ersteZeilenMs == null) {
-        messung.ersteZeilenMs = performance.now() - messung.geoeffnetUm;
-        messung.zeilenBeimErsten = sichtbar.length;
-      }
+      ausgabeEl.innerHTML = html;
+      fokus();
+      leisteKnoepfeSetzen();
+      listeRendern();
       statusSetzen();
     }
     neuZeichnen = function () {
@@ -1699,9 +2243,12 @@ const GELEGENHEITEN = (function () {
       const warten = Math.max(0, 300 - (performance.now() - letztesZeichnen));
       zeichnenGeplant = setTimeout(() => {
         zeichnenGeplant = null;
-        // Zwischenzeitlich gescrollt: nicht mehr umsortieren.
-        if (istGescrollt() && gezeichnet.size) wartendZeigen();
-        else zeichnen();
+        // v3.19.0: nie unter einer gedrueckten Maustaste neu zeichnen, sonst geht der Klick verloren.
+        V.nachZeiger(() => {
+          // Zwischenzeitlich gescrollt: nicht mehr umsortieren.
+          if (istGescrollt() && gezeichnet.size) wartendZeigen();
+          else zeichnen();
+        });
       }, warten);
     }
 
@@ -1751,10 +2298,13 @@ const GELEGENHEITEN = (function () {
       leisteEl.dataset.scan = st.scanAn ? st.scan : "aus";
       const saetze = UI.einstellungenLesen().stationssaetze || {};
       const fehlend = C.stationenFuer(s.warengruppen).concat(V.stationenFuer(s.rohstoffe)).filter((g, i, a) => a.indexOf(g) === i && saetze[g] == null);
-      statusEl.textContent =
-        zahl(r.zeilen.length) + (r.zeilen.length === 1 ? " Gelegenheit" : " Gelegenheiten") +
-        (r.ausgeblendet ? ", " + zahl(r.ausgeblendet) + " unter „Mind. verkauft/Tag“" : "");
-      statusEl.title = "Zeilen mit Gewinn und mindestens " + minText(s.minAbsatz) + " verkauft/Tag.";
+      const gemerktN = Object.keys(s.merkliste).length;
+      statusEl.textContent = nurGemerkt
+        ? zahl(gemerktN) + " gemerkt"
+        : zahl(r.zeilen.length) + (r.zeilen.length === 1 ? " Gelegenheit" : " Gelegenheiten") + (r.ausgeblendet ? ", " + zahl(r.ausgeblendet) + " unter „Mind. verkauft/Tag“" : "");
+      statusEl.title = nurGemerkt
+        ? "Alle gemerkten Zeilen, auch ohne Gewinn oder unter „Mind. verkauft/Tag“."
+        : "Zeilen mit Gewinn und mindestens " + minText(s.minAbsatz) + " verkauft/Tag.";
       warnungEl.hidden = !fehlend.length;
       warnungEl.textContent = "Stationssatz fehlt für " + fehlend.length + " Gebäude";
       warnungEl.title = fehlend.length
@@ -1768,6 +2318,8 @@ const GELEGENHEITEN = (function () {
       if (ev.typ === "zeilen") {
         if (ev.fertig && messung.geoeffnetUm != null && messung.fertigMs == null) messung.fertigMs = performance.now() - messung.geoeffnetUm;
         ev.geaendert.forEach((s) => wartend.add(s));
+        // Einkaufsliste: neue Preise der geplanten Produkte nachziehen, auch wenn die Rangliste wegen Scrollens steht.
+        if (ev.fertig || ev.geaendert.some((s) => e().plan[s] != null)) V.nachZeiger(listeRendern);
         if (istGescrollt() && gezeichnet.size) {
           if (ev.fertig) wartendZeigen();
         } else if (ev.geaendert.length || ev.fertig || !gezeichnet.size) zeichnenPlanen();
@@ -1788,7 +2340,14 @@ const GELEGENHEITEN = (function () {
       else zeichnen();
     }
 
-    wurzel.addEventListener("change", (ev) => {
+    // v3.19.0: ueber V.nachZeiger(), damit ein Klick direkt nach der Eingabe nicht verloren geht.
+    wurzel.addEventListener("change", (ev) => V.nachZeiger(() => beiAenderung(ev)));
+    function beiAenderung(ev) {
+      const zaehlerEl = ev.target.closest(".cg-zaehler[data-gl-plan]");
+      if (zaehlerEl && ev.target.classList.contains("cg-zn")) {
+        planSetzen(zaehlerEl.dataset.glPlan, ev.target.value);
+        return;
+      }
       const box = ev.target.closest("input[data-gruppe]");
       if (box) {
         const g = GRUPPEN[box.dataset.gruppe];
@@ -1813,7 +2372,7 @@ const GELEGENHEITEN = (function () {
         geaendert(m.einstellen({ minAbsatz: minAbsatzEl.value }));
         minAbsatzEl.value = e().minAbsatz;
       }
-    });
+    }
 
     wurzel.addEventListener("click", (ev) => {
       const schalter = ev.target.closest("[data-gl-schalter]");
@@ -1845,6 +2404,55 @@ const GELEGENHEITEN = (function () {
       }
       if (ev.target.closest("[data-gl-mehr]")) {
         mehrZeigen();
+        return;
+      }
+      // ---- v3.19.0 (O5) ----
+      if (gemerktEl && ev.target.closest("#glGemerkt")) {
+        nurGemerkt = !nurGemerkt;
+        grenze = MAX_ZEILEN;
+        zeichnen();
+        return;
+      }
+      if (zurListeEl && ev.target.closest("#glZurListe")) {
+        listeEl.scrollIntoView({ block: "start" });
+        const kopf = listeEl.querySelector("h2");
+        if (kopf) kopf.focus({ preventScroll: true });
+        return;
+      }
+      const zb = ev.target.closest("button[data-gl-delta]");
+      if (zb) {
+        const w = zb.closest(".cg-zaehler");
+        const schritt = Number(w.dataset.glSchritt) || 1;
+        planSetzen(w.dataset.glPlan, (e().plan[w.dataset.glPlan] || 0) + Number(zb.dataset.glDelta) * schritt);
+        return;
+      }
+      const stern = ev.target.closest("button[data-gl-merk]");
+      if (stern) {
+        merkUmschalten(stern.dataset.glMerk);
+        return;
+      }
+      const kopie = ev.target.closest("button[data-gl-kopie]");
+      if (kopie) {
+        V.kopieren(kopie.dataset.glKopie, kopie);
+        return;
+      }
+      if (ev.target.closest("button[data-gl-alle-kopieren]")) {
+        V.kopieren(C.einkaufslisteText(planListe(), (n, st) => C.suchName(nameVon(n, st), n, st)), ev.target.closest("button"));
+        return;
+      }
+      const weg = ev.target.closest("button[data-gl-weg]");
+      if (weg) {
+        planSetzen(weg.dataset.glWeg, 0);
+        return;
+      }
+      if (ev.target.closest("button[data-gl-leeren]") || ev.target.closest("button[data-gl-fehlend-weg]")) {
+        const ids = ev.target.closest("button[data-gl-fehlend-weg]") ? planListe().fehlend : Object.keys(e().plan);
+        ids.forEach((id) => planSetzen(id, 0));
+        return;
+      }
+      const kr = ev.target.closest("button[data-vd-kr]");
+      if (kr) {
+        V.kostenrechnerOeffnen(kr);
         return;
       }
       if (ev.target === neuSortierenEl) {
@@ -1896,6 +2504,7 @@ const GELEGENHEITEN = (function () {
     schalterSetzen();
     umfangSetzen();
     kurzSetzen();
+    leisteKnoepfeSetzen();
     speichern();
     ausgabeEl.innerHTML = "<div class='vd-leer'>Rechne aus dem Preisbestand ...</div>";
   }
@@ -1928,6 +2537,13 @@ const GELEGENHEITEN = (function () {
     erzeugen,
     spalteErgaenzen,
     aktionErgaenzen,
+    MERK_MAX,
+    schluesselTeile,
+    planBereinigen,
+    merkEintrag,
+    merklisteBereinigen,
+    damalsRichtung,
+    gemerkteZeilen,
     /** Die Maschine des Reiters in der App (null in tests/test.html). */
     maschine: () => maschine,
     messung,

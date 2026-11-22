@@ -601,13 +601,160 @@ const VEREDELN = (function () {
       "Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.",
   };
 
-  /** Die beiden Zellen (Gewinn/Tag, Mehrgewinn je Fokuspunkt) als HTML; esc maskiert Attributwerte. */
-  function kennzahlZellenHtml(z, esc) {
+  /**
+   * Die beiden Zellen (Gewinn/Tag, Mehrgewinn je Fokuspunkt) als HTML; esc
+   * maskiert Attributwerte. vorTag (v3.19.0, optional): HTML vor dem
+   * Gewinn/Tag, in "Gelegenheiten" der Wert im Moment des Merkens;
+   * titelDavor (optional): Text, der im Tooltip vor der Rechnung steht.
+   */
+  function kennzahlZellenHtml(z, esc, vorTag, titelDavor) {
     return (
-      "<td class='num vd-wert vd-tag-zelle' title='" + esc(tagTitel(z)) + "'>" + tagText(z) +
-      (z.tagGrenze === "fokus" ? "<div class='vd-klein'>Fokus begrenzt</div>" : "") + "</td>" +
+      "<td class='num vd-wert vd-tag-zelle' title='" + esc((titelDavor ? titelDavor + "\n\n" : "") + tagTitel(z)) + "'>" + (vorTag || "") + tagText(z) +
+      (z.tagGrenze === "fokus" ? "<div class='vd-klein vd-umbruch'>Fokus begrenzt</div>" : "") + "</td>" +
       "<td class='num vd-jefokus-zelle' title='" + esc(jeFokusTitel(z)) + "'>" + jeFokusText(z) + "</td>"
     );
+  }
+
+  // -----------------------------------------------------------------------
+  // v3.19.0 (O5): gemeinsame Bedienhilfen der drei Gewinn-Reiter
+  // -----------------------------------------------------------------------
+
+  /**
+   * Schutz gegen den "verlorenen Klick": tippt man in ein Zahlenfeld und
+   * klickt direkt auf einen Tabellenkopf oder Knopf, feuert das Feld sein
+   * change waehrend des Mausdrucks. Zeichnet der Reiter dann neu, ist das
+   * gedrueckte Element ersetzt und der Browser loest keinen Klick mehr aus.
+   * nachZeiger(fn) fuehrt fn deshalb sofort aus, solange keine Taste
+   * gedrueckt ist (Tastatur, Auswahlfelder), sonst erst unmittelbar VOR dem
+   * Klick (Capture-Phase): die Eingabe wird zuerst uebernommen, dann wirkt
+   * der Klick. Ohne Klick (Ziehen, Abbruch) laeuft fn nach dem Loslassen.
+   */
+  const zeiger = { unten: false, wartend: [], eingerichtet: false };
+  function zeigerAblassen() {
+    zeiger.unten = false;
+    const liste = zeiger.wartend.splice(0);
+    liste.forEach((fn) => {
+      try {
+        fn();
+      } catch (err) {
+        if (typeof console !== "undefined") console.error(err);
+      }
+    });
+  }
+  function zeigerEinrichten() {
+    if (zeiger.eingerichtet || typeof document === "undefined") return;
+    zeiger.eingerichtet = true;
+    const runter = () => {
+      zeiger.unten = true;
+    };
+    const spaeter = () => setTimeout(zeigerAblassen, 0);
+    document.addEventListener("pointerdown", runter, true);
+    document.addEventListener("mousedown", runter, true);
+    document.addEventListener("click", zeigerAblassen, true);
+    document.addEventListener("pointerup", spaeter, true);
+    document.addEventListener("mouseup", spaeter, true);
+    document.addEventListener("pointercancel", spaeter, true);
+    if (typeof window !== "undefined") window.addEventListener("blur", spaeter);
+  }
+  function nachZeiger(fn) {
+    zeigerEinrichten();
+    if (zeiger.unten) zeiger.wartend.push(fn);
+    else fn();
+  }
+  /** Ist gerade eine Maustaste oder ein Finger unten? Dann besser nicht neu zeichnen. */
+  function zeigerUnten() {
+    zeigerEinrichten();
+    return zeiger.unten;
+  }
+
+  /** Text in die Zwischenablage, mit kurzer Rueckmeldung am Knopf (aus craften.js v3.12.0 hierher gezogen). */
+  function kopieren(text, knopf) {
+    const fertig = () => {
+      if (!knopf) return;
+      const alt = knopf.textContent;
+      knopf.textContent = "✓";
+      knopf.classList.add("ok");
+      setTimeout(() => {
+        knopf.textContent = alt;
+        knopf.classList.remove("ok");
+      }, 900);
+    };
+    const ersatz = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch (e) {
+        /* ignorieren */
+      }
+      document.body.removeChild(ta);
+      fertig();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(fertig, ersatz);
+    else ersatz();
+  }
+
+  /**
+   * Preisfeld je Zutat (v3.19.0): Textfeld statt Zahlenfeld, damit die
+   * Anzeige den Tausenderpunkt tragen kann ("5.611"). Beim Hineinklicken
+   * steht der Wert ohne Punkt da ("5611"), beim Verlassen wieder mit.
+   */
+  const PREISFELD = {
+    /** Anzeige: deutsch, Tausenderpunkt, hoechstens zwei Nachkommastellen. */
+    anzeige(n) {
+      const x = Number(n);
+      return isFinite(x) ? x.toLocaleString("de-DE", { maximumFractionDigits: 2 }) : "";
+    },
+    /** Zum Bearbeiten: ohne Tausenderpunkt, Komma als Dezimaltrenner. */
+    roh(n) {
+      const x = Number(n);
+      return isFinite(x) ? String(x).replace(".", ",") : "";
+    },
+    /**
+     * Eingabe lesen: "5611", "5.611" und "5.611,5" (deutsch), auch "12.5"
+     * (Punkt als Dezimaltrenner, wenn es kein Tausendermuster ist). Leer
+     * oder unlesbar ergibt null (setzt den eigenen Preis zurueck).
+     */
+    lesen(text) {
+      let t = String(text == null ? "" : text).replace(/\s/g, "");
+      if (!t) return null;
+      if (t.indexOf(",") !== -1) t = t.replace(/\./g, "").replace(",", ".");
+      else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+      const n = Number(t);
+      return isFinite(n) ? n : null;
+    },
+    /** Hineinklicken zeigt den Wert ohne Punkt, Verlassen ohne Aenderung wieder mit. */
+    einrichten(wurzel) {
+      wurzel.addEventListener("focusin", (ev) => {
+        const f = ev.target && ev.target.closest ? ev.target.closest("input.vd-preis[data-vd-roh]") : null;
+        if (f && PREISFELD.lesen(f.value) === Number(f.dataset.vdRoh)) f.value = PREISFELD.roh(f.dataset.vdRoh);
+      });
+      wurzel.addEventListener("focusout", (ev) => {
+        const f = ev.target && ev.target.closest ? ev.target.closest("input.vd-preis[data-vd-roh]") : null;
+        if (!f) return;
+        const n = PREISFELD.lesen(f.value);
+        if (n != null) f.value = PREISFELD.anzeige(n);
+      });
+    },
+  };
+
+  const KR_TITEL = "Im Kostenrechner öffnen: Item, Stufe und Fertigungsstadt werden übernommen, die Rechnung startet und ruft die Preise des ganzen Rezeptbaums ab.";
+  /** Knopf "Kostenrechner" einer Zeile (v3.19.0); der Klick laeuft ueber kostenrechnerOeffnen(). */
+  function krKnopfHtml(z, esc, name) {
+    return (
+      "<button type='button' class='mini vd-kr' data-vd-kr='" + esc(z.item) + "' data-vd-kr-stufe='" + (z.stufe || 0) + "' data-vd-kr-stadt='" + esc(z.stadt || "") + "'" +
+      " title='" + esc(KR_TITEL) + "' aria-label='" + esc((name || z.item) + " im Kostenrechner öffnen") + "'>Kostenrechner</button>"
+    );
+  }
+  /** Sprung in den Kostenrechner aus einem krKnopfHtml()-Knopf. */
+  function kostenrechnerOeffnen(knopf) {
+    if (!knopf || typeof UI === "undefined" || !UI.itemOeffnen) return null;
+    return UI.itemOeffnen({ item: knopf.dataset.vdKr, stufe: Number(knopf.dataset.vdKrStufe) || 0, stadt: knopf.dataset.vdKrStadt });
   }
 
   /**
@@ -1424,7 +1571,14 @@ const VEREDELN = (function () {
           const esc = (s) => String(s).replace(/'/g, "&#39;");
           const h1 = kennzahlZellenHtml(a, esc);
           const h2 = kennzahlZellenHtml(b, esc);
-          return (h1.match(/<td /g) || []).length === 2 && />945\.053</.test(h1) && />1,2</.test(h1) && !/Fokus begrenzt<\/div>/.test(h1) && />40\.000<div class='vd-klein'>Fokus begrenzt<\/div>/.test(h2);
+          return (h1.match(/<td /g) || []).length === 2 && />945\.053</.test(h1) && />1,2</.test(h1) && !/Fokus begrenzt<\/div>/.test(h1) && />40\.000<div class='vd-klein vd-umbruch'>Fokus begrenzt<\/div>/.test(h2) &&
+            // v3.19.0 (O5): optionaler Vorspann vor dem Gewinn/Tag (Wert vom Merken), ohne ihn unveraendert
+            />VOR945\.053</.test(kennzahlZellenHtml(a, esc, "VOR")) && kennzahlZellenHtml(a, esc, "") === h1 &&
+            kennzahlZellenHtml(a, esc, "", "DAVOR").indexOf("title='DAVOR\n\n") !== -1 && h1.indexOf("DAVOR") === -1 &&
+            // Preisfeld mit Tausenderpunkt: Anzeige, Bearbeitungswert und Lesen der Eingabe
+            PREISFELD.anzeige(5611) === "5.611" && PREISFELD.anzeige(1234567.5) === "1.234.567,5" && PREISFELD.anzeige(87) === "87" && PREISFELD.roh(5611.5) === "5611,5" &&
+            PREISFELD.lesen("5611") === 5611 && PREISFELD.lesen("5.611") === 5611 && PREISFELD.lesen("1.234.567,5") === 1234567.5 && PREISFELD.lesen("12.5") === 12.5 && PREISFELD.lesen("12,5") === 12.5 &&
+            PREISFELD.lesen(" 77 ") === 77 && PREISFELD.lesen("") === null && PREISFELD.lesen("abc") === null && PREISFELD.lesen(PREISFELD.anzeige(98765.43)) === 98765.43;
         })(),
         kennzahlZellenHtml(b, (s) => s)
       );
@@ -1806,7 +1960,9 @@ const VEREDELN = (function () {
       }
     }
 
-    wurzel.addEventListener("change", (ev) => {
+    // v3.19.0: ueber nachZeiger(), damit ein Klick direkt nach der Eingabe nicht verloren geht.
+    wurzel.addEventListener("change", (ev) => nachZeiger(() => beiAenderung(ev)));
+    function beiAenderung(ev) {
       // v3.18.0: Anteil am Tageshandel, gemeinsam mit den anderen Gewinn-Reitern.
       if (anteilEl && ev.target === anteilEl) {
         UI.absatzAnteilSetzen(anteilEl.value, "veredeln");
@@ -1821,7 +1977,13 @@ const VEREDELN = (function () {
         // verlieren, und innerHTML mitten im Fokuswechsel wirft in Chromium.
         const stadt = preisEl.dataset.vdStadt;
         const markt = preisEl.dataset.vdMarkt;
-        const wert = preisEl.value.trim();
+        // v3.19.0: Textfeld mit Tausenderpunkt. Unveraenderter Wert (nur hineingeklickt) aendert nichts.
+        const zahl = PREISFELD.lesen(preisEl.value);
+        if (zahl != null && zahl === Number(preisEl.dataset.vdRoh)) {
+          preisEl.value = PREISFELD.anzeige(zahl);
+          return;
+        }
+        const wert = zahl == null ? "" : String(zahl);
         setTimeout(() => eigenenPreisSetzen(stadt, markt, wert), 0);
         return;
       }
@@ -1870,7 +2032,7 @@ const VEREDELN = (function () {
         fertigungInfo();
         rechnen();
       }
-    });
+    }
 
     wurzel.addEventListener("click", (ev) => {
       const schalter = ev.target.closest("[data-vd-schalter]");
@@ -1888,6 +2050,11 @@ const VEREDELN = (function () {
         auswahl.sortierung = sortKnopf.dataset.vdSort;
         speichern();
         neuBewerten();
+        return;
+      }
+      const kr = ev.target.closest("button[data-vd-kr]");
+      if (kr) {
+        kostenrechnerOeffnen(kr);
         return;
       }
       const reset = ev.target.closest("button[data-vd-reset]");
@@ -1983,7 +2150,7 @@ const VEREDELN = (function () {
             : herkunft + ". Klicken zum Überschreiben.";
           const wert = Math.round(x.basisPreis * 100) / 100;
           const feld =
-            "<input type='number' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' min='1' step='1' value='" + wert + "'" +
+            "<input type='text' inputmode='decimal' autocomplete='off' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' value='" + PREISFELD.anzeige(wert) + "' data-vd-roh='" + wert + "'" +
             " data-vd-stadt='" + esc(x.stadt) + "' data-vd-markt='" + esc(x.marktId) + "'" +
             " aria-label='Einkaufspreis " + esc(name) + " in " + esc(x.stadt) + "' title='" + esc(titel) + "'>";
           const reset = x.uebersteuert
@@ -2022,11 +2189,11 @@ const VEREDELN = (function () {
       };
       return (
         "<thead><tr><th>Produkt</th><th>Einkauf je Vorgang</th><th>Verkauf</th>" +
-        sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
+        sortTh("kosten", "Kosten<br>/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
         "<th class='num' title='Kosten je Stück mal der eingestellten Menge: so viel Silber kostet die ganze Menge, Material nach Rückgewinnung plus Stationsgebühr.'>Kosten<br>gesamt</th>" +
-        sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
+        sortTh("stueck", "Gewinn<br>/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
         sortTh("marge", "Marge", KOPF_TITEL.marge) +
-        sortTh("tag", "Gewinn/Tag", KOPF_TITEL.tag(kontext.anteilProzent)) +
+        sortTh("tag", "Gewinn<br>/Tag", KOPF_TITEL.tag(kontext.anteilProzent)) +
         sortTh("jefokus", "Mehrgewinn<br>je Fokus", KOPF_TITEL.jefokus) +
         sortTh("gesamt", "Gewinn<br>gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
         "</tr></thead>"
@@ -2057,7 +2224,7 @@ const VEREDELN = (function () {
           const einstufung = z.einstufung === "gewinn" ? "Gewinn" : z.einstufung === "null" ? "etwa Null (innerhalb der Toleranz)" : "Verlust";
           const name = nameVon(z.item, z.stufe);
           const tierTitel = z.ausbeute > 1 ? "Ein Vorgang ergibt " + z.ausbeute + " Stück." : "";
-          const fokus = z.fokusJeVorgang > 0 ? "<div class='vd-klein'>" + fmtFokus(z.fokusJeVorgang) + " Fokus/Vorgang</div>" : "";
+          const fokus = z.fokusJeVorgang > 0 ? "<div class='vd-klein vd-umbruch'>" + fmtFokus(z.fokusJeVorgang) + "&nbsp;Fokus je&nbsp;Vorgang</div>" : "";
           const vkDaten = daten ? daten.stadtDaten.find((x) => x.stadt === z.vkStadt) : null;
           const preisAbruf = abrufAlterText(vkDaten && (vkDaten.preiseRoh || {})[z.marktId] && vkDaten.preiseRoh[z.marktId].abgerufenAm);
           const preisTitel = vkTitel + (z.vkStadt ? " in " + z.vkStadt : "") + (z.produktAlterMin != null ? ", " + alterText(z.produktAlterMin) + " alt" : "") + (preisAbruf ? ", abgerufen " + preisAbruf : "");
@@ -2068,7 +2235,8 @@ const VEREDELN = (function () {
           return (
             "<tr class='" + klasse + "'" + (zeilenAbruf ? " title='" + esc("Ältester verwendeter Wert dieser Zeile: abgerufen " + zeilenAbruf + ".") + "'" : "") + ">" +
             "<td><div class='vd-produkt'>" + icon(z.item, 48, name) + "<div><div class='vd-pname'>" + esc(name) + "</div>" +
-            "<div class='vd-klein'" + (tierTitel ? " title='" + esc(tierTitel) + "'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + "</div></div></div></td>" +
+            "<div class='vd-klein'" + (tierTitel ? " title='" + esc(tierTitel) + "'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + "</div>" +
+            "<div class='vd-zeilenknoepfe'>" + krKnopfHtml(z, esc, name) + "</div></div></div></td>" +
             "<td><div class='vd-zutaten" + (kontext.mehrEk ? "" : " ohne-stadt") + "'>" + zutatenHtml(z, kontext) + "</div></td>" +
             "<td><div class='vd-erloes' title='" + esc(kontext.mehrVk && z.vkAlle && z.vkAlle.length > 1
               ? "Erlös je Stück nach Steuer je Stadt:\n" + staedteListe(z.vkAlle.map((a) => ({ stadt: a.stadt, wert: a.netto })), z.vkStadt, true)
@@ -2186,6 +2354,7 @@ const VEREDELN = (function () {
     fertigungInfo();
     startEl.addEventListener("click", () => suchen(false));
     if (frischEl) frischEl.addEventListener("click", () => suchen(true));
+    PREISFELD.einrichten(wurzel);
   }
 
   if (typeof document !== "undefined") {
@@ -2222,6 +2391,12 @@ const VEREDELN = (function () {
     jeFokusTitel,
     KOPF_TITEL,
     kennzahlZellenHtml,
+    nachZeiger,
+    zeigerUnten,
+    kopieren,
+    krKnopfHtml,
+    kostenrechnerOeffnen,
+    PREISFELD,
     vergleiche,
     iconUrl,
     schilderZeigen,

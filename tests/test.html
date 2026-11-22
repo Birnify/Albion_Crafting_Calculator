@@ -107,6 +107,44 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   // ---- js/gelegenheiten.js (Reiter "Gelegenheiten", v3.17.0, OPTIMIERUNG-PLAN.md O3) ----
   GELEGENHEITEN.selbsttest().forEach((e) => pruefe("gelegenheiten: " + e.name, e.ok, e.details));
   KARTE.selbsttest().forEach((e) => pruefe("karte: " + e.name, e.ok, e.details));
+  // ---- v3.19.0 (O5): Schutz gegen den verlorenen Klick (VEREDELN.nachZeiger), mit nachgebildeten Mausereignissen ----
+  (function () {
+    const kiste = document.createElement("div");
+    const knopf = document.createElement("button");
+    kiste.appendChild(knopf);
+    document.body.appendChild(kiste);
+    const folge = [];
+    knopf.addEventListener("click", () => folge.push("klick"));
+    VEREDELN.nachZeiger(() => folge.push("sofort"));
+    const ohneTaste = folge.join();
+    knopf.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    const unten = VEREDELN.zeigerUnten();
+    // Das change des verlassenen Zahlenfelds: wuerde neu zeichnen und den Knopf ersetzen.
+    VEREDELN.nachZeiger(() => folge.push("eingabe"));
+    const vorDemKlick = folge.join();
+    knopf.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    pruefe(
+      "veredeln: o5 nachZeiger, ohne gedrueckte Taste laeuft die Aenderung sofort; unter gedrueckter Maustaste wartet sie und laeuft unmittelbar vor dem Klick, der Klick wirkt danach (kein verlorener Klick)",
+      ohneTaste === "sofort" && unten === true && vorDemKlick === "sofort" && folge.join() === "sofort,eingabe,klick" && VEREDELN.zeigerUnten() === false,
+      folge.join()
+    );
+    knopf.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    VEREDELN.nachZeiger(() => folge.push("ohneKlick"));
+    VEREDELN.nachZeiger(() => {
+      throw new Error("Testfehler, absichtlich");
+    });
+    VEREDELN.nachZeiger(() => folge.push("nachFehler"));
+    const fehlerAlt = console.error;
+    console.error = function () {};
+    document.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    console.error = fehlerAlt;
+    pruefe(
+      "veredeln: o5 nachZeiger, mehrere wartende Aenderungen laufen in ihrer Reihenfolge; wirft eine, laufen die uebrigen trotzdem",
+      folge.slice(3).join() === "ohneKlick,nachFehler" && VEREDELN.zeigerUnten() === false,
+      folge.join()
+    );
+    kiste.remove();
+  })();
   pruefe(
     "craften: Reiter \"Schnelles Geld\" (CHANCEN) ist entfernt",
     typeof CHANCEN === "undefined",
@@ -4017,11 +4055,12 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     let verborgen = false;
     let log = []; // {url, start, ende}
     let zutaten = new Set();
+    let aufschlag = 0; // v3.19.0 (O5): Aufschlag auf die Produktpreise der nachgebildeten API ("heute teurer als damals")
     const umgebung = { jetzt: () => t, warte: (ms) => ((t += ms), Promise.resolve()), verborgen: () => verborgen };
     const stellen = () => PREISE.testEinstellen(Object.assign({ pauseMs: PREISE.PAUSE_MS, dbName: DB, lsKey: LS }, umgebung));
     const preisZeile = (id, stadt, q) => {
       const h = hash(stadt + "|" + id);
-      const sell = (zutaten.has(id) ? 50 + (h % 50) : 5000 + (h % 20000)) + q * 10;
+      const sell = (zutaten.has(id) ? 50 + (h % 50) : 5000 + (h % 20000) + aufschlag) + q * 10;
       return { item_id: id, city: stadt, quality: q, sell_price_min: sell, sell_price_min_date: DATUM, buy_price_max: Math.floor(sell * 0.8), buy_price_max_date: DATUM };
     };
     const antwortFuer = (url) => {
@@ -4348,6 +4387,77 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         fertigGross && art4 === "umfang" && neuerUmfang && dolchUrls >= 2 && log.length - vorUmfang <= 8 && mAlt.rangliste().zeilen.some((z) => z.cc === "dagger"),
         (log.length - vorUmfang) + " Abrufe nach der Aenderung, davon " + dolchUrls + " mit Dolchen"
       );
+
+      // ---- v3.19.0 (O5): Zaehler und Merkliste ueberleben Neuladen und Scan; gemerkte Zeilen werden zuerst aufgefrischt ----
+      mAlt.beenden();
+      zutatenMerken(UMFANG);
+      await PREISE.testDatenbankLoeschen(DB);
+      await stellen();
+      aufschlag = 0;
+      Date.now = () => echtesNow() - 3 * 60 * 60 * 1000; // der Bestand entsteht "vor drei Stunden", mit den Preisen von damals
+      const eO5 = G.einstellungenBereinigen(UMFANG);
+      await CRAFTEN.datenAbrufen(CRAFTEN.kandidaten(G.auswahlCraften(eO5)), G.auswahlCraften(eO5));
+      await VEREDELN.datenAbrufen(VEREDELN.kandidaten(G.auswahlVeredeln(eO5)), G.auswahlVeredeln(eO5));
+      Date.now = echtesNow;
+      await PREISE.bestandGeschrieben();
+      const mO5 = neu(Object.assign({}, UMFANG, { scanAn: false }));
+      await mO5.oeffnen();
+      await mO5.fertig();
+      const rangO5 = mO5.rangliste().zeilen;
+      const platz = (s) => mO5.kandidaten().findIndex((x) => x.schluessel === s);
+      const kPlan = rangO5[0].schluessel;
+      // Eine Craft-Zeile weit hinten in der festen Scanreihenfolge, die gleich aus der Rangliste faellt (Volumenfilter).
+      const zMerk = rangO5.slice().reverse().find((z) => z.art === "craften" && platz(z.schluessel) >= 100);
+      const kMerk = zMerk.schluessel;
+      const eintragO5 = G.merkEintrag(zMerk, echtesNow());
+      mO5.einstellen({ plan: { [kPlan]: 3 }, merkliste: { [kMerk]: eintragO5 }, minAbsatz: 100000 });
+      const ausserRang = !mO5.rangliste().zeilen.some((z) => z.schluessel === kMerk) && mO5.gemerkt().length === 1 && mO5.gemerkt()[0].z === mO5.zeile(kMerk);
+      const gespeichertO5 = JSON.parse(JSON.stringify(mO5.einstellungen())); // so liegt der Stand im localStorage
+      mO5.beenden();
+      // "Neuladen": neue Maschine aus dem gespeicherten Stand; die API liefert inzwischen hoehere Produktpreise.
+      aufschlag = 777;
+      log = [];
+      const mNeu = neu(gespeichertO5);
+      await mNeu.oeffnen();
+      await mNeu.fertig();
+      const nachLadenO5 = {
+        plan: JSON.stringify(mNeu.einstellungen().plan),
+        merk: JSON.stringify(mNeu.einstellungen().merkliste[kMerk]),
+        gewinnWieDamals: mNeu.zeile(kMerk).gewinn === eintragO5.gewinn,
+        abrufe: log.length,
+      };
+      pruefe(
+        "gelegenheiten: o5 Zaehler und Merkliste ueberleben das Neuladen (gespeicherter Stand als JSON, neue Maschine); die gemerkte Zeile steht unter dem Volumenfilter nicht in der Rangliste, aber in der Merkliste",
+        ausserRang && nachLadenO5.plan === JSON.stringify({ [kPlan]: 3 }) && nachLadenO5.merk === JSON.stringify(eintragO5) && nachLadenO5.gewinnWieDamals && nachLadenO5.abrufe === 0 &&
+          mNeu.gemerkt().length === 1 && !mNeu.rangliste().zeilen.some((z) => z.schluessel === kMerk),
+        JSON.stringify({ ausserRang, plan: nachLadenO5.plan, gewinnWieDamals: nachLadenO5.gewinnWieDamals, abrufe: nachLadenO5.abrufe })
+      );
+      mNeu.einstellen({ scanAn: true });
+      const scanO5 = await bis(() => mNeu.status().frisch === mNeu.status().vorgaenge && !mNeu.status().rechnet, 15000);
+      const ersteEinheit = log.slice(0, 3).map((x) => decodeURIComponent(x.url));
+      const idMerk = G.schluesselTeile(kMerk).marktId;
+      pruefe(
+        "gelegenheiten: o5 gemerkte Zeilen frischt der Scan zuerst auf (die gemerkte Zeile liegt in der festen Reihenfolge jenseits von Platz 100 und nicht in der Rangliste, steht aber in der ersten Einheit)",
+        scanO5 && platz(kMerk) >= 100 && ersteEinheit.some((u) => u.indexOf("/prices/") !== -1 && (u.indexOf(idMerk + ",") !== -1 || u.indexOf(idMerk + ".json") !== -1)),
+        "Platz " + platz(kMerk) + ", " + idMerk + ", erste Abrufe: " + ersteEinheit.map((u) => u.slice(u.indexOf("/stats/") + 7, u.indexOf("/stats/") + 50)).join(" | ")
+      );
+      const heuteO5 = mNeu.zeile(kMerk);
+      const gemerktO5 = mNeu.gemerkt()[0];
+      pruefe(
+        "gelegenheiten: o5 nach der Scan-Aktualisierung stehen Zaehler und Merkliste unveraendert; die gemerkte Zeile zeigt damals gegen jetzt (Produktpreis 777 hoeher, Erloes um 777 x 0,935, Kosten gleich)",
+        scanO5 && JSON.stringify(mNeu.einstellungen().plan) === JSON.stringify({ [kPlan]: 3 }) && JSON.stringify(mNeu.einstellungen().merkliste[kMerk]) === JSON.stringify(eintragO5) &&
+          gemerktO5.z === heuteO5 && gemerktO5.damals.gewinn === eintragO5.gewinn && nahe(heuteO5.produktPreis - eintragO5.produktPreis, 777, 1e-6) && nahe(heuteO5.erloes - eintragO5.erloes, 777 * 0.935, 1e-6) &&
+          nahe(heuteO5.silber, eintragO5.silber, 1e-9) && G.damalsRichtung(eintragO5.gewinn, heuteO5.gewinn) === 1 && !G.istAlt(heuteO5),
+        JSON.stringify({ damals: eintragO5.gewinn, jetzt: heuteO5.gewinn, preisDamals: eintragO5.produktPreis, preisJetzt: heuteO5.produktPreis })
+      );
+      const listeO5 = CRAFTEN.einkaufsliste([mNeu.zeile(kPlan)], mNeu.einstellungen().plan, (z) => z.schluessel);
+      pruefe(
+        "gelegenheiten: o5 die Einkaufsliste rechnet nach dem Scan mit den aufgefrischten Zahlen der geplanten Zeile (Erloes und Gewinn mal 3)",
+        listeO5.produkte.length === 1 && nahe(listeO5.erloes, 3 * mNeu.zeile(kPlan).erloes, 1e-6) && nahe(listeO5.gewinn, 3 * mNeu.zeile(kPlan).gewinn, 1e-6) && listeO5.summe > 0,
+        JSON.stringify({ einkauf: listeO5.summe, erloes: listeO5.erloes, gewinn: listeO5.gewinn })
+      );
+      aufschlag = 0;
+      pruefe("ui: o5 itemOeffnen ohne App-Markup meldet false, ohne zu werfen", (await UI.itemOeffnen({ item: "T5_MAIN_SWORD", stufe: 1, stadt: "Lymhurst" })) === false && typeof VEREDELN.kostenrechnerOeffnen === "function", "");
     } catch (e) {
       pruefe("gelegenheiten: asynchrone Tests laufen ohne Ausnahme durch", false, (e && e.stack) || e);
     } finally {

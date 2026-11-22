@@ -745,6 +745,21 @@ const UI = (function () {
   // tests/test.html, das ui.js nur wegen der Hilfsfunktionen oben mitlaedt).
   // -----------------------------------------------------------------------
 
+  // v3.19.0 (O5): Sprung aus den Gewinn-Reitern in den Kostenrechner. Die
+  // eigentliche Arbeit braucht den Zustand aus boot() und wird dort gesetzt.
+  let itemOeffnenImpl = null;
+
+  /**
+   * Oeffnet ein Item im Kostenrechner, als haette man es von Hand gesucht:
+   * Reiter wechseln, Verzauberungsstufe und Stadt setzen, Item waehlen, die
+   * Rechnung starten (ruft Preise ab). Keine eigene Rechenlogik.
+   * @param {{item:string, stufe?:number, stadt?:string}} o
+   * @returns {Promise<boolean>} true, sobald die Rechnung durch ist; false ohne App-Markup oder bei unbekanntem Item
+   */
+  function itemOeffnen(o) {
+    return itemOeffnenImpl ? itemOeffnenImpl(o || {}) : Promise.resolve(false);
+  }
+
   function boot() {
     const sucheEl = document.getElementById("suche");
     if (!sucheEl) return;
@@ -1057,8 +1072,38 @@ const UI = (function () {
       ausgewaehltEl.classList.add("aktiv");
       berechnenBtn.disabled = false;
       refreshBtn.disabled = false;
-      berechnen(false);
+      return berechnen(false);
     }
+
+    // v3.19.0 (O5): s. itemOeffnen() oben. Derselbe Weg wie von Hand: Stufe
+    // und Stadt wie ihre change-Listener, dann waehleItem().
+    itemOeffnenImpl = function (o) {
+      if (!o.item || !REZEPTGRAPH.items[o.item]) return Promise.resolve(false);
+      const reiter = document.getElementById("tabbtn-kostenrechner");
+      if (reiter) {
+        reiter.click();
+        reiter.focus();
+      }
+      const stufe = Math.max(0, Math.min(4, Math.round(Number(o.stufe)) || 0));
+      stufeEl.value = String(stufe);
+      zustand.stufe = stufe;
+      if (o.stadt && o.stadt !== einstellungen.stadt && Array.from(stadtEl.options).some((x) => x.value === o.stadt)) {
+        stadtEl.value = o.stadt;
+        einstellungen.stadt = o.stadt;
+        einstellungenSchreiben(einstellungen);
+      }
+      if (typeof window.scrollTo === "function") window.scrollTo(0, 0);
+      // Name im Suchfeld wie nach einer Auswahl von Hand. Der Rezeptgraph fuehrt
+      // fuer verzauberte Rohstoffe (T4_CLOTH_LEVEL2) keinen Namen; dann den
+      // deutschen Namen aus item-namen.js (Markt-ID), sonst die ID.
+      let name = REZEPTGRAPH.namen && REZEPTGRAPH.namen[o.item];
+      if (!name && typeof ITEM_NAMEN !== "undefined" && ITEM_NAMEN.alle) {
+        const marktId = PREISE.marktId(o.item, stufe);
+        const treffer = ITEM_NAMEN.alle.find((x) => x.id === marktId) || ITEM_NAMEN.alle.find((x) => x.id === o.item);
+        if (treffer) name = treffer.n;
+      }
+      return waehleItem(o.item, name || o.item).then(() => true);
+    };
 
     sucheEl.addEventListener("input", renderTreffer);
     sucheEl.addEventListener("focus", () => {
@@ -2936,6 +2981,7 @@ const UI = (function () {
     ABSATZANTEIL_VORGABE,
     absatzAnteilBereinigen,
     absatzAnteilSetzen,
+    itemOeffnen,
     fceUeberschreibungenAus,
     sammleVerwendeteKategorien,
     sammleVerwendeteGebaeude,

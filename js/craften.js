@@ -39,6 +39,7 @@
 // Wartezeit eigener Orders, Craft-Fame.
 
 const CRAFTEN = (function () {
+  const PREISFELD = VEREDELN.PREISFELD; // v3.19.0: Preisfeld mit Tausenderpunkt
   "use strict";
 
   const V = VEREDELN; // geteilte Hilfsfunktionen, s. Modulkommentar
@@ -498,11 +499,25 @@ const CRAFTEN = (function () {
    * Einstellgebuehr, Kosten = Menge x angesetzter Stueckpreis (bei Kauforder
    * inkl. 2,5 %). Produkte ohne berechnete Zeile (kein Weg, nicht geladen)
    * stehen in `fehlend`.
+   *
+   * v3.19.0 (O5): dieselbe Funktion bedient den Reiter "Gelegenheiten".
+   * Dort ist der Schluessel des Plans der Zeilenschluessel (Crafts und
+   * Veredelungen gemischt), deshalb `schluesselVon` (Vorgabe: Markt-ID, wie
+   * bisher). Je Produkt kommen dazu: hergestellt (Vorgaenge x Ausbeute),
+   * erloes und gewinn fuer diese Menge (Zahlen der Zeile mal Menge, also
+   * Gewinn = Erloes minus Kosten NACH Rueckgewinnung plus Gebuehr), in der
+   * Summe `erloes` und `gewinn`. Posten, Mengen und `summe` sind unveraendert.
+   * Dazu `kosten` je Produkt und `kostenNetto` in Summe: Kosten/Stueck der
+   * Zeile (Material nach Rueckgewinnung plus Stationsgebuehr) mal Menge, so
+   * dass gilt: erloes - kostenNetto = gewinn. In die drei Summen gehen nur
+   * Produkte ein, die alle drei Werte haben (sonst ergebnisVollstaendig = false).
    */
-  function einkaufsliste(zeilen, plan) {
+  function einkaufsliste(zeilen, plan, schluesselVon) {
+    const schluessel = typeof schluesselVon === "function" ? schluesselVon : (z) => z.marktId;
     const nachId = {};
     (zeilen || []).forEach((z) => {
-      if (!nachId[z.marktId]) nachId[z.marktId] = z;
+      const k = z ? schluessel(z) : null;
+      if (k != null && !nachId[k]) nachId[k] = z;
     });
     const posten = {};
     const reihenfolge = [];
@@ -510,6 +525,11 @@ const CRAFTEN = (function () {
     const fehlend = [];
     let summe = 0;
     let vollstaendig = true;
+    let erloesSumme = 0;
+    let gewinnSumme = 0;
+    let kostenSumme = 0;
+    let ergebnisVollstaendig = true;
+    const mal = (wert, n) => (wert != null && isFinite(wert) ? wert * n : null);
     Object.keys(plan || {}).forEach((id) => {
       const stueck = plan[id];
       const z = nachId[id];
@@ -518,7 +538,20 @@ const CRAFTEN = (function () {
         return;
       }
       const vorgaenge = Math.ceil(stueck / (z.ausbeute || 1));
-      produkte.push({ marktId: id, item: z.item, stufe: z.stufe, tier: z.tier, stueck, vorgaenge, ausbeute: z.ausbeute || 1 });
+      const hergestellt = vorgaenge * (z.ausbeute || 1);
+      const erloes = mal(z.erloes, hergestellt);
+      const gewinn = mal(z.gewinn, hergestellt);
+      const kosten = mal(z.silber, hergestellt);
+      if (erloes == null || gewinn == null || kosten == null) ergebnisVollstaendig = false;
+      else {
+        erloesSumme += erloes;
+        gewinnSumme += gewinn;
+        kostenSumme += kosten;
+      }
+      produkte.push({
+        marktId: z.marktId, schluessel: id, art: z.art || null, item: z.item, stufe: z.stufe, vorgangsStufe: z.vorgangsStufe, tier: z.tier, stueck, vorgaenge, ausbeute: z.ausbeute || 1,
+        hergestellt, erloes, gewinn, kosten,
+      });
       z.zutatenPreise.forEach((x) => {
         const schluessel = x.marktId + "|" + x.stadt;
         if (!posten[schluessel]) {
@@ -533,7 +566,40 @@ const CRAFTEN = (function () {
         } else vollstaendig = false;
       });
     });
-    return { posten: reihenfolge.map((k) => posten[k]), produkte, fehlend, summe, vollstaendig };
+    return { posten: reihenfolge.map((k) => posten[k]), produkte, fehlend, summe, vollstaendig, erloes: erloesSumme, gewinn: gewinnSumme, kostenNetto: kostenSumme, ergebnisVollstaendig };
+  }
+
+  /**
+   * Die vier Summenzeilen der Einkaufsliste (v3.19.0), gemeinsam fuer
+   * "Craften: Gewinn" und "Gelegenheiten": Einkauf gesamt (vorzustrecken),
+   * Kosten nach Rueckgewinnung, Erloes gesamt, Gewinn gesamt. Sichtbar gilt
+   * Erloes minus Kosten nach Rueckgewinnung = Gewinn.
+   * @param o {{spalten:number, order:boolean, fmt:(n:number)=>string, esc:(s:string)=>string}}
+   */
+  function einkaufslisteSummenHtml(liste, o) {
+    const zeile = (text, titel, wert, id, klasse) =>
+      "<tr title='" + o.esc(titel) + "'><td colspan='" + o.spalten + "'>" + text + "</td><td class='num" + (klasse ? " " + klasse : "") + "' data-el-summe='" + id + "'>" + o.fmt(wert) + "</td></tr>";
+    const luecke = liste.ergebnisVollstaendig ? "" : ", ohne Produkte ohne Verkaufspreis";
+    return (
+      "<tfoot>" +
+      zeile(
+        "Einkauf gesamt" + (o.order ? " (inkl. 2,5 % Einstellgebühr)" : "") + (liste.vollstaendig ? "" : ", ohne Zutaten ohne Preis"),
+        "So viel Silber muss für die Zutaten vorgestreckt werden (Mengen vor Rückgewinnung). Die Rückgewinnung fließt beim Craften als Material zurück, nicht als Silber.",
+        liste.summe, "einkauf"
+      ) +
+      zeile(
+        "Kosten nach Rückgewinnung" + luecke,
+        "Kosten/Stück der Zeilen mal Menge: Material nach Rückgewinnung plus Stationsgebühr. Die Rückgewinnung senkt den Betrag gegenüber dem Einkauf, die Stationsgebühr hebt ihn; bei hoher Gebühr kann er über dem Einkauf liegen.",
+        liste.kostenNetto, "kosten"
+      ) +
+      zeile("Erlös gesamt" + luecke, "Nach Steuer, bei eigener Verkaufsorder auch nach 2,5 % Einstellgebühr, für die hergestellte Menge.", liste.erloes, "erloes") +
+      zeile(
+        "Gewinn gesamt",
+        "Erlös gesamt minus Kosten nach Rückgewinnung, also Gewinn/Stück der Zeilen mal Menge. Erlös minus Einkauf ergibt nicht den Gewinn, weil die Rückgewinnung erst beim Craften zurückfließt.",
+        liste.gewinn, "gewinn", liste.gewinn >= 0 ? "gl-plus" : "gl-minus"
+      ) +
+      "</tfoot>"
+    );
   }
 
   /** Text fuer "Alles kopieren": je Zeile Menge und Name, tabgetrennt. */
@@ -756,6 +822,102 @@ const CRAFTEN = (function () {
         "einkaufslisteText: Menge und Name je Zeile, tabgetrennt",
         einkaufslisteText({ posten: [barren] }, (n) => n + "-Name") === "68\tBARREN-Name",
         einkaufslisteText({ posten: [barren] }, (n) => n + "-Name")
+      );
+
+      // ---- v3.19.0 (O5): Umbau fuer den Reiter "Gelegenheiten" ----
+      // Die Fassung v3.12.0 woertlich als Referenz: der Umbau darf an Posten,
+      // Mengen, Kosten und Summe nichts aendern.
+      function referenzV3120(zeilen, plan) {
+        const nachId = {};
+        (zeilen || []).forEach((z) => {
+          if (!nachId[z.marktId]) nachId[z.marktId] = z;
+        });
+        const posten = {};
+        const reihenfolge = [];
+        const produkte = [];
+        const fehlend = [];
+        let summe = 0;
+        let vollstaendig = true;
+        Object.keys(plan || {}).forEach((id) => {
+          const stueck = plan[id];
+          const z = nachId[id];
+          if (!z || !z.zutatenPreise || !z.zutatenPreise.length) {
+            fehlend.push(id);
+            return;
+          }
+          const vorgaenge = Math.ceil(stueck / (z.ausbeute || 1));
+          produkte.push({ marktId: id, item: z.item, stufe: z.stufe, tier: z.tier, stueck, vorgaenge, ausbeute: z.ausbeute || 1 });
+          z.zutatenPreise.forEach((x) => {
+            const schluessel = x.marktId + "|" + x.stadt;
+            if (!posten[schluessel]) {
+              posten[schluessel] = { marktId: x.marktId, n: x.n, stufe: x.stufe, stadt: x.stadt, menge: 0, basisPreis: x.basisPreis, preis: x.preis, kosten: 0 };
+              reihenfolge.push(schluessel);
+            }
+            const m = x.menge * vorgaenge;
+            posten[schluessel].menge += m;
+            if (x.preis != null && isFinite(x.preis)) {
+              posten[schluessel].kosten += m * x.preis;
+              summe += m * x.preis;
+            } else vollstaendig = false;
+          });
+        });
+        return { posten: reihenfolge.map((k) => posten[k]), produkte, fehlend, summe, vollstaendig };
+      }
+      const zeilenRef = zeilenTest.concat([
+        { marktId: "OHNEPREIS", item: "OHNEPREIS", stufe: 1, tier: 6, ausbeute: 1, zutatenPreise: [zp("BARREN", 4, 100), { n: "RUNE", stufe: 0, marktId: "RUNE", menge: 2, preis: null, basisPreis: null, stadt: "Lymhurst" }] },
+        { marktId: "LEER", item: "LEER", stufe: 0, ausbeute: 1, zutatenPreise: [] },
+      ]);
+      const planRef = { EINTOPF: 25, SCHWERT: 7, OHNEPREIS: 2, AXT: 3, LEER: 1, WEG: 4 };
+      const alt = referenzV3120(zeilenRef, planRef);
+      const neu = einkaufsliste(zeilenRef, planRef);
+      const kern = (x) => JSON.stringify({ posten: x.posten, fehlend: x.fehlend, summe: x.summe, vollstaendig: x.vollstaendig, produkte: x.produkte.map((p) => [p.marktId, p.item, p.stufe, p.tier, p.stueck, p.vorgaenge, p.ausbeute]) });
+      pruefe(
+        "o5 einkaufsliste: nach dem Umbau dieselben Posten, Mengen, Kosten, Summe und Produkte wie die Fassung v3.12.0 (Referenz im Test, sechs geplante Produkte, eine Zutat ohne Preis, zwei fehlende)",
+        kern(alt) === kern(neu) && alt.posten.length === 5 && alt.fehlend.join() === "LEER,WEG" && alt.vollstaendig === false &&
+          Math.abs(alt.summe - ((7 * 16 + 3 * 20 + 2 * 4) * 100 + 7 * 8 * 200 + 3 * 12 * 50 + 3 * 72 * 30)) < 1e-9,
+        kern(neu).slice(0, 160) + " / Summe " + neu.summe
+      );
+      // Schluessel waehlbar, Erloes und Gewinn je Produkt (Zahlen der Zeile mal hergestellte Menge).
+      const gemischt = [
+        { schluessel: "c:SCHWERT", art: "craften", marktId: "SCHWERT", item: "SCHWERT", stufe: 0, ausbeute: 1, erloes: 2700, silber: 2100, gewinn: 600, zutatenPreise: [zp("BARREN", 16, 100), zp("LEDER", 8, 150, "Martlock")] },
+        { schluessel: "v:BARREN6:0", art: "veredeln", marktId: "BARREN6", item: "BARREN6", stufe: 0, ausbeute: 1, erloes: 650, silber: 350, gewinn: 300, zutatenPreise: [zp("ERZ6", 4, 80), zp("BARREN", 1, 100)] },
+        { schluessel: "v:BARREN6:1", art: "veredeln", marktId: "BARREN6", item: "BARREN6", stufe: 0, ausbeute: 2, erloes: 650, gewinn: null, zutatenPreise: [zp("ERZ6", 4, 80)] },
+        { schluessel: "c:EINTOPF", art: "craften", marktId: "EINTOPF", item: "EINTOPF", stufe: 0, ausbeute: 10, erloes: 50, silber: 45, gewinn: 5, zutatenPreise: [zp("FLEISCH", 72, 30)] },
+      ];
+      const g = einkaufsliste(gemischt, { "c:SCHWERT": 3, "v:BARREN6:0": 10, "c:EINTOPF": 15, "c:WEG": 1 }, (z) => z.schluessel);
+      const gB = g.posten.find((p) => p.marktId === "BARREN");
+      pruefe(
+        "o5 einkaufsliste: Zeilenschluessel statt Markt-ID (Craft und Veredelung gemischt), gemeinsame Zutat zusammengezaehlt (3 x 16 + 10 x 1 Barren), Erloes und Gewinn je Produkt und in Summe; Speisen rechnen mit der hergestellten Menge (15 geplant = 20 Stueck)",
+        gB.menge === 58 && g.fehlend.join() === "c:WEG" && g.produkte.map((p) => p.schluessel).join() === "c:SCHWERT,v:BARREN6:0,c:EINTOPF" &&
+          g.produkte[0].erloes === 8100 && g.produkte[0].gewinn === 1800 && g.produkte[1].erloes === 6500 && g.produkte[1].gewinn === 3000 &&
+          g.produkte[2].hergestellt === 20 && g.produkte[2].erloes === 1000 && g.produkte[2].gewinn === 100 &&
+          g.erloes === 15600 && g.gewinn === 4900 && g.ergebnisVollstaendig === true && g.summe === 58 * 100 + 24 * 150 + 40 * 80 + 144 * 30 && g.kostenNetto === 3 * 2100 + 10 * 350 + 20 * 45 && g.erloes - g.kostenNetto === g.gewinn,
+        JSON.stringify({ barren: gB.menge, erloes: g.erloes, gewinn: g.gewinn, summe: g.summe })
+      );
+      const g2 = einkaufsliste(gemischt, { "v:BARREN6:1": 3 }, (z) => z.schluessel);
+      pruefe(
+        "o5 einkaufsliste: zwei Rezepte desselben Produkts bleiben ueber den Zeilenschluessel getrennt; fehlt der Gewinn einer Zeile, ist die Summe als unvollstaendig markiert",
+        g2.produkte.length === 1 && g2.produkte[0].vorgaenge === 2 && g2.produkte[0].hergestellt === 4 && g2.posten[0].menge === 8 && g2.produkte[0].gewinn === null && g2.ergebnisVollstaendig === false && g2.produkte[0].erloes === 2600 && g2.erloes === 0 && g2.gewinn === 0 && g2.kostenNetto === 0,
+        JSON.stringify(g2.produkte[0])
+      );
+      // Vier Summen passen zusammen: Erloes minus Kosten nach Rueckgewinnung = Gewinn; der Einkauf liegt darueber.
+      const mitKosten = [
+        { schluessel: "c:SCHWERT", marktId: "SCHWERT", item: "SCHWERT", stufe: 0, ausbeute: 1, erloes: 2700, silber: 2100, gewinn: 600, zutatenPreise: [zp("BARREN", 16, 100), zp("LEDER", 8, 150)] },
+        { schluessel: "c:EINTOPF", marktId: "EINTOPF", item: "EINTOPF", stufe: 0, ausbeute: 10, erloes: 50, silber: 45, gewinn: 5, zutatenPreise: [zp("FLEISCH", 72, 30)] },
+        { schluessel: "c:OHNE", marktId: "OHNE", item: "OHNE", stufe: 0, ausbeute: 1, erloes: null, silber: 900, gewinn: null, zutatenPreise: [zp("BARREN", 4, 100)] },
+      ];
+      const s4 = einkaufsliste(mitKosten, { "c:SCHWERT": 3, "c:EINTOPF": 15 }, (z) => z.schluessel);
+      const s5 = einkaufsliste(mitKosten, { "c:SCHWERT": 3, "c:OHNE": 2 }, (z) => z.schluessel);
+      const fuss = einkaufslisteSummenHtml(s4, { spalten: 3, order: false, fmt: (n) => String(n), esc: (t) => String(t).replace(/'/g, "&#39;") });
+      const fussWerte = {};
+      fuss.replace(/data-el-summe='(\w+)'>(-?[\d.]+)</g, (m, id, w) => (fussWerte[id] = Number(w)));
+      pruefe(
+        "o5 einkaufsliste: die vier Summen passen zusammen (Einkauf 3 x 2.800 + 2 x 2.160 = 12.720; Kosten nach Rueckgewinnung 3 x 2.100 + 20 x 45 = 7.200; Erloes 9.100; Gewinn 1.900 = Erloes minus Kosten), auch in der Darstellung; ein Produkt ohne Verkaufspreis zaehlt in keiner der drei Ergebnissummen",
+        s4.summe === 12720 && s4.kostenNetto === 7200 && s4.erloes === 9100 && s4.gewinn === 1900 && s4.erloes - s4.kostenNetto === s4.gewinn && s4.summe > s4.kostenNetto && s4.produkte[1].kosten === 900 &&
+          fussWerte.einkauf === 12720 && fussWerte.kosten === 7200 && fussWerte.erloes === 9100 && fussWerte.gewinn === 1900 && (fuss.match(/<tr title='[^']{30,}'/g) || []).length === 4 &&
+          s5.ergebnisVollstaendig === false && s5.kostenNetto === 6300 && s5.erloes === 8100 && s5.gewinn === 1800 && s5.summe === 3 * 2800 + 2 * 400 &&
+          /ohne Produkte ohne Verkaufspreis/.test(einkaufslisteSummenHtml(s5, { spalten: 3, order: true, fmt: String, esc: String })) && /Einstellgebühr/.test(einkaufslisteSummenHtml(s5, { spalten: 3, order: true, fmt: String, esc: String })),
+        JSON.stringify(fussWerte)
       );
     })();
 
@@ -1211,7 +1373,9 @@ const CRAFTEN = (function () {
       }
     }
 
-    wurzel.addEventListener("change", (ev) => {
+    // v3.19.0: ueber V.nachZeiger(), damit ein Klick direkt nach der Eingabe nicht verloren geht.
+    wurzel.addEventListener("change", (ev) => V.nachZeiger(() => beiAenderung(ev)));
+    function beiAenderung(ev) {
       // v3.18.0: Anteil am Tageshandel, gemeinsam mit den anderen Gewinn-Reitern.
       if (anteilEl && ev.target === anteilEl) {
         UI.absatzAnteilSetzen(anteilEl.value, "craften");
@@ -1228,7 +1392,13 @@ const CRAFTEN = (function () {
       if (preisEl) {
         const stadt = preisEl.dataset.vdStadt;
         const markt = preisEl.dataset.vdMarkt;
-        const wert = preisEl.value.trim();
+        // v3.19.0: Textfeld mit Tausenderpunkt. Unveraenderter Wert (nur hineingeklickt) aendert nichts.
+        const zahl = PREISFELD.lesen(preisEl.value);
+        if (zahl != null && zahl === Number(preisEl.dataset.vdRoh)) {
+          preisEl.value = PREISFELD.anzeige(zahl);
+          return;
+        }
+        const wert = zahl == null ? "" : String(zahl);
         setTimeout(() => eigenenPreisSetzen(stadt, markt, wert), 0);
         return;
       }
@@ -1272,7 +1442,7 @@ const CRAFTEN = (function () {
         fertigungInfo();
         rechnen();
       }
-    });
+    }
 
     wurzel.addEventListener("click", (ev) => {
       const schalter = ev.target.closest("[data-cg-schalter]");
@@ -1297,6 +1467,11 @@ const CRAFTEN = (function () {
       const kopie = ev.target.closest("button[data-cg-kopie]");
       if (kopie) {
         kopieren(kopie.dataset.cgKopie, kopie);
+        return;
+      }
+      const kr = ev.target.closest("button[data-vd-kr]");
+      if (kr) {
+        V.kostenrechnerOeffnen(kr);
         return;
       }
       if (ev.target.closest("button[data-cg-alle-kopieren]")) {
@@ -1407,7 +1582,7 @@ const CRAFTEN = (function () {
               : herkunft + ". Klicken zum Überschreiben.";
           const wert = Math.round(x.basisPreis * 100) / 100;
           const feld =
-            "<input type='number' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' min='1' step='1' value='" + wert + "'" +
+            "<input type='text' inputmode='decimal' autocomplete='off' class='vd-preis" + (x.uebersteuert ? " vd-eigen" : "") + "' value='" + PREISFELD.anzeige(wert) + "' data-vd-roh='" + wert + "'" +
             " data-vd-stadt='" + esc(x.stadt) + "' data-vd-markt='" + esc(x.marktId) + "'" +
             " aria-label='Einkaufspreis " + esc(name) + " in " + esc(x.stadt) + "' title='" + esc(titel) + "'>";
           const reset = x.uebersteuert
@@ -1446,12 +1621,12 @@ const CRAFTEN = (function () {
       };
       return (
         "<thead><tr><th>Produkt</th><th>Einkauf je Vorgang</th><th>Verkauf</th>" +
-        sortTh("volumen", "verkauft/Tag", "Erfasster Handel des Produkts in der Verkaufsstadt, Mittel der letzten " + TAGE_FENSTER + " Tage. Klicken sortiert absteigend.") +
-        sortTh("kosten", "Kosten/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
+        sortTh("volumen", "verkauft<br>/Tag", "Erfasster Handel des Produkts in der Verkaufsstadt, Mittel der letzten " + TAGE_FENSTER + " Tage. Klicken sortiert absteigend.") +
+        sortTh("kosten", "Kosten<br>/Stück", "Material nach Rückgewinnung plus Stationsgebühr, je Stück Produkt. Klicken sortiert aufsteigend.") +
         "<th class='num' title='Kosten je Stück mal der eingestellten Menge: so viel Silber kostet die ganze Menge, Material nach Rückgewinnung plus Stationsgebühr.'>Kosten<br>gesamt</th>" +
-        sortTh("stueck", "Gewinn/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
+        sortTh("stueck", "Gewinn<br>/Stück", "Erlös nach Steuer minus Kosten, je Stück. Klicken sortiert absteigend.") +
         sortTh("marge", "Marge", V.KOPF_TITEL.marge) +
-        sortTh("tag", "Gewinn/Tag", V.KOPF_TITEL.tag(kontext.anteilProzent)) +
+        sortTh("tag", "Gewinn<br>/Tag", V.KOPF_TITEL.tag(kontext.anteilProzent)) +
         sortTh("jefokus", "Mehrgewinn<br>je Fokus", V.KOPF_TITEL.jefokus) +
         sortTh("gesamt", "Gewinn<br>gesamt", "Gewinn je Stück mal der eingestellten Menge. Klicken sortiert absteigend.") +
         "</tr></thead>"
@@ -1485,36 +1660,8 @@ const CRAFTEN = (function () {
       listeRendern();
     }
 
-    function kopieren(text, knopf) {
-      const fertig = () => {
-        if (!knopf) return;
-        const alt = knopf.textContent;
-        knopf.textContent = "✓";
-        knopf.classList.add("ok");
-        setTimeout(() => {
-          knopf.textContent = alt;
-          knopf.classList.remove("ok");
-        }, 900);
-      };
-      const ersatz = () => {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        try {
-          document.execCommand("copy");
-        } catch (e) {
-          /* ignorieren */
-        }
-        document.body.removeChild(ta);
-        fertig();
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(fertig, ersatz);
-      else ersatz();
-    }
+    // v3.19.0: nach veredeln.js gezogen, damit "Gelegenheiten" dieselbe Funktion nutzt.
+    const kopieren = V.kopieren;
 
     function listeRendern() {
       if (!listeEl) return;
@@ -1554,19 +1701,18 @@ const CRAFTEN = (function () {
       const fehlt = liste.fehlend.length
         ? "<div class='vd-erkl'>" + liste.fehlend.length + " geplante" + (liste.fehlend.length === 1 ? "s Produkt ist" : " Produkte sind") +
           " in der aktuellen Suche nicht enthalten und fehlen in der Liste: " + liste.fehlend.map((id) => esc(namenNachMarktId[id] || id)).join(", ") +
-          ". <button type='button' class='mini' data-cg-fehlend-weg='1'>Entfernen</button></div>"
+          ". <button type='button' class='mini' data-cg-fehlend-weg='1' title='Nimmt diese Produkte aus der Planung. Die übrige Liste bleibt.'>Entfernen</button></div>"
         : "";
       listeEl.innerHTML =
         "<div class='cg-el-kopf'><h2 class='vd-kt'>Einkaufsliste</h2>" +
         "<span class='vd-klein' title='Mengen, die für die geplanten Crafts im Inventar liegen müssen. Die Rückgewinnung gibt einen Teil davon nach dem Craften zurück; die Kosten in der Tabelle oben sind deshalb niedriger.'>vor Rückgewinnung</span>" +
         "<span class='cg-el-knoepfe'><button type='button' class='mini' data-cg-alle-kopieren='1' title='Alle Zeilen als „Menge Name 4.1“ kopieren'>Alles kopieren</button>" +
-        "<button type='button' class='mini' data-cg-leeren='1'>Liste leeren</button></span></div>" +
+        "<button type='button' class='mini' data-cg-leeren='1' title='Setzt alle Zähler auf 0 und leert die Einkaufsliste.'>Liste leeren</button></span></div>" +
         "<div class='cg-plan'>" + produkte + "</div>" + fehlt +
         (liste.posten.length
           ? "<div class='vd-tabrahmen'><table class='vd-tabelle cg-el-tabelle'><thead><tr><th>Zutat</th><th class='num'>Menge</th>" +
             (mehrEk ? "<th>Stadt</th>" : "") + "<th class='num'>" + (order ? "Orderpreis" : "Preis") + "/Stück</th><th class='num'>Kosten</th></tr></thead><tbody>" +
-            zeilenHtml + "</tbody><tfoot><tr><td colspan='" + (mehrEk ? 4 : 3) + "'>Summe" + (order ? " (inkl. 2,5 % Einstellgebühr)" : "") +
-            (liste.vollstaendig ? "" : ", ohne Zutaten ohne Preis") + "</td><td class='num'>" + fmt(liste.summe) + "</td></tr></tfoot></table></div>"
+            zeilenHtml + "</tbody>" + einkaufslisteSummenHtml(liste, { spalten: mehrEk ? 4 : 3, order, fmt, esc }) + "</table></div>"
           : "");
     }
 
@@ -1604,7 +1750,7 @@ const CRAFTEN = (function () {
           const einstufung = z.einstufung === "gewinn" ? "Gewinn" : z.einstufung === "null" ? "etwa Null (innerhalb der Toleranz)" : "Verlust";
           const name = nameVon(z.item, z.stufe);
           const tierTitel = z.ausbeute > 1 ? "Ein Vorgang ergibt " + z.ausbeute + " Stück." : "";
-          const fokus = z.fokusJeVorgang > 0 ? "<div class='vd-klein'>" + fmtFokus(z.fokusJeVorgang) + " Fokus/Vorgang</div>" : "";
+          const fokus = z.fokusJeVorgang > 0 ? "<div class='vd-klein vd-umbruch'>" + fmtFokus(z.fokusJeVorgang) + "&nbsp;Fokus je&nbsp;Vorgang</div>" : "";
           const qText =
             kontext.verkaufsweg === "order" && z.qualifizierbar && z.sellQualitaet > 1
               ? ", günstigstes Angebot in " + REGELN.QUALITAETEN[z.sellQualitaet - 1] + " (unter Normal)"
@@ -1623,7 +1769,7 @@ const CRAFTEN = (function () {
             "<td><div class='vd-produkt'>" + icon(marktIdVon(z.item, z.stufe), 48, name) + "<div><div class='vd-pname'>" + esc(name) +
             " <button type='button' class='mini cg-kopie' data-cg-kopie='" + esc(suchName(name, z.item, z.stufe)) + "' title='„" + esc(suchName(name, z.item, z.stufe)) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button></div>" +
             "<div class='vd-klein'" + (tierTitel ? " title='" + esc(tierTitel) + "'" : "") + ">T" + z.tier + "." + z.vorgangsStufe + (z.stadtbonus ? " · Stadtbonus" : "") + "</div>" +
-            zaehlerHtml(z, name) + "</div></div></td>" +
+            "<div class='vd-zeilenknoepfe'>" + zaehlerHtml(z, name) + V.krKnopfHtml(z, esc, name) + "</div></div></div></td>" +
             "<td><div class='vd-zutaten" + (kontext.mehrEk ? "" : " ohne-stadt") + "'>" + zutatenHtml(z, kontext) + "</div></td>" +
             "<td><div class='vd-erloes' title='" +
             esc(
@@ -1755,6 +1901,7 @@ const CRAFTEN = (function () {
     speichern();
     startEl.addEventListener("click", () => suchen(false));
     if (frischEl) frischEl.addEventListener("click", () => suchen(true));
+    PREISFELD.einrichten(wurzel);
   }
 
   if (typeof document !== "undefined") {
@@ -1781,6 +1928,7 @@ const CRAFTEN = (function () {
     filtereUndSortiere,
     planBereinigen,
     einkaufsliste,
+    einkaufslisteSummenHtml,
     suchName,
     einkaufslisteText,
     datenAbrufen,

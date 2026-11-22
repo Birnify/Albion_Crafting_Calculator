@@ -193,11 +193,11 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 .vd-pname{font-weight:700}
 .vd-klein{font-size:12px;color:var(--dim);white-space:nowrap}
 .vd-zutaten{display:flex;flex-direction:column;gap:8px}
-.vd-zutat{display:grid;grid-template-columns:30px minmax(170px,1fr) 84px auto 84px;align-items:center;column-gap:10px;white-space:nowrap}
-.vd-zutaten.ohne-stadt .vd-zutat{grid-template-columns:30px minmax(170px,1fr) 84px 84px}
+.vd-zutat{display:grid;grid-template-columns:30px minmax(116px,1fr) 76px auto minmax(64px,max-content);align-items:center;column-gap:8px;white-space:nowrap}
+.vd-zutaten.ohne-stadt .vd-zutat{grid-template-columns:30px minmax(116px,1fr) 76px minmax(64px,max-content)}
 .vd-zname{font-size:13px;white-space:normal;min-width:0;line-height:1.3}
 .vd-preisfeld{position:relative;display:inline-flex}
-:is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) input.vd-preis{width:84px;min-height:26px;padding:0 4px;border:1px solid transparent;border-radius:var(--r-tag);background:transparent;
+:is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) input.vd-preis{width:76px;min-height:26px;padding:0 4px;border:1px solid transparent;border-radius:var(--r-tag);background:transparent;
           color:var(--text);font:700 13px "Manrope",sans-serif;text-align:right;font-variant-numeric:tabular-nums;-moz-appearance:textfield;cursor:text;box-shadow:none}
 :is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) input.vd-preis::-webkit-inner-spin-button,:is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) input.vd-preis::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 :is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) input.vd-preis:hover{border-color:var(--line-strong);border-style:dashed}
@@ -214,10 +214,22 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 .vd-tabelle th.num,.vd-tabelle td.num{padding-left:7px;padding-right:7px}
 .vd-tabelle th.num:last-child,.vd-tabelle td.num:last-child{padding-right:12px}
 :is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) button.vd-sortk{text-align:right;line-height:1.25}
-.vd-tabelle th{vertical-align:bottom}
+.vd-tabelle th{vertical-align:bottom;line-height:1.25}
 tr.vd-gewinn .vd-wert,tr.vd-gewinn .vd-wert2{color:var(--good)}
 tr.vd-null .vd-wert,tr.vd-null .vd-wert2{color:var(--warn)}
 tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
+/* v3.19.0 (O5): bei 1440 px alle Spalten ohne waagerechtes Scrollen. Koepfe mit Schraegstrich zweizeilig, Zutatenspalte schmaler (Name ab 116 px, Preisfeld 76 px, Hoechstpreis so breit wie sein Inhalt), Zellen mit 10 px Seitenabstand */
+.vd-tabelle th,.vd-tabelle td{padding-left:10px;padding-right:10px}
+.vd-tabelle th.num,.vd-tabelle td.num{padding-left:5px;padding-right:5px}
+.vd-tabelle th.num:last-child,.vd-tabelle td.num:last-child{padding-right:10px}
+.vd-tabelle td.num{white-space:nowrap}
+.vd-tabelle td.num .vd-umbruch{white-space:normal;line-height:1.25}
+/* v3.19.0 (O5): Knoepfe je Zeile (Zaehler, Merkstern, Kostenrechner, Kopieren) */
+.vd-zeilenknoepfe{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.vd-zeilenknoepfe .cg-zaehler,.gl-aktionen .cg-zaehler{margin-top:0}
+:is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) button.vd-kr{padding:2px 8px;font-size:11px;white-space:nowrap}
+:is(#tab-veredeln,#tab-craften,#tab-gelegenheiten) :is(button.mini,button.cg-zb,button.gl-stern,button.vd-sortk,button.vd-reset):focus-visible,
+:is(#tab-craften,#tab-gelegenheiten) input.cg-zn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 #tab-craften #cgStart{min-height:44px;padding:0 22px;border:0;border-radius:var(--r);font:800 15px "Manrope",sans-serif}
 #tab-craften :is(#cgPreiseReset,#cgFrisch){min-height:36px;border-radius:var(--r)}
 #cgStatus{margin-left:auto;font-size:13px;color:var(--dim)}
@@ -236,22 +248,22 @@ tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
 .cg-umfang{font-size:12px;color:var(--dim)}
 .cg-zaehler{display:inline-flex;align-items:center;margin-top:6px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2)}
 .cg-zaehler.an{border-color:var(--gold)}
-#tab-craften button.cg-zb{width:26px;height:26px;padding:0;border:0;border-radius:var(--r);background:transparent;color:var(--gold);font:800 15px/26px "Manrope",sans-serif}
-#tab-craften button.cg-zb:hover{background:var(--accent-soft);filter:none}
-#tab-craften input.cg-zn{width:44px;min-height:26px;padding:0 2px;border:0;background:transparent;color:var(--text);font:700 13px "Manrope",sans-serif;text-align:center;-moz-appearance:textfield;box-shadow:none}
-#tab-craften input.cg-zn::-webkit-inner-spin-button,#tab-craften input.cg-zn::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+:is(#tab-craften,#tab-gelegenheiten) button.cg-zb{width:26px;height:26px;padding:0;border:0;border-radius:var(--r);background:transparent;color:var(--gold);font:800 15px/26px "Manrope",sans-serif}
+:is(#tab-craften,#tab-gelegenheiten) button.cg-zb:hover{background:var(--accent-soft);filter:none}
+:is(#tab-craften,#tab-gelegenheiten) input.cg-zn{width:44px;min-height:26px;padding:0 2px;border:0;background:transparent;color:var(--text);font:700 13px "Manrope",sans-serif;text-align:center;-moz-appearance:textfield;box-shadow:none}
+:is(#tab-craften,#tab-gelegenheiten) input.cg-zn::-webkit-inner-spin-button,:is(#tab-craften,#tab-gelegenheiten) input.cg-zn::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .cg-einkaufsliste{margin-top:16px;padding:18px;display:flex;flex-direction:column;gap:12px}
 .cg-el-kopf{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px}
 .cg-el-knoepfe{margin-left:auto;display:flex;gap:8px}
 .cg-plan{display:flex;flex-wrap:wrap;gap:8px}
 .cg-plan-produkt{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 14px 4px 6px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2);font-size:13px;font-weight:600}
-#tab-craften button.cg-plan-weg{top:-7px;right:-7px}
-#tab-craften table.cg-el-tabelle{min-width:560px}
+:is(#tab-craften,#tab-gelegenheiten) button.cg-plan-weg{top:-7px;right:-7px}
+:is(#tab-craften,#tab-gelegenheiten) table.cg-el-tabelle{min-width:560px}
 .cg-el-tabelle tfoot td{font-weight:800;border-top:1px solid var(--line);padding:10px 12px}
 .cg-el-name{display:flex;align-items:center;gap:10px}
 .cg-el-name>span{font-weight:600}
-#tab-craften button.cg-kopie{padding:2px 8px;font-size:11px}
-#tab-craften button.cg-kopie.ok{color:var(--good);border-color:var(--good)}
+:is(#tab-craften,#tab-gelegenheiten) button.cg-kopie{padding:2px 8px;font-size:11px}
+:is(#tab-craften,#tab-gelegenheiten) button.cg-kopie.ok{color:var(--good);border-color:var(--good)}
 /* Reiter "Gelegenheiten" (js/gelegenheiten.js, v3.17.0): Bausteine wie in
    "Craften: Gewinn"; eigene Regeln nur fuer die mitlaufende Leiste, die
    kompakte Zutatenliste und die Alterskennzeichnung. */
@@ -293,7 +305,27 @@ tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
 .gl-alter{color:var(--dim);font-size:12.5px;white-space:nowrap}
 tr.gl-alt .gl-alter{color:var(--warn);font-weight:700}
 tr.gl-alt .vd-wert,tr.gl-alt .vd-wert2{opacity:.72}
-.gl-aktionen{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.gl-aktionen{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+/* v3.19.0 (O5): Merkstern, Filter "Gemerkt", damals gegen jetzt, Einkaufsliste */
+#tab-gelegenheiten button.gl-stern{width:28px;height:28px;padding:0;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2);color:var(--dim);font:400 15px/26px "Manrope",sans-serif}
+#tab-gelegenheiten button.gl-stern:hover{border-color:var(--gold-dim);color:var(--text);filter:none}
+#tab-gelegenheiten button.gl-stern[aria-pressed=true]{border-color:var(--gold);background:var(--accent-soft);color:var(--gold)}
+#tab-gelegenheiten :is(#glGemerkt,#glZurListe){min-height:36px;border-radius:var(--r);white-space:nowrap}
+#tab-gelegenheiten #glGemerkt[aria-pressed=true]{border-color:var(--gold);background:var(--gold);color:oklch(0.2 0.03 60)}
+.gl-damals{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;line-height:1.5}
+.gl-damals-wort{font-weight:600;color:var(--dim)}
+.gl-damals .gl-besser{margin-left:4px;color:var(--good);font-size:10px}
+.gl-damals .gl-schlechter{margin-left:4px;color:var(--bad);font-size:10px}
+.gl-gemerkt-am{color:var(--gold);cursor:help}
+#glAusgabe td[title]{cursor:help}
+tr.gl-stub td{color:var(--dim)}
+#glEinkaufsliste{scroll-margin-top:72px}
+#glEinkaufsliste h2:focus{outline:none}
+.gl-plan-text{display:flex;flex-direction:column;gap:1px}
+.gl-ausser-rang{border-style:dashed}
+.gl-plus{color:var(--good)}
+.gl-minus{color:var(--bad)}
+.cg-el-tabelle tfoot tr+tr td{border-top:0;padding-top:2px}
 .gl-mehr{padding:12px 18px;border-top:1px solid var(--line);text-align:center}
 .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;
       white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
@@ -1297,11 +1329,14 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
   <button type="button" class="vd-tgl" role="switch" aria-checked="false" aria-labelledby="glLblScan" data-gl-schalter="scan" title="Der Hintergrundscan ruft laufend ab, was im Scanumfang fehlt oder zu alt ist: zuerst, was in der Rangliste oben steht. Eine Suche in einem anderen Reiter geht immer vor."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button>
   <span id="glStand" role="status"></span>
   <button type="button" id="glNeuSortieren" class="mini" hidden title="Solange in der Liste gescrollt ist, bleibt ihre Reihenfolge stehen. Der Knopf ordnet die inzwischen neu gerechneten Zeilen ein.">Neu sortieren</button>
+  <button type="button" id="glGemerkt" class="mini" aria-pressed="false" title="Zeigt nur die gemerkten Zeilen, auch ohne Gewinn oder unter „Mind. verkauft/Tag“, mit den Zahlen vom Merken gegen den heutigen Stand.">★ Gemerkt (0)</button>
+  <button type="button" id="glZurListe" class="mini" hidden title="Springt zur Einkaufsliste unter der Rangliste.">Einkaufsliste</button>
   <span id="glWarnung" class="gl-warnung" role="status" hidden></span>
   <span id="glStatus"></span>
 </div>
 
 <div class="vd-ergebnis" id="glAusgabe"></div>
+<div class="vd-ergebnis cg-einkaufsliste" id="glEinkaufsliste" hidden></div>
 
 </div><!-- /tab-gelegenheiten -->
 
@@ -1543,24 +1578,24 @@ dialog.ka-dialog::backdrop{background:rgba(0,0,0,.6)}
 
 </div>
 
-<script src="rezepte.js?v=3.18.0"></script>
-<script src="item-namen.js?v=3.18.0"></script>
-<script src="js/preise.js?v=3.18.0"></script>
-<script src="js/regeln.js?v=3.18.0"></script>
-<script src="js/rechenkern.js?v=3.18.0"></script>
-<script src="js/ui.js?v=3.18.0"></script>
-<script src="js/eintopf-daten.js?v=3.18.0"></script>
-<script src="js/eintopf-preise.js?v=3.18.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.18.0"></script>
-<script src="js/eintopf-ui.js?v=3.18.0"></script>
-<script src="js/tabs.js?v=3.18.0"></script>
-<script src="js/preisvergleich.js?v=3.18.0"></script>
-<script src="js/veredeln.js?v=3.18.0"></script>
-<script src="js/craften.js?v=3.18.0"></script>
-<script src="js/gelegenheiten.js?v=3.18.0"></script>
+<script src="rezepte.js?v=3.19.0"></script>
+<script src="item-namen.js?v=3.19.0"></script>
+<script src="js/preise.js?v=3.19.0"></script>
+<script src="js/regeln.js?v=3.19.0"></script>
+<script src="js/rechenkern.js?v=3.19.0"></script>
+<script src="js/ui.js?v=3.19.0"></script>
+<script src="js/eintopf-daten.js?v=3.19.0"></script>
+<script src="js/eintopf-preise.js?v=3.19.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.19.0"></script>
+<script src="js/eintopf-ui.js?v=3.19.0"></script>
+<script src="js/tabs.js?v=3.19.0"></script>
+<script src="js/preisvergleich.js?v=3.19.0"></script>
+<script src="js/veredeln.js?v=3.19.0"></script>
+<script src="js/craften.js?v=3.19.0"></script>
+<script src="js/gelegenheiten.js?v=3.19.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.18.0"></script>
-<script src="js/karte.js?v=3.18.0"></script>
+<script src="js/karte-daten.js?v=3.19.0"></script>
+<script src="js/karte.js?v=3.19.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

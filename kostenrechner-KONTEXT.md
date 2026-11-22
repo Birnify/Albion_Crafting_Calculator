@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.18.0 · Optimierungsrunde O4: Gewinn/Tag und Mehrgewinn je Fokuspunkt
+Stand: 2026-11-22 · Version: v3.19.0 · Optimierungsrunde O5: Einkaufsliste, Merkliste, Sprung in den Kostenrechner
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -73,6 +73,55 @@ Kampfhandschuh-Fenster, von dem es gar kein Bild gibt.
 Selbsttest nach der Doku-Änderung: **446/446 grün**, unverändert.
 
 ---
+
+## Nachtrag v3.19.0 (22.11.2026): Optimierungsrunde, Paket O5 „Von der Gelegenheit zur Tat“
+
+- **Einkaufsliste im Reiter „Gelegenheiten“**, für Crafts und Veredelungen:
+  Zähler (− Zahl +) je Zeile (`einstellungen.plan`, Zeilenschlüssel →
+  Stück), Liste unter der Rangliste, Sprungknopf „Einkaufsliste (n)“ in der
+  Leiste. Mengen vor Rückgewinnung, gleiche Zutat je Einkaufsstadt
+  zusammengezählt. „Kopieren“ je Zutat und am Produktnamen (mit Stufe,
+  `CRAFTEN.suchName`), „Alles kopieren“, „Liste leeren“. Eine Logik für
+  beide Reiter: `CRAFTEN.einkaufsliste(zeilen, plan, schluesselVon)`.
+- **Vier Summenzeilen in beiden Einkaufslisten**
+  (`CRAFTEN.einkaufslisteSummenHtml`): Einkauf gesamt (vorzustrecken),
+  Kosten nach Rückgewinnung (Kosten/Stück × Menge, enthält die
+  Stationsgebühr und kann deshalb über dem Einkauf liegen), Erlös gesamt,
+  Gewinn gesamt. Es gilt sichtbar Erlös − Kosten nach Rückgewinnung =
+  Gewinn. Produkte ohne Verkaufspreis zählen in keiner der drei
+  Ergebnissummen. In „Craften: Gewinn“ hieß die erste Zeile vorher „Summe“.
+- **Sprung in den Kostenrechner** aus jeder Zeile der drei Gewinn-Reiter:
+  Knopf „Kostenrechner“, `UI.itemOeffnen({item, stufe, stadt})` wählt Item,
+  Stufe und Fertigungsstadt und startet die Rechnung (Suchfeld zeigt den
+  deutschen Namen). Die Stadt des Kostenrechners wird dabei dauerhaft
+  umgestellt, wie von Hand.
+- **Merkliste** in „Gelegenheiten“: Stern je Zeile, gemerkt wird mit
+  Zeitpunkt und den Zahlen des Moments (`einstellungen.merkliste`,
+  höchstens 200). Filter „★ Gemerkt (n)“ zeigt alle gemerkten Zeilen, auch
+  ohne Gewinn oder unter dem Volumenfilter, mit „damals 21.815 ▼“ über dem
+  heutigen Wert und „★ gemerkt vor 3 Std.“. **Der Scan frischt gemerkte
+  Zeilen vor der Spitze der Rangliste auf.**
+- **Verlorener Klick behoben** (`VEREDELN.nachZeiger()`): Zahl eintippen und
+  sofort auf Kopf oder Knopf klicken wirkt jetzt beim ersten Klick, in
+  allen drei Reitern.
+- **Tabellen bei 1440 px ohne waagerechtes Scrollen:** alle drei Rahmen
+  1398/1398 (vorher Craften 1555, Veredeln 1430); Köpfe zweizeilig,
+  Abstände kompakter, keine Spalte entfernt.
+- **Zutatenpreise mit Tausenderpunkt** in Craften und Veredeln; das
+  Preisfeld ist ein Textfeld (Anzeige „5.611“, beim Bearbeiten „5611“;
+  Eingabe „1.234“ wird als 1234 gelesen, „12.5“ als 12,5).
+- **Geprüft:** Hauptsitzung live (Zähler, Liste, Stern, Sprung);
+  `oberflaechen-pruefer`: keine Bedienfehler, sieben Punkte zu
+  Verständlichkeit und Zahlenformat nachgezogen. Klick- und Sprungtests mit
+  echter Maus liegen als Playwright-Skripte außerhalb des Repos, nicht in
+  `tests/test.html`.
+- Selbsttest **829/829** grün (807 + 22).
+
+**Offen aus O5:** Breite mit klassischem 17-px-Scrollbalken ungeprüft (der
+ungünstigste Fall in Craften, Fokus plus zweite Einkaufsstadt, läge etwa
+1 px über dem Rahmen). Bei 390 px liegen die Summen der Einkaufsliste hinter
+waagerechtem Scrollen im Rahmen. Touch und Firefox ungeprüft. „Veredeln
+leveln“ hat weiter keinen Zähler und keine eigene Einkaufsliste.
 
 ## Nachtrag v3.18.0 (22.11.2026): Optimierungsrunde, Paket O4 „Gewinn je Einsatz“
 
