@@ -439,9 +439,12 @@ solange sich daran nichts ändert.
   `.github/workflows/zeitplan-test.yml` (alle 5 Min., nur `echo`), der
   ebenfalls nie startete. An unserer Datei liegt es also nicht. Dasselbe
   Fehlerbild steht in den GitHub-Community-Diskussionen 185355, 202602 und
-  201738, ohne gesicherte Lösung. **Support-Ticket 5046360 am 23.11.2026 abgeschickt**
-  (Betreff „Scheduled workflows never trigger in public repository“);
-  Antwort abwarten. `zeitplan-test.yml` danach wieder entfernen.
+  201738, ohne gesicherte Lösung. **Support-Ticket 5046360 am 23.11.2026 abgeschickt, von GitHub ohne
+  Prüfung geschlossen** (kostenloses Konto: nur Community, Doku, Skills).
+  Danach in der Community-Diskussion 185355 gemeldet (Kommentar
+  `discussioncomment-19835309`), dort hatte GitHub-Personal um Repo, Pfad
+  und Cron-Zeile gebeten; Reaktion abwarten. Stand 16:00 UTC weiter null
+  geplante Läufe. `zeitplan-test.yml` nach der Klärung wieder entfernen.
 - O10: der Handelspreis zählt ohne eigenes Höchstalter, solange der Absatz
   im Bestand liegt; die Detailreiter nennen die Zahl unsicherer Zeilen
   nicht; „Preise aktualisieren“ braucht bei gestörter API rund 45 s bis
