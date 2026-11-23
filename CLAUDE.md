@@ -349,6 +349,35 @@ B = Grundproduktion 0,18
 
 Gilt nur für Rezepte mit `craftingfocus > 0` (sonst 0 %), s. „Rezeptdaten“.
 
+**Die Rückgewinnung schwankt nicht je Stück, sie wird je Vorgang gerechnet**
+(23.11.2026, offizielles Wiki `Resource_return_rate`, im In-App-Browser
+gelesen, wörtlich: "Actual refund is calculated from RRR for each crafted
+batch."). Bruchteile werden laut derselben Seite so gerundet, dass im Mittel
+die erwartete Rate herauskommt. Die Abweichung vom Erwartungswert ist damit
+höchstens etwa ein Stück je Zutat und Vorgang, kein Würfeln je Material.
+Artefakte kommen nie zurück (dieselbe Seite). Beispiel der Seite: 100 Baumwolle
+in Lymhurst ergeben 100 Stoff und 36 bis 37 Baumwolle zurück; wiederholt bis
+nichts mehr übrig ist, entstehen rund 158 Stoff. Folge für die Einkaufsliste
+(seit v3.24.0): der Bedarf nach Rückgewinnung lässt sich knapp rechnen, ein
+kleiner Puffer deckt die Rundung.
+
+**Im Spiel bestätigt (23.11.2026, vier Screenshots des Nutzers, Klerikerrobe
+des Adepten T4.2, 16 Stoff je Stück, Ertragsrate 15,2 %):** mit 410 gekauften
+Stoff (Rechnung `16 + 29 × 16 × 0,8475 = 409,2`) ließen sich genau 30 Roben
+in drei Durchgängen fertigen, 4 Stoff blieben übrig (erwartet 3,2).
+
+| Durchgang | verbraucht | zurück | erwartet |
+|---|---|---|---|
+| 25 Stück | 400 | 61 | 61,0 |
+| 4 Stück | 64 | 10 | 9,8 |
+| 1 Stück | 16 | 3 | 2,4 |
+
+Die Rückgabe lag in keinem Durchgang unter dem Erwartungswert, der Bruchteil
+wurde zweimal aufgerundet. Dieselben Bilder bestätigen die Gebührenformel für
+verzauberte Ausrüstung: Gegenstandswert 16 × 64 = 1.024, × 0,1125 = 115,2
+Nahrung, bei Satz 425 sind das 489,6 Silber je Stück; das Spiel zeigt 490 für
+ein Stück und 12.240 für 25.
+
 Daraus die geläufigen Werte: 15,3 % (B 0,18) · 24,8 % (B 0,33, Craft-Bonusstadt)
 · 36,7 % (B 0,58, Veredelungs-Bonusstadt) · 43,5 % (B 0,77) · 47,9 % (B 0,92)
 · 53,9 % (B 1,17, Veredeln in der Bonusstadt mit Fokus).
@@ -655,6 +684,50 @@ Gebäudebesitzer, ist also keine Silbersenke im Sinne der Seite. Der Goldpreis
 wird live über die API mitgezogen (s. unten), nicht als Feld gepflegt; ist er
 nicht abrufbar, wird ohne Rabatt gerechnet. **Gold Market Stabilization** ist
 weiterhin nicht modelliert, die zugehörige Wiki-Seite antwortet mit 403.
+
+**Korrektur und neue Belege zur Aufwertung (23.11.2026).** Quellen: sieben
+Screenshots des Nutzers (Reparaturstation des Ältesten in Lymhurst,
+Nutzungsgebühr 0; Marktplatz Lymhurst) und das offizielle Wiki (`Quality`,
+`Global_Discount`, `Version_28.000.1`), im In-App-Browser gelesen.
+
+- **Der Global Discount setzt inzwischen unter einem Goldpreis von 5.000
+  ein, nicht mehr unter 3.000.** Wiki `Global_Discount`:
+  `(1 − Goldpreis / 5000) × 100 %`; 3.000 galt laut derselben Seite vor dem
+  Update „Beyond the Veil“, davor 1.500. Die Zahl 3.000 weiter oben und in
+  `REGELN.globalDiscount()` ist damit überholt (Codekorrektur steht aus). Am
+  23.11.2026 lag der Goldpreis laut API bei 10.650, es gab also keinen
+  Rabatt.
+- **Die Aufwertungskosten tragen zusätzlich einen Auf- oder Abschlag aus der
+  „Gold Market Stabilization“** (Wiki `Quality`, sinngemäß: die Kosten
+  hängen von Global Discount und Gold Market Stabilization ab; Patchnotiz
+  28.000.1: ein selbstregelndes System passt Silbererträge und Silberkosten
+  je Server laufend leicht an). Eine Formel dafür ist nicht veröffentlicht.
+  **Gemessen:** Klerikerrobe des Adepten T4.2 (Gegenstandswert 16 × 64 =
+  1.024), Kosten je Versuch 5.208 aus Normal, 6.510 aus Gut, 7.813 aus
+  Hervorragend. Die Formel `Gegenstandswert × 4,4 / 5,5 / 6,6` ergibt 4.506 /
+  5.632 / 6.758. Das Verhältnis ist in allen drei Fällen **1,156**. Die App
+  rechnet die Aufwertung an diesem Tag also um rund 13,5 % zu billig. Der
+  Faktor ist nicht fest; er gehört als abgelesener, einstellbarer Wert in
+  die App, nicht als Konstante.
+- **Auf der Stationsgebühr liegt dieser Aufschlag nicht** (Nutzerablesung
+  23.11.2026): der Magierturm zeigt Nutzungsgebühr 425, und
+  `1.024 × 0,1125 × 425 / 100 = 489,6` ist genau die abgelesene Gebühr (490
+  je Robe, 12.240 für 25). Die Gebührenformel gilt also unverändert und ohne
+  Korrekturfaktor; der Aufschlag 1,156 betrifft die Aufwertung.
+- **Die Ergebnistabelle der Aufwertung ist im Spiel bestätigt:** aus Normal
+  80 / 15 / 5 / 0,1 %, aus Gut 30 (bleibt) / 60 / 9,9 / 0,1 %, aus
+  Hervorragend 50 (bleibt) / 49,9 / 0,1 %.
+- **Die dritte Qualitätsstufe heißt im deutschen Client „Hervorragend“**,
+  nicht „Herausragend“ (Gegenstandsstärke Normal 1.240, Gut 1.260,
+  Hervorragend 1.280). Die App und dieser Text schreiben noch
+  „Herausragend“.
+- **Markt je Qualität, Klerikerrobe T4.2, Lymhurst:** billigste
+  Verkaufsorder Normal und Gut je 31.961, Hervorragend 35.934, Exzellent
+  35.980; höchste Kauforder in allen Qualitäten rund 18.826. Verkauft an je
+  einem Tag: Normal 97, Gut 287, Hervorragend 175, Exzellent 299. Der Handel
+  läuft also überwiegend in den besseren Qualitäten, und Normal und Gut
+  kosten gleich viel. Die Liste „Normal“ im Marktfenster enthält erkennbar
+  auch bessere Stücke (dieselben Preise wie unter „Gut“).
 
 **Craft-Wurf und Reroll kombinieren (Bugfix 14.09.2026, s. Befund 10):** ein
 Craft-Versuch, der die Zielqualität verfehlt, landet nicht "nichts", sondern
