@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-23 · Version: v3.23.0 · O9: gemeinsamer Preisstand über GitHub
+Stand: 2026-11-23 · Version: v3.24.0 · O10: Verkaufspreis abgesichert, Einkaufsliste nach Rückgewinnung
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -64,7 +64,7 @@ der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
 Die Runde ist damit abgeschlossen.** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
 Fund zum Einkauf, Potenzialerkennung ohne Vorauswahl, Performance nur wo
 nötig. Einzelheiten je Version: Historie, Nachträge v3.15.0 bis v3.19.0.
-Selbsttest zuletzt **950/950** grün, dazu `node tests/preisstand-test.js` 27/27.
+Selbsttest zuletzt **982/982** grün, dazu `node tests/preisstand-test.js` 27/27.
 
 - **O1, v3.15.0, gemeinsamer Preisbestand.** Preise und Handelsvolumen von
   `js/preise.js` liegen in IndexedDB (`albion_kostenrechner_bestand`), mit
@@ -136,6 +136,32 @@ T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
 (25 % von 109.647 Himmelsblume, Bedarf 1,9 je Stück). **Die Grenze halbiert
 hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
 entscheidet weiter der angenommene Marktanteil.
+
+**O10, v3.24.0 (23.11.2026).** Parallel zu O9 in einer getrennten
+Arbeitskopie gebaut (Zweig `o10`) und zusammengeführt.
+- **Verkaufspreis abgesichert** (`VEREDELN.verkaufAbsichern`): es zählt der
+  niedrigere aus Bestangebot und dem gewichteten Durchschnittspreis der in
+  den letzten 7 Tagen gehandelten Stücke (bei qualifizierbaren Produkten der
+  Qualität Normal), für beide Verkaufswege. Zeilenfelder
+  `produktPreisAngebot`, `produktPreisHandel`, `preisQuelle`,
+  `preisUnsicher`; Anzeige „Preis x · gehandelt“ bzw. „Preis x ?“. Ohne
+  erfassten Handel bleibt der Angebotspreis, die Zeile gilt als unsicher und
+  ist in „Gelegenheiten“ in der Vorgabe ausgeblendet (Schalter „Unsichere
+  Preise“). Anlass: Avalonischer Rindfleischeintopf T8.0 mit Scherzangebot
+  31.111.111 als Verkaufspreis (gehandelt rund 82.000) und Heiligenstab
+  T4.2 mit Exzellent-Preis für ein normales Stück.
+- **Einkaufsliste rechnet den Bedarf nach Rückgewinnung:** je Produkt und
+  Zutat `q + (n − 1) × q × (1 − r)`, aufgerundet; der letzte Vorgang hat
+  noch die volle Rezeptmenge. Puffer in % (Vorgabe 0, gemeinsam für beide
+  Listen), kein Puffer auf Zutaten ohne Rückgewinnung. Im Spiel bestätigt:
+  410 Stoff für 30 Klerikerroben, 4 blieben übrig (`CLAUDE.md`). Die
+  Kaufmenge reicht nur bei mehreren Durchgängen; ein einziger Vorgang
+  braucht die volle Rezeptmenge (Tooltip).
+- **Knopf „Preise aktualisieren“** in beiden Einkaufslisten: holt Zutaten
+  und Verkaufspreise der geplanten Produkte erzwungen frisch
+  (`CRAFTEN.planAktualisieren`, Maschinenmethode `planAktualisieren`).
+- Live gesehen (Hauptsitzung): Zeile mit „· gehandelt“, Liste mit
+  Kaufmenge 7 statt Rezeptmenge 9, „Preise von 10:04“.
 
 **O9, v3.23.0 (23.11.2026), gemeinsamer Preisstand.** Wunsch des Nutzers:
 Preisdaten nicht nur im Browser jedes Einzelnen. Nutzer können nicht ins
@@ -230,6 +256,7 @@ meldet; die anderen Reiter ziehen nach.
 | `albion_kostenrechner_eintopf_preise_v1`, `..._eintopf_einstellungen_v1` | Preise und Einstellungen des Eintopf-Rechners | `js/eintopf-preise.js`, `js/eintopf-ui.js` |
 | `albion_kostenrechner_preisvergleich_v1`, `..._preisvergleich_staedte_v1` | Itemliste und Städte des Preisvergleichs | `js/preisvergleich.js` |
 | `albion_kostenrechner_karte_v1` | Ebenen, Lauf, eigene Marker | `js/karte.js` |
+| `albion_kostenrechner_einkaufsliste_v1` | Puffer % der Einkaufslisten (Ereignis `albion:einkaufsliste`) | `js/craften.js` |
 | `albion_kostenrechner_gemeinsam_v1` | Merker, welcher gemeinsame Stand schon eingemischt ist | `js/gemeinsam.js` |
 | `albion_kostenrechner_lootsplit_v1` | Mitglieder mit Werten, Gildenkasse % | `js/lootsplit.js` |
 
@@ -259,7 +286,7 @@ der Änderungsgeschichte je Datei steht in der Historie, Block „Ausgelagert am
 | `assets/ancient-lands.webp` | **Erzeugt** von `build_karte.py`: Kartenbild |
 | `build_graph.py` | Baut `rezepte.js` und `item-namen.js` aus dem Client-Dump (`--refresh`) |
 | `build_karte.py` | Baut Kartenbild und `js/karte-daten.js` aus dem Client-Dump |
-| `tests/test.html` | Selbsttest aller Module, 950 Tests |
+| `tests/test.html` | Selbsttest aller Module, 982 Tests |
 | `tests/preisstand-test.js` | Node-Tests des Abrufskripts (27), Aufruf `node tests/preisstand-test.js` |
 | `tools/preisstand.js` | Abrufskript für den gemeinsamen Preisstand (Node 20, lädt die App-Dateien in einen `vm`-Kontext) |
 | `.github/workflows/preisstand.yml` | Zeitplan bei GitHub: schnell alle 15 Min., voll stündlich, schreibt den Zweig `daten` |
@@ -303,7 +330,7 @@ Außerhalb des Repos, eine Ebene höher: `Kostenrechner öffnen.bat`,
   ungeprüft übernehmen, immer selbst nachlaufen lassen.
   **Die Seite ist erst fertig bei
   `document.body.dataset.testsFertig === "1"`** (ein Teil der Tests läuft
-  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 950/950.
+  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 982/982.
 - **Nach jeder Änderung im Browser gegenprüfen**, nicht nur den Code lesen. Im
   Eintopf-Projekt fielen mehrere Fehler erst in der gerenderten Seite auf.
 - **Rechenergebnisse unabhängig nachziehen** (kurzes Python-Skript im Scratchpad).
@@ -353,15 +380,20 @@ solange sich daran nichts ändert.
   Nutzer am 23.11.2026 abgelehnt („Geld ist nicht das Problem“); er plant
   über Zähler und Einkaufsliste. Keine Preisstaffel möglich (die API kennt
   kein Orderbuch).
-- **Verkaufspreis aus besserer Qualität:** „Craften: Gewinn“ und
-  „Gelegenheiten“ nehmen das billigste Angebot über alle Qualitäten; fehlt
-  ein Normal-Angebot, rechnet die Zeile mit einem Exzellent-Preis für ein
-  meist normales Stück (Heiligenstab des Adepten T4.2: 146 % Marge;
-  überschlagen mit Aufwertung bis Exzellent rund 13 %). Geplantes Paket
-  „Qualität im Verkauf“: Wege je Zielqualität mit Aufwertungskosten
-  vergleichen, Normalpreis über gehandelten Durchschnitt absichern, Volumen
-  der Zielqualität, Qualitätsbonus aus Schicksalsbrett und Salat
-  (`CLAUDE.md`, Tabelle vom 22.11.2026; Einheit im Spiel zu bestätigen).
+- **Geplantes Paket „Qualität im Verkauf“** (vom Nutzer noch nicht
+  freigegeben). Belege vom 23.11.2026 in `CLAUDE.md`: Aufwertungskosten
+  liegen derzeit um Faktor 1,156 über der Formel (Gold Market
+  Stabilization, einstellbarer Wert nötig); **`REGELN.globalDiscount()`
+  rechnet noch mit der Schwelle 3.000 statt 5.000**; die App schreibt
+  „Herausragend“, im Spiel heißt die Stufe „Hervorragend“. Inhalt: Wege je
+  Zielqualität mit Aufwertungskosten vergleichen, Volumen der Zielqualität,
+  Qualitätsbonus aus Schicksalsbrett und Salat. Erwartung nach der
+  Marktablesung (Klerikerrobe): Aufwerten lohnt selten, Normal und Gut
+  kosten gleich viel.
+- O10: der Handelspreis zählt ohne eigenes Höchstalter, solange der Absatz
+  im Bestand liegt; die Detailreiter nennen die Zahl unsicherer Zeilen
+  nicht; „Preise aktualisieren“ braucht bei gestörter API rund 45 s bis
+  zur Fehlermeldung; die Merkliste speichert die Preisquelle nicht.
 - O7: die Einkaufsgrenze verkleinert auch einen negativen Gewinn/Tag; bei
   verschiedenen Einkaufs- und Verkaufsstädten kann eine ID je Scan-Durchlauf
   in zwei Volumenabrufen stehen; meldet `history/` für eine Stadt nichts,

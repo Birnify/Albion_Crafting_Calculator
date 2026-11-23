@@ -216,6 +216,18 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 :is(#tab-craften,#tab-gelegenheiten) .cg-zaehler.cg-ueber input.cg-zn{color:var(--warn)}
 .cg-plan-max{font-size:12px;font-weight:700;color:var(--dim);white-space:nowrap;cursor:help}
 .cg-plan-max.cg-ueber{color:var(--warn)}
+/* O10: abgesicherter Verkaufspreis und Bedienzeile der Einkaufsliste */
+.vd-klein.vd-umbruch{white-space:normal;line-height:1.3}
+.vd-nw{white-space:nowrap}
+.vd-preis-handel{color:var(--warn);font-weight:700;white-space:nowrap;cursor:help}
+.vd-preis-unsicher{display:inline-block;min-width:14px;padding:0 3px;border:1px solid var(--line-strong);border-radius:var(--r-tag);color:var(--dim);font-weight:700;font-size:11px;line-height:1.3;text-align:center;cursor:help}
+.cg-el-knoepfe{flex-wrap:wrap;justify-content:flex-end}
+.cg-el-bedien{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:8px 0 10px}
+.cg-el-puffer{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--dim);cursor:help}
+:is(#tab-craften,#tab-gelegenheiten) .cg-el-puffer input{width:70px;padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums}
+.cg-el-meldung{font-size:12px;font-weight:700;color:var(--dim)}
+.cg-el-meldung.err{color:var(--red)}
+.cg-el-menge{cursor:help}
 .vd-max.vd-verlust{color:var(--bad)}
 .vd-erloes{font-weight:700}
 .vd-tabelle .vd-wert{font-weight:800}
@@ -1339,6 +1351,8 @@ ol.ls-ueberweisungen b{color:var(--gold)}
         <input type="number" id="glMinAbsatz" min="0" step="1"></div>
       <div class="vd-gruppe"><label class="vd-lbl" for="glAnteil" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten: beim Verkauf des Produkts und beim Einkauf jeder Zutat (Bedarf nach Rückgewinnung, denn bei laufender Fertigung fließt die Rückgewinnung zurück und nachgekauft wird nur der Verbrauch). Bestimmt die Spalte Gewinn/Tag. Erfahrungswert, keine Spielregel: wer mehr als etwa ein Zehntel des Tageshandels anbietet, wird meist unterboten und wird die Ware nicht mehr los. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.">Annahme: Marktanteil %</label>
         <input type="number" id="glAnteil" min="1" max="100" step="1" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten: beim Verkauf des Produkts und beim Einkauf jeder Zutat (Bedarf nach Rückgewinnung, denn bei laufender Fertigung fließt die Rückgewinnung zurück und nachgekauft wird nur der Verbrauch). Bestimmt die Spalte Gewinn/Tag. Erfahrungswert, keine Spielregel: wer mehr als etwa ein Zehntel des Tageshandels anbietet, wird meist unterboten und wird die Ware nicht mehr los. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln."></div>
+      <div class="vd-gruppe"><span class="vd-lbl" id="glLblUnsicher">Unsichere Preise</span>
+        <button type="button" class="vd-tgl" role="switch" aria-checked="false" aria-labelledby="glLblUnsicher" data-gl-schalter="unsicher" title="Unsicher ist ein Verkaufspreis, wenn es ein Angebot gibt, aber in den letzten 7 Tagen keinen erfassten Handel in Normal, gegen den es sich absichern ließe (ein einzelnes Angebot kann ein Ausreißer sein). Solche Zeilen sind in der Vorgabe ausgeblendet; die Statuszeile nennt ihre Zahl. In Craften: Gewinn und Veredeln leveln bleiben sie sichtbar und tragen ein Fragezeichen am Preis."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
       <div class="vd-gruppe"><span class="vd-lbl" id="glLblArt" title="Filtert die Rangliste. Der Scan läuft für den ganzen Scanumfang weiter.">Art</span>
         <div id="glArt" class="vd-chip-reihe" role="radiogroup" aria-labelledby="glLblArt"></div></div>
     </div>
@@ -1698,26 +1712,26 @@ ol.ls-ueberweisungen b{color:var(--gold)}
 
 </div>
 
-<script src="rezepte.js?v=3.23.0"></script>
-<script src="item-namen.js?v=3.23.0"></script>
-<script src="js/preise.js?v=3.23.0"></script>
-<script src="js/gemeinsam.js?v=3.23.0"></script>
-<script src="js/regeln.js?v=3.23.0"></script>
-<script src="js/rechenkern.js?v=3.23.0"></script>
-<script src="js/ui.js?v=3.23.0"></script>
-<script src="js/eintopf-daten.js?v=3.23.0"></script>
-<script src="js/eintopf-preise.js?v=3.23.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.23.0"></script>
-<script src="js/eintopf-ui.js?v=3.23.0"></script>
-<script src="js/tabs.js?v=3.23.0"></script>
-<script src="js/preisvergleich.js?v=3.23.0"></script>
-<script src="js/veredeln.js?v=3.23.0"></script>
-<script src="js/craften.js?v=3.23.0"></script>
-<script src="js/gelegenheiten.js?v=3.23.0"></script>
+<script src="rezepte.js?v=3.24.0"></script>
+<script src="item-namen.js?v=3.24.0"></script>
+<script src="js/preise.js?v=3.24.0"></script>
+<script src="js/gemeinsam.js?v=3.24.0"></script>
+<script src="js/regeln.js?v=3.24.0"></script>
+<script src="js/rechenkern.js?v=3.24.0"></script>
+<script src="js/ui.js?v=3.24.0"></script>
+<script src="js/eintopf-daten.js?v=3.24.0"></script>
+<script src="js/eintopf-preise.js?v=3.24.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.24.0"></script>
+<script src="js/eintopf-ui.js?v=3.24.0"></script>
+<script src="js/tabs.js?v=3.24.0"></script>
+<script src="js/preisvergleich.js?v=3.24.0"></script>
+<script src="js/veredeln.js?v=3.24.0"></script>
+<script src="js/craften.js?v=3.24.0"></script>
+<script src="js/gelegenheiten.js?v=3.24.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.23.0"></script>
-<script src="js/karte.js?v=3.23.0"></script>
-<script src="js/lootsplit.js?v=3.23.0"></script>
+<script src="js/karte-daten.js?v=3.24.0"></script>
+<script src="js/karte.js?v=3.24.0"></script>
+<script src="js/lootsplit.js?v=3.24.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

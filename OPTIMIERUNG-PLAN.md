@@ -279,6 +279,7 @@ durchgeklickt, keine Konsolenfehler.
 | O3 Reiter „Gelegenheiten" | erledigt 22.11.2026 | v3.17.0 |
 | O4 Gewinn je Einsatz | erledigt 22.11.2026 (ohne eigene Spalte „je eingesetztem Silber“, das ist die Marge) | v3.18.0 |
 | O5 Von der Gelegenheit zur Tat | erledigt 22.11.2026 | v3.19.0 |
+| O10 Verkaufspreis absichern, Einkaufsliste nach Rückgewinnung, Preise aktualisieren (Nachtrag) | erledigt 23.11.2026 | v3.24.0 |
 | O9 Gemeinsamer Preisstand über GitHub (Nachtrag) | erledigt 23.11.2026; erster Lauf bei GitHub s. Kontextdatei | v3.23.0 |
 | O8 Tagesmaximum sichtbar, Marktanteil 10 % (Nachtrag) | erledigt 23.11.2026 | v3.22.0 |
 | O7 Markttiefe im Einkauf (Nachtrag nach der Runde) | erledigt 22.11.2026: Gewinn/Tag zusätzlich durch das Tagesvolumen der Zutaten begrenzt | v3.21.0 |

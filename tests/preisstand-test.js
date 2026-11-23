@@ -64,7 +64,7 @@ function welt(zutaten, start) {
     };
   };
   const historieZeilen = (id, stadt) =>
-    [1, 2].map((q) => ({ location: stadt, item_id: id, quality: q, data: [{ item_count: 7 * (5 + (hash(id + stadt) % 30)) * q, avg_price: 500 + (hash(id) % 100), timestamp: iso(T0 - TAG) }] }));
+    [1, 2].map((q) => ({ location: stadt, item_id: id, quality: q, data: [{ item_count: 7 * (5 + (hash(id + stadt) % 30)) * q, avg_price: 90000000 + (hash(id) % 100), timestamp: iso(T0 - TAG) }] }));
   w.antwortFuer = (url) => {
     const u = decodeURIComponent(url);
     const staedte = /[?&]locations=([^&]+)/.exec(u)[1].split(",");

@@ -1124,6 +1124,95 @@ const VEREDELN = (function () {
     return w;
   }
 
+  // -----------------------------------------------------------------------
+  // O10: Verkaufspreis absichern (gemeinsam fuer Veredeln, Craften, Gelegenheiten)
+  // -----------------------------------------------------------------------
+  // Belegter Fall vom 23.11.2026: ein Scherzangebot ueber 31.111.111 stand
+  // kurz als sell_price_min in der API, gehandelt wurde fuer rund 82.000.
+  // Dem Angebotspreis wird deshalb nicht mehr blind geglaubt:
+  //   Bestangebot   = bisherige Regel (Verkaufsorder: sell_price_min,
+  //                   Sofortverkauf: buy_price_max)
+  //   Handelspreis  = mengengewichteter Durchschnittspreis der tatsaechlich
+  //                   gehandelten Stuecke der letzten 7 Tage in der
+  //                   Verkaufsstadt, Qualitaet Normal (aus dem Absatz, den
+  //                   PREISE.absatzAbrufen() ohnehin liefert)
+  //   Verkaufspreis = der NIEDRIGERE von beiden, wenn ein Handelspreis vorliegt
+  // Ohne Handelspreis bleibt das Angebot, die Zeile gilt als preisUnsicher.
+
+  /** Handelspreis aus dem Absatz je Qualitaet (id -> q -> Eintrag von PREISE): Normal, null ohne erfassten Handel. */
+  function handelspreisVon(absatzJeQ) {
+    const e = absatzJeQ ? absatzJeQ[1] || absatzJeQ["1"] : null;
+    const p = e && e.mengengewichteterPreis != null ? Number(e.mengengewichteterPreis) : NaN;
+    return isFinite(p) && p > 0 ? p : null;
+  }
+
+  /**
+   * Wie verkaufWaehlen(), aber je Stadt mit abgesichertem Preis.
+   * eintraege: [{stadt, eintrag, handel}] (handel = Handelspreis der Stadt
+   * oder null). Liegt der Handelspreis unter dem Angebot der Marktseite des
+   * Verkaufswegs, rechnet die Stadt mit ihm; sonst bleibt der Eintrag
+   * unveraendert (dasselbe Objekt, also zeichengleiche Zahlen). Die
+   * Stadtwahl laeuft ueber den abgesicherten Erloes.
+   * Ergebnis wie verkaufWaehlen(), dazu preis: {angebot, handel, quelle}.
+   */
+  function verkaufAbsichern(eintraege, opts) {
+    const seiteName = opts && opts.verkaufsweg === "sofort" ? "buy" : "sell";
+    const info = {};
+    const gesichert = (eintraege || []).map((x) => {
+      const seite = x.eintrag ? x.eintrag[seiteName] : null;
+      const angebot = seite && !seite.kein && seite.preis > 0 ? seite.preis : null;
+      const handel = x.handel != null && isFinite(x.handel) && x.handel > 0 ? Number(x.handel) : null;
+      const nimmtHandel = angebot != null && handel != null && handel < angebot;
+      info[x.stadt] = { angebot, handel, quelle: nimmtHandel ? "handel" : "angebot" };
+      if (!nimmtHandel) return { stadt: x.stadt, eintrag: x.eintrag };
+      const kopie = Object.assign({}, x.eintrag);
+      kopie[seiteName] = Object.assign({}, seite, { preis: handel });
+      return { stadt: x.stadt, eintrag: kopie };
+    });
+    const w = verkaufWaehlen(gesichert, opts);
+    if (w) w.preis = info[w.stadt] || null;
+    return w;
+  }
+
+  /**
+   * Traegt die Absicherung an die Zeile: produktPreisAngebot,
+   * produktPreisHandel (oder null), preisQuelle ("angebot" | "handel"),
+   * preisUnsicher (Angebot da, aber kein erfasster Handel zum Abgleich).
+   * z.produktPreis ist der verwendete Wert (setzt zeileBauen aus dem Erloes).
+   */
+  function preisAbsicherungSetzen(z, vk) {
+    const p = (vk && vk.preis) || null;
+    z.produktPreisAngebot = p ? p.angebot : null;
+    z.produktPreisHandel = p ? p.handel : null;
+    z.preisQuelle = p ? p.quelle : "angebot";
+    z.preisUnsicher = !!(p && p.angebot != null && p.handel == null);
+    return z;
+  }
+
+  /**
+   * Kennzeichen hinter "Preis x" in den drei Gewinn-Reitern.
+   * @returns {{html:string, titel:string}} html ist leer oder beginnt mit einem Leerzeichen; titel ist leer oder ein ganzer Satz
+   */
+  function preisKennzeichen(z, fmt) {
+    if (!z) return { html: "", titel: "" };
+    if (z.preisQuelle === "handel")
+      return {
+        html: " <span class='vd-preis-handel'>· gehandelt</span>",
+        titel:
+          "Gerechnet wird mit dem gehandelten Durchschnittspreis der letzten " + TAGE_FENSTER + " Tage (" + fmt(z.produktPreisHandel) + ", Qualität Normal), nicht mit dem Angebot (" +
+          fmt(z.produktPreisAngebot) + "). Der niedrigere Wert zählt: ein einzelnes Angebot kann ein Ausreißer sein (Scherzangebot, bessere Qualität).",
+      };
+    if (z.preisUnsicher)
+      return {
+        html: " <span class='vd-preis-unsicher'>?</span>",
+        titel:
+          "Preis unsicher: in den letzten " + TAGE_FENSTER + " Tagen ist hier kein Handel in Normal erfasst, der Angebotspreis ließ sich deshalb nicht gegen gehandelte Preise absichern und kann ein Ausreißer sein.",
+      };
+    if (z.produktPreisHandel != null && z.produktPreisAngebot != null)
+      return { html: "", titel: "Gehandelt wurde in den letzten " + TAGE_FENSTER + " Tagen im Schnitt für " + fmt(z.produktPreisHandel) + " (Normal); das Angebot liegt nicht darüber und zählt." };
+    return { html: "", titel: "" };
+  }
+
   /**
    * Alle Zeilen aus bereits abgerufenen Daten, ohne Netz. Wird nach jeder
    * Suche und bei jeder Aenderung von eigenem Preis, Stationssatz,
@@ -1198,13 +1287,15 @@ const VEREDELN = (function () {
       const craftMit = craftKandidatAus(kostenErgebnis, k.rezeptIndex, true);
       const craftOhne = craftKandidatAus(kostenErgebnis, k.rezeptIndex, false);
       const craft = auswahl.mitFokus ? craftMit : craftOhne;
+      // O10: Verkaufspreis je Stadt gegen den gehandelten Durchschnittspreis (Normal) abgesichert, s. verkaufAbsichern().
       const vk =
-        verkaufWaehlen(verkaufDaten.map((d) => ({ stadt: d.stadt, eintrag: d.preiseRoh[k.marktId] })), erloesOpts) ||
+        verkaufAbsichern(verkaufDaten.map((d) => ({ stadt: d.stadt, eintrag: d.preiseRoh[k.marktId], handel: handelspreisVon((d.absatz || {})[k.marktId]) })), erloesOpts) ||
         { stadt: null, erloes: { netto: null, grund: "keine Verkaufsstadt angehakt" } };
       const vkDaten = verkaufDaten.find((d) => d.stadt === vk.stadt) || {};
       const zeile = zeileBauen(k, fertigung, craft, vk.erloes, ((vkDaten.absatz || {})[k.marktId] || {})[1], Object.assign({}, auswahl, { herkunft }));
       zeile.vkStadt = vk.stadt;
       zeile.vkAlle = vk.alle || null;
+      preisAbsicherungSetzen(zeile, vk);
       zutatAbsatzSetzen(zeile, stadtDaten);
       kennzahlenSetzen(zeile, craftMit, craftOhne, kennzahlCtx);
       return zeile;
@@ -2099,6 +2190,57 @@ const VEREDELN = (function () {
       );
     })();
 
+    // ---- O10: Verkaufspreis absichern ----
+    (function () {
+      const seite = (p) => ({ preis: p, kein: p == null, datum: "" });
+      const ein = (sell, buy) => ({ sell: seite(sell), buy: seite(buy) });
+      const oO = { verkaufsweg: "order", premium: true, maxPreisAlterMin: null };
+      const oS = { verkaufsweg: "sofort", premium: true, maxPreisAlterMin: null };
+      const original = ein(31111111, 60000);
+      const a = verkaufAbsichern([{ stadt: "Lymhurst", eintrag: original, handel: 82000 }], oO);
+      const b = verkaufAbsichern([{ stadt: "Lymhurst", eintrag: original, handel: 82000 }], oS);
+      const c = verkaufAbsichern([{ stadt: "Lymhurst", eintrag: ein(80997, 5000000), handel: 82000 }], oS);
+      pruefe(
+        "o10 verkaufAbsichern: Verkaufsorder 31.111.111 gegen Handel 82.000 rechnet mit 82.000 (Erloes x 0,935), der Eintrag selbst bleibt unveraendert; Sofortverkauf: Kauforder 60.000 unter dem Handel zaehlt selbst, ueberhoehte 5.000.000 wird auf 82.000 gesenkt (Erloes x 0,96)",
+        a.erloes.brutto === 82000 && Math.abs(a.erloes.netto - 76670) < 1e-6 && a.preis.quelle === "handel" && a.preis.angebot === 31111111 && original.sell.preis === 31111111 &&
+          b.erloes.brutto === 60000 && b.preis.quelle === "angebot" && c.erloes.brutto === 82000 && Math.abs(c.erloes.netto - 78720) < 1e-6 && c.preis.quelle === "handel",
+        JSON.stringify([a.erloes, b.preis, c.preis])
+      );
+      const d = verkaufAbsichern([{ stadt: "Lymhurst", eintrag: original, handel: null }], oO);
+      const e = verkaufAbsichern([{ stadt: "Lymhurst", eintrag: ein(null, null), handel: 500 }], oO);
+      const zd = preisAbsicherungSetzen({}, d);
+      const ze = preisAbsicherungSetzen({}, e);
+      const direkt = verkaufWaehlen([{ stadt: "Lymhurst", eintrag: original }], oO);
+      pruefe(
+        "o10 verkaufAbsichern: ohne Handelspreis dasselbe Ergebnis wie verkaufWaehlen und preisUnsicher; ohne Angebot kein Erloes und nicht als unsicher gezaehlt; ohne Staedte null",
+        JSON.stringify(d.erloes) === JSON.stringify(direkt.erloes) && zd.preisUnsicher === true && zd.preisQuelle === "angebot" && zd.produktPreisHandel === null && zd.produktPreisAngebot === 31111111 &&
+          e.erloes.netto === null && ze.preisUnsicher === false && ze.produktPreisAngebot === null && ze.produktPreisHandel === 500 && verkaufAbsichern([], oO) == null &&
+          preisAbsicherungSetzen({}, { stadt: null, erloes: {} }).preisUnsicher === false,
+        JSON.stringify([d.erloes, zd, ze])
+      );
+      pruefe(
+        "o10 handelspreisVon: mengengewichteter Preis der Qualitaet Normal; ohne Normal, ohne Handel oder ohne Daten null",
+        handelspreisVon({ 1: { stueckJeTag: 3, mengengewichteterPreis: 1500 }, 4: { mengengewichteterPreis: 9000 } }) === 1500 && handelspreisVon({ 4: { mengengewichteterPreis: 9000 } }) === null &&
+          handelspreisVon({ 1: { stueckJeTag: 0, mengengewichteterPreis: null } }) === null && handelspreisVon({ 1: { stueckJeTag: 3 } }) === null && handelspreisVon(null) === null && handelspreisVon({}) === null,
+        ""
+      );
+      // Veredelung ueber zeilenRechnen: Stahlbarren T5 in Lymhurst, Angebot 9.999.999, gehandelt 600.
+      const kS = kandidaten({ rohstoffe: ["ore"], tiers: [5], stufen: [0] }).find((k) => k.marktId === "T5_METALBAR");
+      const pr = {};
+      kS.zutaten.forEach((zt) => (pr[marktIdVon(zt.n, zt.stufe)] = ein(100, 80)));
+      pr.T5_METALBAR = ein(9999999, 500);
+      const aS = einstellungenBereinigen(Object.assign({}, standardEinstellungen(), { rohstoffe: ["ore"], einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst"], fertigungsstadt: "Lymhurst", verkaufsweg: "order", mitFokus: false }));
+      const eS = { premium: true, stationssaetze: { Schmelze: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, absatzAnteilProzent: 25 };
+      const mitHandel = zeilenRechnen([kS], [{ stadt: "Lymhurst", preiseRoh: pr, absatz: { T5_METALBAR: { 1: { stueckJeTag: 900, mengengewichteterPreis: 600 } } } }], aS, eS)[0];
+      const ohneHandel = zeilenRechnen([kS], [{ stadt: "Lymhurst", preiseRoh: pr, absatz: {} }], aS, eS)[0];
+      pruefe(
+        "o10 zeilenRechnen (Veredeln): Stahlbarren T5 mit Angebot 9.999.999 und gehandelten 600 rechnet mit 600 (Erloes 561), Kosten wie ohne Handelspreis; ohne Handel bleibt das Angebot und die Zeile ist unsicher",
+        mitHandel.produktPreis === 600 && mitHandel.preisQuelle === "handel" && Math.abs(mitHandel.erloes - 561) < 1e-6 && mitHandel.silber === ohneHandel.silber && mitHandel.preisUnsicher === false &&
+          ohneHandel.produktPreis === 9999999 && ohneHandel.preisUnsicher === true && Math.abs(mitHandel.gewinn - (561 - mitHandel.silber)) < 1e-9,
+        JSON.stringify([mitHandel.produktPreis, mitHandel.erloes, ohneHandel.produktPreis])
+      );
+    })();
+
     return ergebnisse;
   }
 
@@ -2764,6 +2906,7 @@ const VEREDELN = (function () {
           const preisAbruf = abrufAlterText(vkDaten && (vkDaten.preiseRoh || {})[z.marktId] && vkDaten.preiseRoh[z.marktId].abgerufenAm);
           const preisTitel = vkTitel + (z.vkStadt ? " in " + z.vkStadt : "") + (z.produktAlterMin != null ? ", " + alterText(z.produktAlterMin) + " alt" : "") + (preisAbruf ? ", abgerufen " + preisAbruf : "");
           const zeilenAbruf = abrufAlterText(zeileAbrufAm(z));
+          const pk = preisKennzeichen(z, fmt); // O10: "gehandelt" bzw. "?" hinter dem Preis
           const handel =
             "<div class='vd-klein' title='Erfasster Handel des Produkts in " + esc(z.vkStadt || "") + ", Mittel der letzten " + TAGE_FENSTER +
             " Tage. Untergrenze: gemeldet wird nur, was Spieler mit laufendem Data-Client sehen.'>verkauft/Tag " + stueck(z.stueckJeTag) + "</div>";
@@ -2776,7 +2919,7 @@ const VEREDELN = (function () {
             "<td><div class='vd-erloes' title='" + esc(kontext.mehrVk && z.vkAlle && z.vkAlle.length > 1
               ? "Erlös je Stück nach Steuer je Stadt:\n" + staedteListe(z.vkAlle.map((a) => ({ stadt: a.stadt, wert: a.netto })), z.vkStadt, true)
               : "Erlös je Stück nach Steuer" + (kontext.verkaufsweg === "order" ? " und 2,5 % Einstellgebühr" : "")) + "'>" + fmt(z.erloes) + "</div>" +
-            "<div class='vd-klein' title='" + esc(preisTitel) + "'>Preis " + fmt(z.produktPreis) + "</div>" +
+            "<div class='vd-klein" + (pk.html ? " vd-umbruch" : "") + "' title='" + esc(preisTitel + (pk.titel ? ". " + pk.titel : "")) + "'><span class='vd-nw'>Preis " + fmt(z.produktPreis) + "</span>" + pk.html + "</div>" +
             (kontext.mehrVk ? "<div>" + stadtSchild(z.vkStadt, "Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "</div>" : "") +
             handel + "</td>" +
             "<td class='num'>" + fmt(z.silber) + fokus + "</td>" +
@@ -2955,6 +3098,10 @@ const VEREDELN = (function () {
     einkaufsBasisPreis,
     einkaufWaehlen,
     verkaufWaehlen,
+    handelspreisVon,
+    verkaufAbsichern,
+    preisAbsicherungSetzen,
+    preisKennzeichen,
     aeltesteAbrufzeit,
     abrufAlterText,
     bestandStatusText,

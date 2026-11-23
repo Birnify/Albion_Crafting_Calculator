@@ -3204,7 +3204,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         location: stadt,
         item_id: id,
         quality: q,
-        data: [{ item_count: 7 * (1 + (hash(id + stadt) % 30)) * q, avg_price: 500, timestamp: new Date(Date.now() - 86400000).toISOString().slice(0, 19) }],
+        // O10: avg_price weit ueber jedem synthetischen Angebot (vorher 500, bis dahin nirgends ausgewertet): der Handelspreis senkt hier keinen Verkaufspreis, die Zahlen der Tests bleiben die von vor O10.
+        data: [{ item_count: 7 * (1 + (hash(id + stadt) % 30)) * q, avg_price: 90000000, timestamp: new Date(Date.now() - 86400000).toISOString().slice(0, 19) }],
       }));
     const antwortFuer = (url) => {
       const u = decodeURIComponent(url);
@@ -5053,6 +5054,198 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   }
 
   // -----------------------------------------------------------------------
+  // O10: "Preise aktualisieren" der Einkaufsliste (nachgebildetes fetch,
+  // eigene Testdatenbank). Geprueft wird, WAS abgerufen wird (genau die IDs
+  // der geplanten Produkte: Zutaten in den Einkaufsstaedten, Produkte in den
+  // Verkaufsstaedten, erzwungen trotz frischem Bestand), dass danach neu
+  // gerechnet wird, und der Fehlerfall.
+  // -----------------------------------------------------------------------
+  async function o10Tests() {
+    const DB = PREISE.BESTAND_DB_NAME + "_test_o10";
+    const LS = "albion_kostenrechner_preiscache_test_o10";
+    const echtesFetch = window.fetch;
+    const { hash, DATUM } = SYNTH;
+    let t = 2000000000000;
+    let log = [];
+    let aufschlag = 0; // auf Produkt- und Zutatenpreise: "der Markt hat sich bewegt"
+    let kaputt = false;
+    const umgebung = { jetzt: () => t, warte: (ms) => ((t += ms), Promise.resolve()), verborgen: () => false };
+    const stellen = () => PREISE.testEinstellen(Object.assign({ pauseMs: PREISE.PAUSE_MS, dbName: DB, lsKey: LS }, umgebung));
+    const preisVon = (id, stadt, q) => (/_MAIN_|_2H_/.test(id) ? 40000 + (hash(stadt + "|" + id) % 5000) : 50 + (hash(stadt + "|" + id) % 50)) + q * 10 + aufschlag;
+    const antwortFuer = (url) => {
+      const u = decodeURIComponent(url);
+      const staedte = /[?&]locations=([^&]+)/.exec(u)[1].split(",");
+      const p = /\/prices\/(.+)\.json/.exec(u);
+      if (p) {
+        const qs = /[?&]qualities=([^&]+)/.exec(u)[1].split(",").map(Number);
+        return [].concat(...staedte.map((stadt) => [].concat(...p[1].split(",").map((id) => qs.map((q) => ({ item_id: id, city: stadt, quality: q, sell_price_min: preisVon(id, stadt, q), sell_price_min_date: DATUM, buy_price_max: Math.floor(preisVon(id, stadt, q) * 0.8), buy_price_max_date: DATUM }))))));
+      }
+      const hi = /\/history\/(.+)\.json/.exec(u);
+      // Gehandelt wird Normal fuer 30.000 (Waffen) bzw. zum Angebotspreis: der Handelspreis sichert die Waffenpreise von 40.000+ auf 30.000 ab.
+      if (hi) return [].concat(...staedte.map((stadt) => hi[1].split(",").map((id) => ({ location: stadt, item_id: id, quality: 1, data: [{ item_count: 700, avg_price: /_MAIN_|_2H_/.test(id) ? 30000 : 90000000, timestamp: new Date(Date.now() - 86400000).toISOString().slice(0, 19) }] }))));
+      return [];
+    };
+    window.fetch = async (url) => {
+      url = String(url);
+      log.push(url);
+      await new Promise((r) => setTimeout(r, 0));
+      t += 100;
+      if (kaputt) throw new Error("Netz weg");
+      return { status: 200, ok: true, json: async () => antwortFuer(url) };
+    };
+    // Abgerufene IDs je Endpunkt und Staedtegruppe aus den URLs.
+    const auswerten = (urls) => {
+      const out = { preise: {}, historie: {}, qualitaeten: {} };
+      urls.forEach((url) => {
+        const u = decodeURIComponent(url);
+        const staedte = /[?&]locations=([^&]+)/.exec(u)[1];
+        const p = /\/prices\/(.+)\.json/.exec(u);
+        const hi = /\/history\/(.+)\.json/.exec(u);
+        const ziel = p ? out.preise : out.historie;
+        (ziel[staedte] = ziel[staedte] || new Set());
+        (p || hi)[1].split(",").forEach((id) => ziel[staedte].add(id));
+        if (p) out.qualitaeten[staedte] = /[?&]qualities=([^&]+)/.exec(u)[1];
+      });
+      return out;
+    };
+    const gleich = (menge, liste) => !!menge && menge.size === new Set(liste).size && liste.every((id) => menge.has(id));
+    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 0, Schmelze: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, absatzAnteilProzent: 10 };
+    const maschinen = [];
+    try {
+      await PREISE.testDatenbankLoeschen(DB);
+      localStorage.removeItem(LS);
+      await stellen();
+
+      // ---- Craften: Gewinn ----
+      const auswahl = CRAFTEN.einstellungenBereinigen({ warengruppen: ["sword"], tiers: [4, 5], stufen: [0, 1], artefakte: false, einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Thetford"], verkaufsweg: "order" });
+      const kand = CRAFTEN.kandidaten(auswahl);
+      const erst = await CRAFTEN.datenAbrufen(kand, auswahl);
+      const plan = { T5_MAIN_SWORD: 3, "T4_2H_CLAYMORE@1": 2 };
+      const geplant = kand.filter((k) => plan[k.marktId]);
+      const idsPlan = CRAFTEN.benoetigteMarktIds(geplant);
+      const zVor = CRAFTEN.zeilenRechnen(kand, erst.stadtDaten, auswahl, einst);
+      const listeVor = CRAFTEN.einkaufsliste(zVor, plan);
+      const ungeplant = kand.find((k) => !plan[k.marktId]);
+      // Bestand ist frisch: eine gewoehnliche Suche ruft nichts ab.
+      log = [];
+      const nichts = await CRAFTEN.datenAbrufen(geplant, auswahl);
+      const abrufeOhneZwang = log.length;
+      aufschlag = 7;
+      log = [];
+      const fortschritt = [];
+      const frisch = await CRAFTEN.planAktualisieren(kand, auswahl, plan, { aufStatus: (text) => fortschritt.push(text) });
+      const a = auswerten(log);
+      pruefe(
+        "o10 Preise aktualisieren (Craften): holt trotz frischem Bestand (gewoehnliche Suche: 0 Abrufe) genau die IDs der geplanten Produkte, Zutaten in den Einkaufsstaedten (Qualitaet 1), Produkte in der Verkaufsstadt (alle Qualitaeten), verkauft/Tag von beiden; nichts von ungeplanten Produkten",
+        geplant.length === 2 && abrufeOhneZwang === 0 && nichts.abrufe === 0 && frisch.abrufe === log.length && log.length === 4 &&
+          gleich(a.preise["Lymhurst,Martlock"], idsPlan.zutaten) && a.qualitaeten["Lymhurst,Martlock"] === "1" &&
+          gleich(a.preise["Thetford"], idsPlan.produkte) && a.qualitaeten["Thetford"] === "1,2,3,4,5" &&
+          gleich(a.historie["Thetford"], idsPlan.produkte) && gleich(a.historie["Lymhurst,Martlock"], idsPlan.zutaten) &&
+          !log.some((u) => decodeURIComponent(u).indexOf(ungeplant.marktId + ",") !== -1 || decodeURIComponent(u).indexOf(ungeplant.marktId + ".json") !== -1) && fortschritt.length > 0,
+        log.length + " Abrufe: " + JSON.stringify(Object.keys(a.preise).concat(Object.keys(a.historie))) + ", Zutaten " + idsPlan.zutaten.join("/") + ", Produkte " + idsPlan.produkte.join("/")
+      );
+      const daten = CRAFTEN.stadtDatenMischen(erst.stadtDaten, frisch.stadtDaten);
+      const zNach = CRAFTEN.zeilenRechnen(kand, daten, auswahl, einst);
+      const listeNach = CRAFTEN.einkaufsliste(zNach, plan);
+      const zeileVon = (zeilen, id) => zeilen.find((z) => z.marktId === id);
+      const barrenVor = listeVor.posten.find((p) => p.marktId === "T5_METALBAR");
+      const barrenNach = listeNach.posten.find((p) => p.marktId === "T5_METALBAR");
+      pruefe(
+        "o10 Preise aktualisieren (Craften): danach rechnen Zeilen und Liste mit den neuen Preisen (Zutat 7 Silber teurer, Menge gleich, Summe hoeher); ein ungeplantes Produkt behaelt seine Zahlen; der Verkaufspreis ist der gehandelte (30.000) statt des Angebots",
+        barrenVor && barrenNach && barrenNach.basisPreis === barrenVor.basisPreis + 7 && barrenNach.menge === barrenVor.menge && listeNach.summe > listeVor.summe &&
+          zeileVon(zNach, "T5_MAIN_SWORD").silber > zeileVon(zVor, "T5_MAIN_SWORD").silber &&
+          zeileVon(zNach, ungeplant.marktId).silber === zeileVon(zVor, ungeplant.marktId).silber && zeileVon(zNach, ungeplant.marktId).erloes === zeileVon(zVor, ungeplant.marktId).erloes &&
+          zeileVon(zNach, "T5_MAIN_SWORD").produktPreis === 30000 && zeileVon(zNach, "T5_MAIN_SWORD").preisQuelle === "handel" && zeileVon(zNach, "T5_MAIN_SWORD").produktPreisAngebot > 40000 &&
+          zeileVon(zNach, "T5_MAIN_SWORD").preisUnsicher === false,
+        JSON.stringify([barrenVor && barrenVor.basisPreis, barrenNach && barrenNach.basisPreis, listeVor.summe, listeNach.summe, zeileVon(zNach, "T5_MAIN_SWORD").produktPreis])
+      );
+      pruefe("o10 Preise aktualisieren (Craften): ohne geplantes Produkt unter den Kandidaten kein Abruf, Ergebnis null", (await CRAFTEN.planAktualisieren(kand, auswahl, { T8_GIBTSNICHT: 3 })) === null && (await CRAFTEN.planAktualisieren(kand, auswahl, {})) === null, "");
+
+      // ---- Gelegenheiten: Maschine ----
+      const G = GELEGENHEITEN;
+      const m = G.erzeugen({
+        einstellungen: {
+          warengruppen: ["sword"], rohstoffe: ["ore"], tiers: [4, 5], stufen: [0, 1], artefakte: false, einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Thetford"],
+          fertigungsstadt: "Lymhurst", minAbsatz: 0, scanAn: false, plan: { "c:T5_MAIN_SWORD": 3, "v:T5_METALBAR:0": 10 },
+        },
+        einstellungenLesen: () => einst,
+      });
+      maschinen.push(m);
+      // Den Bestand fuer den ganzen Umfang fuellen (wie es der Scan taete), dann oeffnen.
+      const gk = m.kandidaten();
+      await CRAFTEN.datenAbrufen(gk.filter((x) => x.art === "craften").map((x) => x.k), G.auswahlCraften(m.einstellungen()));
+      await VEREDELN.datenAbrufen(gk.filter((x) => x.art === "veredeln").map((x) => x.k), G.auswahlVeredeln(m.einstellungen()));
+      await m.oeffnen();
+      await m.fertig();
+      const gVor = { schwert: Object.assign({}, m.zeile("c:T5_MAIN_SWORD")), barren: Object.assign({}, m.zeile("v:T5_METALBAR:0")), anderes: Object.assign({}, m.zeile("c:T4_MAIN_SWORD@1")) };
+      const gGeplant = gk.filter((x) => m.einstellungen().plan[x.schluessel]);
+      const gZutaten = Array.from(new Set([].concat(...gGeplant.map((x) => x.zutatIds))));
+      const gProdukte = gGeplant.map((x) => x.produktId);
+      aufschlag = 20;
+      log = [];
+      const gErg = await m.planAktualisieren();
+      const ga = auswerten(log);
+      const alleIds = (gruppe) => Array.from(new Set([].concat(...Object.keys(gruppe).map((k) => Array.from(gruppe[k])))));
+      const gNach = { schwert: m.zeile("c:T5_MAIN_SWORD"), barren: m.zeile("v:T5_METALBAR:0"), anderes: m.zeile("c:T4_MAIN_SWORD@1") };
+      pruefe(
+        "o10 Preise aktualisieren (Gelegenheiten): die Maschine holt genau die IDs der geplanten Produkte (ein Craft, eine Veredelung; Zutaten in den Einkaufs-, Produkte in der Verkaufsstadt), die Abrufzahl stimmt mit fetch ueberein",
+        gErg && gErg.produkte === 2 && gErg.abrufe === log.length && log.length > 0 &&
+          gleich(new Set(alleIds(ga.preise)), Array.from(new Set(gZutaten.concat(gProdukte)))) && gleich(new Set(alleIds(ga.historie)), Array.from(new Set(gZutaten.concat(gProdukte)))) &&
+          gleich(ga.preise["Thetford"], gProdukte) && !alleIds(ga.preise).some((id) => id === "T4_MAIN_SWORD"),
+        log.length + " Abrufe, Preise: " + JSON.stringify(Object.keys(ga.preise).map((k) => k + "=" + Array.from(ga.preise[k]).join("/")))
+      );
+      pruefe(
+        "o10 Preise aktualisieren (Gelegenheiten): die geplanten Zeilen rechnen danach mit den neuen Preisen (Kosten gestiegen, Abrufzeit neuer), eine ungeplante Zeile ohne gemeinsame Zutat bleibt; die Maschine rechnet nicht mehr",
+        gNach.schwert.silber > gVor.schwert.silber && gNach.barren.silber > gVor.barren.silber && gNach.schwert.preisAbrufAm > gVor.schwert.preisAbrufAm &&
+          gNach.anderes.silber === gVor.anderes.silber && !m.status().rechnet && gNach.schwert.preisQuelle === "handel" && gNach.schwert.produktPreis === 30000,
+        JSON.stringify([gVor.schwert.silber, gNach.schwert.silber, gVor.barren.silber, gNach.barren.silber])
+      );
+      // Fehlerfall: der Abruf scheitert, die Zusage wird abgelehnt (die Oberflaeche zeigt den Text und gibt den Knopf wieder frei); ein zweiter Versuch gelingt.
+      kaputt = true;
+      log = [];
+      let fehlerText = null;
+      try {
+        await m.planAktualisieren();
+      } catch (err) {
+        fehlerText = err && err.message ? err.message : String(err);
+      }
+      const versuche = log.length;
+      kaputt = false;
+      log = [];
+      const nochmal = await m.planAktualisieren();
+      const nochmalAbrufe = log.length;
+      let fehlerC = null;
+      kaputt = true;
+      try {
+        await CRAFTEN.planAktualisieren(kand, auswahl, plan);
+      } catch (err) {
+        fehlerC = err && err.message ? err.message : String(err);
+      }
+      kaputt = false;
+      pruefe(
+        "o10 Preise aktualisieren: scheitert der Abruf, kommt ein Fehlertext zurueck (nach 5 Versuchen), in beiden Reitern; der naechste Versuch gelingt wieder",
+        typeof fehlerText === "string" && /fehlgeschlagen/.test(fehlerText) && /Netz weg/.test(fehlerText) && versuche >= 1 && nochmal && nochmal.abrufe === nochmalAbrufe && nochmalAbrufe > 0 &&
+          typeof fehlerC === "string" && /fehlgeschlagen/.test(fehlerC),
+        fehlerText + " / " + versuche + " Versuche, danach " + nochmalAbrufe + " Abrufe"
+      );
+      m.einstellen({ plan: {} });
+      pruefe("o10 Preise aktualisieren (Gelegenheiten): ohne geplantes Produkt kein Abruf, Ergebnis null", (await m.planAktualisieren()) === null, "");
+    } catch (e) {
+      pruefe("o10: asynchrone Tests laufen ohne Ausnahme durch", false, (e && e.stack) || e);
+    } finally {
+      maschinen.forEach((m) => m.beenden());
+      window.fetch = echtesFetch;
+      try {
+        await PREISE.testEinstellen(null);
+        await PREISE.testDatenbankLoeschen(DB);
+        localStorage.removeItem(LS);
+      } catch (e) {
+        pruefe("o10: Aufraeumen", false, e);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {
@@ -5081,7 +5274,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     const zsf = document.getElementById("zusammenfassung");
     zsf.textContent += ", asynchrone Tests zu Preisbestand, Abrufplaner und Gelegenheiten laufen ...";
     zsf.className = "zusammenfassung";
-    bestandTests().then(planerTests).then(gelegenheitenTests).then(gemeinsamTests).then(() => {
+    bestandTests().then(planerTests).then(gelegenheitenTests).then(gemeinsamTests).then(o10Tests).then(() => {
       renderErgebnisse(alleTests);
       document.body.dataset.testsFertig = "1";
     });
