@@ -15,7 +15,8 @@ const UI = (function () {
 
   const EINSTELLUNGEN_KEY = "albion_kostenrechner_einstellungen";
   const EINSTELLUNGEN_SCHEMA = 1;
-  const ABSATZANTEIL_VORGABE = 25; // Prozent, Annahme (s. absatzAnteilSetzen)
+  const ABSATZANTEIL_VORGABE = 10; // Prozent, Annahme (s. absatzAnteilSetzen); bis v3.21.0 waren es 25
+  const ABSATZANTEIL_VORGABE_ALT = 25;
 
   function defaultEinstellungen() {
     return {
@@ -99,6 +100,7 @@ const UI = (function () {
       // "Gelegenheiten", "Craften: Gewinn" und "Veredeln leveln" fuer die
       // Kennzahl Gewinn/Tag, s. absatzAnteilSetzen().
       absatzAnteilProzent: ABSATZANTEIL_VORGABE,
+      anteilZehnUmgestellt: true, // v3.22.0: Merker der einmaligen Umstellung 25 auf 10, s. absatzAnteilAusGespeichert()
       maxPreisAlterMin: 4320, // Vorgabe 3 Tage, frei gewaehlt, kein Spielwert
     };
   }
@@ -134,7 +136,7 @@ const UI = (function () {
       basis.kaufweg = daten.kaufweg || basis.kaufweg;
       basis.verkaufsweg = daten.verkaufsweg || basis.verkaufsweg;
       basis.premium = daten.premium != null ? !!daten.premium : basis.premium;
-      basis.absatzAnteilProzent = absatzAnteilBereinigen(daten.absatzAnteilProzent);
+      basis.absatzAnteilProzent = absatzAnteilAusGespeichert(daten);
       basis.maxPreisAlterMin = daten.maxPreisAlterMin !== undefined ? daten.maxPreisAlterMin : basis.maxPreisAlterMin;
       return basis;
     } catch (e) {
@@ -242,12 +244,27 @@ const UI = (function () {
   }
 
   // v3.18.0 (22.11.2026, OPTIMIERUNG-PLAN.md Paket O4): Anteil am erfassten
-  // Tageshandel, den man selbst verkauft, in Prozent (1 bis 100, Vorgabe 25).
+  // Tageshandel, den man selbst verkauft, in Prozent (1 bis 100, Vorgabe 10, bis v3.21.0 25).
   // Eine ANNAHME, kein Spielwert. Gemeinsame Einstellung der drei
   // Gewinn-Reiter, Abgleich wie bei Premium per Ereignis.
   const ABSATZANTEIL_EVENT = "albion:absatzanteil";
 
-  /** Gueltiger Anteil in Prozent: Zahl zwischen 1 und 100, sonst die Vorgabe 25. */
+  /**
+   * Anteil aus dem gespeicherten Stand (v3.22.0). Neue Vorgabe ist 10 %
+   * (Erfahrungswert des Nutzers: wer mehr anbietet, wird unterboten). Wer
+   * genau die alte Vorgabe 25 gespeichert hat, wird EINMALIG auf 10
+   * umgestellt: der Merker anteilZehnUmgestellt fehlt im alten Stand und
+   * steht danach in jedem gelesenen und damit in jedem wieder gespeicherten
+   * Stand, ein spaeter bewusst gewaehltes 25 bleibt deshalb erhalten. Andere
+   * gespeicherte Werte bleiben. Muster wie VEREDELN.sortierungBereinigen().
+   */
+  function absatzAnteilAusGespeichert(daten) {
+    const w = absatzAnteilBereinigen(daten ? daten.absatzAnteilProzent : null);
+    if (w === ABSATZANTEIL_VORGABE_ALT && !(daten && daten.anteilZehnUmgestellt)) return ABSATZANTEIL_VORGABE;
+    return w;
+  }
+
+  /** Gueltiger Anteil in Prozent: Zahl zwischen 1 und 100, sonst die Vorgabe 10. */
   function absatzAnteilBereinigen(wert) {
     const zahl = Number(wert);
     if (wert === "" || wert == null || !isFinite(zahl)) return ABSATZANTEIL_VORGABE;
@@ -2980,6 +2997,7 @@ const UI = (function () {
     ABSATZANTEIL_EVENT,
     ABSATZANTEIL_VORGABE,
     absatzAnteilBereinigen,
+    absatzAnteilAusGespeichert,
     absatzAnteilSetzen,
     itemOeffnen,
     fceUeberschreibungenAus,

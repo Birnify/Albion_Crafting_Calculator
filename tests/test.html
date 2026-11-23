@@ -291,8 +291,8 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       const zuGross = UI.absatzAnteilSetzen(250, "gelegenheiten");
       const quatsch = UI.absatzAnteilSetzen("x", "gelegenheiten");
       pruefe(
-        "o4 Anteil am Tageshandel: Vorgabe 25 %, ein Speicherort (einstellungen.absatzAnteilProzent), bleibt erhalten, Grenzen 1 bis 100 %, Ereignis mit Quelle",
-        vorgabe === 25 && UI.ABSATZANTEIL_VORGABE === 25 && gesetzt === 40 && gelesen === 40 && imSpeicher === 40 && zuKlein === 1 && zuGross === 100 && quatsch === 25 &&
+        "o4 Anteil am Tageshandel: Vorgabe 10 % (seit v3.22.0), ein Speicherort (einstellungen.absatzAnteilProzent), bleibt erhalten, Grenzen 1 bis 100 %, Ereignis mit Quelle",
+        vorgabe === 10 && UI.ABSATZANTEIL_VORGABE === 10 && gesetzt === 40 && gelesen === 40 && imSpeicher === 40 && zuKlein === 1 && zuGross === 100 && quatsch === 10 &&
           gemeldet.length === 4 && gemeldet[0].wert === 40 && gemeldet[0].quelle === "craften" && UI.ABSATZANTEIL_EVENT === "albion:absatzanteil",
         JSON.stringify({ vorgabe, gesetzt, gelesen, zuKlein, zuGross, quatsch, n: gemeldet.length })
       );
@@ -324,6 +324,65 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         "o4 Anteil am Tageshandel: eine Aenderung (25 auf 50 %) verdoppelt den Gewinn/Tag in Craften, Veredeln und Gelegenheiten ohne Neuladen",
         kG.length === 1 && bei25.every((x) => typeof x === "number" && x !== 0) && bei25.every((x, i) => Math.abs(bei50[i] - 2 * x) < 1e-6),
         JSON.stringify({ bei25, bei50 })
+      );
+      // v3.22.0: einmalige Umstellung der alten Vorgabe 25 auf 10 (Merker anteilZehnUmgestellt).
+      const schema = UI.defaultEinstellungen().schema;
+      const mitStand = (stand) => {
+        if (stand == null) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, JSON.stringify(Object.assign({ schema }, stand)));
+        return UI.einstellungenLesen();
+      };
+      const alt25 = mitStand({ absatzAnteilProzent: 25 });
+      const bewusst25 = mitStand({ absatzAnteilProzent: 25, anteilZehnUmgestellt: true });
+      const alt40 = mitStand({ absatzAnteilProzent: 40 });
+      const leer = mitStand(null);
+      const ohneFeld = mitStand({ premium: false });
+      pruefe(
+        "v3.22 Migration Marktanteil: gespeichert 25 ohne Merker wird 10; mit Merker bleibt 25; gespeichert 40 bleibt 40; nichts gespeichert ergibt 10; der gelesene Stand traegt immer den Merker",
+        alt25.absatzAnteilProzent === 10 && bewusst25.absatzAnteilProzent === 25 && alt40.absatzAnteilProzent === 40 && leer.absatzAnteilProzent === 10 && ohneFeld.absatzAnteilProzent === 10 && ohneFeld.premium === false &&
+          [alt25, bewusst25, alt40, leer, ohneFeld].every((x) => x.anteilZehnUmgestellt === true) &&
+          UI.absatzAnteilAusGespeichert({ absatzAnteilProzent: "25" }) === 10 && UI.absatzAnteilAusGespeichert({ absatzAnteilProzent: 25, anteilZehnUmgestellt: true }) === 25 && UI.absatzAnteilAusGespeichert({ absatzAnteilProzent: 24 }) === 24 && UI.absatzAnteilAusGespeichert(null) === 10,
+        JSON.stringify([alt25, bewusst25, alt40, leer, ohneFeld].map((x) => x.absatzAnteilProzent))
+      );
+      // Einmalig: nach der Umstellung bewusst wieder 25 gewaehlt, bleibt ueber ein Neuladen erhalten; ein anderes Speichern (Premium) haelt die 10 und schreibt den Merker.
+      mitStand({ absatzAnteilProzent: 25 });
+      UI.premiumSetzen(true, "test");
+      const nachAnderemSpeichern = JSON.parse(localStorage.getItem(KEY));
+      UI.absatzAnteilSetzen(25, "test");
+      const wieder25 = UI.einstellungenLesen().absatzAnteilProzent;
+      const imSpeicher25 = JSON.parse(localStorage.getItem(KEY));
+      pruefe(
+        "v3.22 Migration Marktanteil ist einmalig: ein anderes Speichern schreibt 10 samt Merker; danach bewusst gesetzte 25 bleiben nach erneutem Lesen 25",
+        nachAnderemSpeichern.absatzAnteilProzent === 10 && nachAnderemSpeichern.anteilZehnUmgestellt === true && wieder25 === 25 && imSpeicher25.absatzAnteilProzent === 25 && imSpeicher25.anteilZehnUmgestellt === true,
+        JSON.stringify({ nach: nachAnderemSpeichern.absatzAnteilProzent, wieder25, merker: imSpeicher25.anteilZehnUmgestellt })
+      );
+      // v3.22.0: Zaehler im DOM und Produkt der Einkaufsliste gegen das Tagesmaximum (Breitschwert: 25 % von 8 verkauft/Tag = 2 Stueck).
+      UI.absatzAnteilSetzen(25, "test");
+      const zMax = CRAFTEN.zeilenRechnen([kC], datC, CRAFTEN.einstellungenBereinigen({ warengruppen: ["sword"] }), UI.einstellungenLesen())[0];
+      const zm = VEREDELN.zaehlerMax(zMax, 0);
+      const halter = document.createElement("div");
+      halter.innerHTML = "<div class='cg-zaehler'" + zm.attr + " data-vd-titel='Geplante Stückzahl'><input class='cg-zn' title='Geplante Stückzahl'></div><div class='cg-zaehler' id='ohneMax'><input class='cg-zn' title='x'></div>";
+      const w = halter.firstChild;
+      const inp = w.querySelector("input");
+      const schritte = [2, 3, 1, 30].map((n) => {
+        VEREDELN.zaehlerMaxSetzen(w, n);
+        return w.classList.contains("cg-ueber") + ":" + inp.title;
+      });
+      VEREDELN.zaehlerMaxSetzen(halter.lastChild, 999);
+      pruefe(
+        "v3.22 Zaehler im DOM: bei Gleichstand (2 von max. 2) keine Hervorhebung, bei 3 Klasse cg-ueber und Tooltip, zurueck auf 1 wieder ohne; ein Zaehler ohne bekanntes Maximum bleibt unberuehrt",
+        VEREDELN.maxTagZahl(zMax) === 2 && schritte[0] === "false:Geplante Stückzahl" && /^true:Geplant 3, am Tag erreichbar etwa 2: .+ Geplante Stückzahl$/.test(schritte[1]) && schritte[2] === "false:Geplante Stückzahl" &&
+          /^true:Geplant 30, /.test(schritte[3]) && !halter.lastChild.classList.contains("cg-ueber") && halter.lastChild.querySelector("input").title === "x",
+        JSON.stringify(schritte)
+      );
+      const lMax = CRAFTEN.einkaufsliste([zMax], { T5_MAIN_SWORD: 3 }).produkte[0];
+      const lGleich = CRAFTEN.einkaufsliste([zMax], { T5_MAIN_SWORD: 2 }).produkte[0];
+      const escP = (t) => String(t).replace(/'/g, "&#39;");
+      pruefe(
+        "v3.22 Einkaufsliste: das Produkt traegt das Tagesmaximum (maxJeTag 2, \"max. 2/Tag\"); 3 geplant liegt darueber (Warnfarbe), 2 geplant nicht",
+        lMax.stueck === 3 && lMax.maxJeTag === 2 && lMax.maxText === "max. 2/Tag" && /class='cg-plan-max cg-ueber'/.test(VEREDELN.planMaxHtml(lMax, escP)) &&
+          VEREDELN.planMaxHtml(lMax, escP).replace(/<[^>]+>/g, "") === " · max. 2/Tag" && /class='cg-plan-max'/.test(VEREDELN.planMaxHtml(lGleich, escP)),
+        VEREDELN.planMaxHtml(lMax, escP)
       );
     } finally {
       document.removeEventListener(UI.ABSATZANTEIL_EVENT, horcher);
@@ -4122,7 +4181,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
       eintrag.ende = t;
       return { status: 200, ok: true, json: async () => antwortFuer(url) };
     };
-    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 300, Schmelze: 400, Gerberei: 250 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, fceAusnahmen: {}, spezialisierung: {} };
+    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 300, Schmelze: 400, Gerberei: 250 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, fceAusnahmen: {}, spezialisierung: {}, absatzAnteilProzent: 25 }; // 25 ausdruecklich gesetzt (Vorgabe seit v3.22.0: 10), die Zahlen der Tests rechnen damit
     const maschinen = [];
     const neu = (einstellungen) => {
       const m = G.erzeugen({ einstellungen, einstellungenLesen: () => einst, warte: () => kurz(15) });

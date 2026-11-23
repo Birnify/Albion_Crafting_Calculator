@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-22 · Version: v3.21.0 · O7: Markttiefe im Einkauf
+Stand: 2026-11-23 · Version: v3.22.0 · O8: Tagesmaximum sichtbar, Marktanteil 10 %
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -64,7 +64,7 @@ der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
 Die Runde ist damit abgeschlossen.** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
 Fund zum Einkauf, Potenzialerkennung ohne Vorauswahl, Performance nur wo
 nötig. Einzelheiten je Version: Historie, Nachträge v3.15.0 bis v3.19.0.
-Selbsttest zuletzt **907/907** grün.
+Selbsttest zuletzt **920/920** grün.
 
 - **O1, v3.15.0, gemeinsamer Preisbestand.** Preise und Handelsvolumen von
   `js/preise.js` liegen in IndexedDB (`albion_kostenrechner_bestand`), mit
@@ -107,7 +107,8 @@ Selbsttest zuletzt **907/907** grün.
   Anteil × verkauft/Tag, mit Fokus und Premium zusätzlich höchstens 10.000 /
   Fokus je Stück) und `mehrgewinnJeFokus`. Gewinn/Tag ist die Vorgabe der
   Sortierung in allen drei Gewinn-Reitern. Der Anteil ist eine Annahme, kein
-  Spielwert (`einstellungen.absatzAnteilProzent`, Vorgabe 25).
+  Spielwert (`einstellungen.absatzAnteilProzent`, Vorgabe seit v3.22.0 10,
+  vorher 25).
 - **O5, v3.19.0, von der Gelegenheit zur Tat.** Einkaufsliste auch in
   „Gelegenheiten“, eine Logik für beide Reiter:
   `CRAFTEN.einkaufsliste(zeilen, plan, schluesselVon)`, Summen über
@@ -135,6 +136,18 @@ T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
 (25 % von 109.647 Himmelsblume, Bedarf 1,9 je Stück). **Die Grenze halbiert
 hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
 entscheidet weiter der angenommene Marktanteil.
+
+**O8, v3.22.0 (23.11.2026), Tagesmaximum sichtbar.** Wunsch des Nutzers:
+kein Tagesbudget in Silber, stattdessen die maximale Stückzahl sichtbar.
+Unter „Gewinn/Tag“ steht in allen drei Gewinn-Reitern `max. 20/Tag ·
+Einkauf` (bzw. Absatz, Fokus; abgerundet; „Einkauf ?“ bei unbekanntem
+Zutatenvolumen; Klasse `vd-tagmax`, die früheren Schilder sind darin
+aufgegangen). Zähler (Gelegenheiten, Craften) werden hervorgehoben
+(`cg-ueber`), wenn die Planung über dem Maximum liegt, die höhere Zahl
+bleibt erlaubt; das Produktschild der Einkaufsliste nennt das Maximum
+(`VEREDELN.planMaxHtml`). **Marktanteil: Vorgabe 10 % statt 25 %**
+(Erfahrungswert des Nutzers: wer mehr anbietet, wird unterboten),
+einmalige Umstellung gespeicherter 25 (Merker `anteilZehnUmgestellt`).
 
 **Lootsplit, v3.20.0 und v3.20.1 (22.11.2026, nach der Runde).** Wunsch des Nutzers:
 Lootwert, Geldbeutel, Regear getrennt je Partymitglied; seine Entscheidungen:
@@ -218,7 +231,7 @@ der Änderungsgeschichte je Datei steht in der Historie, Block „Ausgelagert am
 | `assets/ancient-lands.webp` | **Erzeugt** von `build_karte.py`: Kartenbild |
 | `build_graph.py` | Baut `rezepte.js` und `item-namen.js` aus dem Client-Dump (`--refresh`) |
 | `build_karte.py` | Baut Kartenbild und `js/karte-daten.js` aus dem Client-Dump |
-| `tests/test.html` | Selbsttest aller Module, 907 Tests |
+| `tests/test.html` | Selbsttest aller Module, 920 Tests |
 | `vendor/leaflet/` | Leaflet 1.9.4 lokal (js, css, LICENSE) |
 | `assets/lymhurst-bg.jpg`, `assets/radiantwilds-bg.jpg` | Banner; das zweite ist bisher unbenutzt |
 | `design.md` | Verbindliche Design-Spezifikation |
@@ -258,7 +271,7 @@ Außerhalb des Repos, eine Ebene höher: `Kostenrechner öffnen.bat`,
   ungeprüft übernehmen, immer selbst nachlaufen lassen.
   **Die Seite ist erst fertig bei
   `document.body.dataset.testsFertig === "1"`** (ein Teil der Tests läuft
-  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 907/907.
+  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 920/920.
 - **Nach jeder Änderung im Browser gegenprüfen**, nicht nur den Code lesen. Im
   Eintopf-Projekt fielen mehrere Fehler erst in der gerenderten Seite auf.
 - **Rechenergebnisse unabhängig nachziehen** (kurzes Python-Skript im Scratchpad).
@@ -294,11 +307,11 @@ solange sich daran nichts ändert.
 
 **Rechnung und Daten**
 
-- **Marktanteil 25 % ist für Massenware zu hoch.** Seit v3.21.0 begrenzt
-  auch der Einkauf, bei liquiden Rohstoffen bleiben trotzdem fünfstellige
-  Stückzahlen je Tag. Offen: Vorgabe senken oder statt eines Anteils ein
-  Tagesbudget (Silber oder Stück) einführen; Entscheidung des Nutzers.
-  Keine Preisstaffel möglich (die API kennt kein Orderbuch).
+- Tagesmaximum bei Massenware bleibt auch mit 10 % Marktanteil vierstellig
+  (Kunstvoller Stoff T5.0: 5.587 je Tag). Ein Tagesbudget in Silber hat der
+  Nutzer am 23.11.2026 abgelehnt („Geld ist nicht das Problem“); er plant
+  über Zähler und Einkaufsliste. Keine Preisstaffel möglich (die API kennt
+  kein Orderbuch).
 - **Verkaufspreis aus besserer Qualität:** „Craften: Gewinn“ und
   „Gelegenheiten“ nehmen das billigste Angebot über alle Qualitäten; fehlt
   ein Normal-Angebot, rechnet die Zeile mit einem Exzellent-Preis für ein

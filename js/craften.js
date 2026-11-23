@@ -562,6 +562,8 @@ const CRAFTEN = (function () {
       produkte.push({
         marktId: z.marktId, schluessel: id, art: z.art || null, item: z.item, stufe: z.stufe, vorgangsStufe: z.vorgangsStufe, tier: z.tier, stueck, vorgaenge, ausbeute: z.ausbeute || 1,
         hergestellt, erloes, gewinn, kosten,
+        // v3.22.0: Tagesmaximum der Zeile (abgerundet) fuer das Produktschild; null ohne erfassten Handel
+        maxJeTag: V.maxTagZahl(z), maxText: V.maxTagText(z), tagGrenze: z.tagGrenze || null,
       });
       z.zutatenPreise.forEach((x) => {
         const schluessel = x.marktId + "|" + x.stadt;
@@ -721,7 +723,7 @@ const CRAFTEN = (function () {
       },
     ];
     const auswahl = einstellungenBereinigen({ warengruppen: ["sword"], verkaufsweg: "order", mitFokus: false });
-    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null };
+    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, absatzAnteilProzent: 25 }; // 25 ausdruecklich gesetzt (Vorgabe seit v3.22.0: 10), die Zahlen der Tests rechnen damit
     const zeilen = zeilenRechnen([kBreit], stadtDaten, auswahl, einst);
     const z = zeilen[0];
     const erwartetKosten = 3200 / 1.33;
@@ -1707,10 +1709,11 @@ const CRAFTEN = (function () {
       const n = auswahl.plan[z.marktId] || 0;
       const schritt = z.ausbeute || 1;
       const t = schritt > 1 ? " (ein Vorgang ergibt " + schritt + " Stück)" : "";
+      const mx = V.zaehlerMax(z, n); // v3.22.0: Planung ueber dem Tagesmaximum hervorheben
       return (
-        "<div class='cg-zaehler" + (n ? " an" : "") + "' data-cg-plan='" + esc(z.marktId) + "' data-cg-schritt='" + schritt + "'>" +
+        "<div class='cg-zaehler" + (n ? " an" : "") + mx.klasse + "' data-cg-plan='" + esc(z.marktId) + "' data-cg-schritt='" + schritt + "'" + mx.attr + " data-vd-titel='Geplante Stückzahl für die Einkaufsliste" + esc(t) + "'>" +
         "<button type='button' class='cg-zb' data-cg-delta='-1' aria-label='Eins weniger " + esc(name) + "' title='Weniger" + esc(t) + "'>−</button>" +
-        "<input type='number' class='cg-zn' min='0' step='" + schritt + "' value='" + n + "' aria-label='Geplante Stückzahl " + esc(name) + "' title='Geplante Stückzahl für die Einkaufsliste" + esc(t) + "'>" +
+        "<input type='number' class='cg-zn' min='0' step='" + schritt + "' value='" + n + "' aria-label='Geplante Stückzahl " + esc(name) + "' title='" + esc(mx.titel) + "Geplante Stückzahl für die Einkaufsliste" + esc(t) + "'>" +
         "<button type='button' class='cg-zb' data-cg-delta='1' aria-label='Eins mehr " + esc(name) + "' title='Mehr" + esc(t) + "'>+</button></div>"
       );
     }
@@ -1723,6 +1726,7 @@ const CRAFTEN = (function () {
       wurzel.querySelectorAll(".cg-zaehler").forEach((w) => {
         if (w.dataset.cgPlan !== id) return;
         w.classList.toggle("an", n > 0);
+        V.zaehlerMaxSetzen(w, n);
         const inp = w.querySelector(".cg-zn");
         if (inp && document.activeElement !== inp) inp.value = n;
       });
@@ -1749,7 +1753,7 @@ const CRAFTEN = (function () {
           const name = nameVon(p.item, p.stufe);
           return (
             "<span class='cg-plan-produkt'>" + icon(marktIdVon(p.item, p.stufe), 24, name) + p.stueck + "× " + esc(name) + (p.tier ? " <span class='vd-klein'>T" + p.tier + "." + p.stufe + "</span>" : "") +
-            (p.ausbeute > 1 ? " <span class='vd-klein'>(" + p.vorgaenge + " Vorgänge)</span>" : "") +
+            (p.ausbeute > 1 ? " <span class='vd-klein'>(" + p.vorgaenge + " Vorgänge)</span>" : "") + V.planMaxHtml(p, esc) +
             "<button type='button' class='vd-reset cg-plan-weg' data-cg-weg='" + esc(p.marktId) + "' title='Aus der Planung nehmen' aria-label='" + esc(name) + " aus der Planung nehmen'>×</button></span>"
           );
         })

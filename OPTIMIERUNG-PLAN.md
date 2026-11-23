@@ -279,5 +279,6 @@ durchgeklickt, keine Konsolenfehler.
 | O3 Reiter „Gelegenheiten" | erledigt 22.11.2026 | v3.17.0 |
 | O4 Gewinn je Einsatz | erledigt 22.11.2026 (ohne eigene Spalte „je eingesetztem Silber“, das ist die Marge) | v3.18.0 |
 | O5 Von der Gelegenheit zur Tat | erledigt 22.11.2026 | v3.19.0 |
+| O8 Tagesmaximum sichtbar, Marktanteil 10 % (Nachtrag) | erledigt 23.11.2026 | v3.22.0 |
 | O7 Markttiefe im Einkauf (Nachtrag nach der Runde) | erledigt 22.11.2026: Gewinn/Tag zusätzlich durch das Tagesvolumen der Zutaten begrenzt | v3.21.0 |
 | O6 Aufräumen | Teil 1 (Kontextdatei 1.178 → 339 Zeilen) erledigt 22.11.2026; Teil 2 (`ui.js` aufteilen) entfällt, Nutzer-Entscheidung vom 22.11.2026 (kaum Tests für das Rendering, kein Nutzen für die Ziele) | v3.19.1 |

@@ -92,7 +92,8 @@ const VEREDELN = (function () {
   const FOKUS_JE_TAG_PREMIUM = 10000;
   // Anteil am erfassten Tageshandel, den man selbst verkauft: ANNAHME, kein
   // Spielwert. Gemeinsame Einstellung (einstellungen.absatzAnteilProzent, UI.absatzAnteilSetzen).
-  const ANTEIL_VORGABE_PROZENT = 25;
+  // v3.22.0: Vorgabe 10 statt 25 (Erfahrungswert des Nutzers: wer mehr anbietet, wird unterboten).
+  const ANTEIL_VORGABE_PROZENT = 10;
 
   function standardEinstellungen() {
     return {
@@ -485,7 +486,7 @@ const VEREDELN = (function () {
   // v3.18.0 (O4): Gewinn/Tag und Mehrgewinn je Fokuspunkt
   // -----------------------------------------------------------------------
 
-  /** Angenommener Anteil am Tageshandel als Bruch (0,01 bis 1), Vorgabe 0,25. */
+  /** Angenommener Anteil am Tageshandel als Bruch (0,01 bis 1), Vorgabe 0,10. */
   function anteilVon(einstellungen) {
     const w = einstellungen ? einstellungen.absatzAnteilProzent : null;
     const n = Number(w);
@@ -767,8 +768,111 @@ const VEREDELN = (function () {
     marge: "Gewinn bezogen auf die eigenen Kosten, also der Gewinn je eingesetztem Silber. Klicken sortiert absteigend.",
     anteil:
       "Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten, Produkt und Zutaten, und bestimmt die Spalte Gewinn/Tag. " +
+      "Erfahrungswert, keine Spielregel: wer mehr als etwa ein Zehntel des Tageshandels anbietet, wird meist unterboten und wird die Ware nicht mehr los. " +
       "Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.",
   };
+
+  // -----------------------------------------------------------------------
+  // v3.22.0: Tagesmaximum (stueckJeTagErreichbar) sichtbar machen
+  // -----------------------------------------------------------------------
+
+  /**
+   * Tagesmaximum einer Zeile in ganzen Stueck, ABGERUNDET (20,9 wird 20);
+   * null ohne erfassten Handel. Unter 1 Stueck ergibt 0, die Anzeige schreibt
+   * dann "unter 1" (maxTagText). Der winzige Zuschlag faengt Rundungsreste
+   * der Gleitkommarechnung ab (0,29 x 100 = 28,999999999999996 ist 29).
+   */
+  function maxTagZahl(z) {
+    if (!z || z.gewinnJeTag == null || z.stueckJeTagErreichbar == null || !isFinite(z.stueckJeTagErreichbar)) return null;
+    return Math.max(0, Math.floor(z.stueckJeTagErreichbar + 1e-9));
+  }
+
+  /** "max. 1.250/Tag", "max. unter 1/Tag" (ueber 0, unter 1), "max. 0/Tag" (genau 0: kein Handel der Zutat erfasst); leer ohne erfassten Handel. */
+  function maxTagText(z) {
+    const n = maxTagZahl(z);
+    if (n == null) return "";
+    if (n >= 1) return "max. " + zahlText(n, 0) + "/Tag";
+    return z.stueckJeTagErreichbar > 0 ? "max. unter 1/Tag" : "max. 0/Tag";
+  }
+
+  const GRENZE_WORT = { absatz: "Absatz", einkauf: "Einkauf", fokus: "Fokus" };
+
+  /**
+   * Zeile unter dem Gewinn/Tag: Tagesmaximum und was begrenzt, z. B.
+   * "max. 20/Tag · Einkauf". Warnfarbe nur, wenn der Einkauf begrenzt (wie
+   * das fruehere Schild "Einkauf"); Absatz und Fokus neutral. Fehlt das
+   * Volumen einer Zutat, steht dezent "Einkauf ?" bzw. nur "?" hinter
+   * "Einkauf". Leer ohne erfassten Handel.
+   */
+  function maxTagZeileHtml(z) {
+    const text = maxTagText(z);
+    if (!text) return "";
+    const einkauf = z.tagGrenze === "einkauf";
+    const teile = ["max. <span>" + text.slice(5) + "</span>"]; // "max." darf allein umbrechen, die Zahl mit "/Tag" bleibt zusammen
+    if (einkauf) teile.push("<span>· Einkauf" + (z.einkaufUnbekannt ? " <span class='vd-tagmax-offen'>?</span>" : "") + "</span>");
+    else {
+      if (GRENZE_WORT[z.tagGrenze]) teile.push("<span>· " + GRENZE_WORT[z.tagGrenze] + "</span>");
+      if (z.einkaufUnbekannt) teile.push("<span class='vd-tagmax-offen'>· Einkauf ?</span>");
+    }
+    return "<div class='vd-tagmax" + (einkauf ? " vd-tagmax-warn" : "") + "'>" + teile.join(" ") + "</div>";
+  }
+
+  /** Liegt die geplante Stueckzahl ueber dem Tagesmaximum? Gleichstand und unbekanntes Maximum: nein. */
+  function planUeberMax(max, geplant) {
+    return max != null && isFinite(max) && Number(geplant) > max;
+  }
+
+  /** Tooltip des Zaehlers, wenn die Planung ueber dem Tagesmaximum liegt. */
+  function planUeberMaxText(max, grenze, geplant) {
+    const warum =
+      grenze === "einkauf" ? "dafür reichen die Zutaten am Markt vermutlich nicht"
+        : grenze === "fokus" ? "dafür reicht der Fokus eines Tages nicht"
+        : grenze === "absatz" ? "mehr wird vermutlich nicht verkauft"
+        : "mehr wird vermutlich nicht verkauft bzw. die Zutaten reichen nicht";
+    return "Geplant " + zahlText(Number(geplant), 0) + ", am Tag erreichbar " + (max >= 1 ? "etwa " + zahlText(max, 0) : "weniger als 1") + ": " + warum + ".";
+  }
+
+  /**
+   * Zaehler einer Zeile (Gelegenheiten, Craften: Gewinn) gegen das
+   * Tagesmaximum: Klasse, data-Attribute und Tooltip fuer den Aufbau.
+   * Der Zaehler laesst jede Zahl zu, er wird nur hervorgehoben.
+   * @returns {{klasse:string, attr:string, titel:string}} titel ist leer oder endet mit einem Leerzeichen
+   */
+  function zaehlerMax(z, geplant) {
+    const max = maxTagZahl(z);
+    if (max == null) return { klasse: "", attr: "", titel: "" };
+    const ueber = planUeberMax(max, geplant);
+    return {
+      klasse: ueber ? " cg-ueber" : "",
+      attr: " data-vd-max='" + max + "' data-vd-grenze='" + (z.tagGrenze || "") + "'",
+      titel: ueber ? planUeberMaxText(max, z.tagGrenze, geplant) + " " : "",
+    };
+  }
+
+  /** Zaehler im DOM nach einer Aenderung der geplanten Stueckzahl nachziehen (Klasse und Tooltip des Zahlenfelds). */
+  function zaehlerMaxSetzen(w, geplant) {
+    if (!w || !w.dataset || w.dataset.vdMax == null) return;
+    const max = Number(w.dataset.vdMax);
+    const ueber = planUeberMax(max, geplant);
+    w.classList.toggle("cg-ueber", ueber);
+    const inp = w.querySelector(".cg-zn");
+    if (!inp) return;
+    // Grundtext des Tooltips steht am Zaehler (data-vd-titel), nicht am Feld: ein data-vd-Attribut am Feld wuerde die Fokusrettung in "Gelegenheiten" ansprechen.
+    if (w.dataset.vdTitel == null) w.dataset.vdTitel = inp.title;
+    inp.title = (ueber ? planUeberMaxText(max, w.dataset.vdGrenze, geplant) + " " : "") + w.dataset.vdTitel;
+  }
+
+  /**
+   * Zusatz am Produktschild der Einkaufsliste: " · max. 20/Tag", in
+   * Warnfarbe, wenn die geplante Stueckzahl darueber liegt. p ist ein Produkt
+   * aus CRAFTEN.einkaufsliste() (maxJeTag, maxText, tagGrenze, stueck).
+   */
+  function planMaxHtml(p, esc) {
+    if (!p || p.maxJeTag == null || !p.maxText) return "";
+    const ueber = planUeberMax(p.maxJeTag, p.stueck);
+    const titel = ueber ? planUeberMaxText(p.maxJeTag, p.tagGrenze, p.stueck) : "So viele Stück sind am Tag erreichbar (kleinste der Grenzen Absatz, Einkauf, Fokus); die Planung liegt nicht darüber.";
+    return " <span class='cg-plan-max" + (ueber ? " cg-ueber" : "") + "' title='" + esc(titel) + "'>· " + p.maxText + "</span>";
+  }
 
   /**
    * Die beiden Zellen (Gewinn/Tag, Mehrgewinn je Fokuspunkt) als HTML; esc
@@ -776,18 +880,13 @@ const VEREDELN = (function () {
    * Gewinn/Tag, in "Gelegenheiten" der Wert im Moment des Merkens;
    * titelDavor (optional): Text, der im Tooltip vor der Rechnung steht.
    * nameVon (v3.21.0, optional): Namensgeber fuer die Zutat im Tooltip.
-   * Schilder (v3.21.0): "Einkauf", wenn das Volumen einer Zutat bindet;
-   * "Einkauf ?", wenn das Volumen einer Zutat noch fehlt.
+   * v3.22.0: unter der Zahl die Zeile aus maxTagZeileHtml(); sie ersetzt die
+   * Schilder "Einkauf" und "Einkauf ?" und die Unterzeile "Fokus begrenzt".
    */
   function kennzahlZellenHtml(z, esc, vorTag, titelDavor, nameVon) {
-    const hatWert = z.gewinnJeTag != null;
-    const schilder =
-      (hatWert && z.tagGrenze === "einkauf" ? "<span class='vd-grenze'>Einkauf</span>" : "") +
-      (hatWert && z.einkaufUnbekannt ? "<span class='vd-grenze vd-grenze-offen'>Einkauf ?</span>" : "");
     return (
       "<td class='num vd-wert vd-tag-zelle' title='" + esc((titelDavor ? titelDavor + "\n\n" : "") + tagTitel(z, nameVon)) + "'>" + (vorTag || "") + tagText(z) +
-      (z.tagGrenze === "fokus" ? "<div class='vd-klein vd-umbruch'>Fokus begrenzt</div>" : "") +
-      (schilder ? "<div class='vd-grenzen'>" + schilder + "</div>" : "") + "</td>" +
+      maxTagZeileHtml(z) + "</td>" +
       "<td class='num vd-jefokus-zelle' title='" + esc(jeFokusTitel(z)) + "'>" + jeFokusText(z) + "</td>"
     );
   }
@@ -1636,9 +1735,9 @@ const VEREDELN = (function () {
         k(false, 1000, true, 0.5).gewinnJeTag
       );
       pruefe(
-        "o4 anteilVon: Vorgabe 25 %, Grenzen 1 und 100 %",
-        anteilVon({}) === 0.25 && anteilVon(null) === 0.25 && anteilVon({ absatzAnteilProzent: "" }) === 0.25 && anteilVon({ absatzAnteilProzent: 40 }) === 0.4 &&
-          anteilVon({ absatzAnteilProzent: 0 }) === 0.01 && anteilVon({ absatzAnteilProzent: 250 }) === 1 && anteilVon({ absatzAnteilProzent: "x" }) === 0.25,
+        "o4 anteilVon: Vorgabe 10 % (seit v3.22.0, vorher 25), Grenzen 1 und 100 %",
+        anteilVon({}) === 0.1 && anteilVon(null) === 0.1 && anteilVon({ absatzAnteilProzent: "" }) === 0.1 && anteilVon({ absatzAnteilProzent: 40 }) === 0.4 && anteilVon({ absatzAnteilProzent: 25 }) === 0.25 &&
+          anteilVon({ absatzAnteilProzent: 0 }) === 0.01 && anteilVon({ absatzAnteilProzent: 250 }) === 1 && anteilVon({ absatzAnteilProzent: "x" }) === 0.1,
         [anteilVon({}), anteilVon({ absatzAnteilProzent: 0 }), anteilVon({ absatzAnteilProzent: 250 })].join()
       );
       // Handrechnung: (200 - 141) / 50 = 1,18 Silber je Fokuspunkt.
@@ -1667,7 +1766,7 @@ const VEREDELN = (function () {
       // Fokus 54 je Stueck. 1.000 verkauft/Tag.
       const pr = { T4_FIBER: roh(100, 90), T3_CLOTH: roh(200, 180), T4_CLOTH: roh(320, 300) };
       const dat = [{ stadt: "Lymhurst", preiseRoh: pr, absatz: { T4_CLOTH: { 1: { stueckJeTag: 1000 } } } }];
-      const e2 = { stationssaetze: { Weber: 0 }, fce: 0, premium: true, maxPreisAlterMin: null };
+      const e2 = { stationssaetze: { Weber: 0 }, fce: 0, premium: true, maxPreisAlterMin: null, absatzAnteilProzent: 25 }; // 25 ausdruecklich gesetzt (Vorgabe seit v3.22.0: 10), die Zahlen der Tests rechnen damit
       const zr = (aus, e) => zeilenRechnen(k4, dat, einstellungenBereinigen(Object.assign({ kaufweg: "sofort", verkaufsweg: "sofort" }, aus)), e || e2)[0];
       const zo = zr({ mitFokus: false });
       const zm = zr({ mitFokus: true });
@@ -1770,13 +1869,68 @@ const VEREDELN = (function () {
         ek9.gewinnJeTag + " / " + ek9b.gewinnJeTag
       );
       const escT = (s) => String(s).replace(/'/g, "&#39;");
+      // ---- v3.22.0: Tagesmaximum sichtbar (Zeile unter dem Gewinn/Tag, Zaehler, Produktschild) ----
+      const maxTxt = (z) => maxTagZeileHtml(z).replace(/<[^>]+>/g, "");
+      const warn = (z) => /class='vd-tagmax vd-tagmax-warn'/.test(maxTagZeileHtml(z));
       pruefe(
-        "o7 Zelle Gewinn/Tag: Schild \"Einkauf\", wenn der Einkauf bindet; \"Einkauf ?\", wenn das Volumen einer Zutat fehlt; kein Schild, wenn Absatz oder Fokus binden; keine neue Spalte (zwei Zellen)",
-        /<span class='vd-grenze'>Einkauf<\/span>/.test(kennzahlZellenHtml(ek1, escT, "", "", namen)) && !/vd-grenze-offen/.test(kennzahlZellenHtml(ek1, escT, "", "", namen)) &&
-          /<span class='vd-grenze vd-grenze-offen'>Einkauf \?<\/span>/.test(kennzahlZellenHtml(ek5, escT, "", "", namen)) && !/vd-grenze/.test(kennzahlZellenHtml(ek2, escT, "", "", namen)) &&
-          /Fokus begrenzt/.test(kennzahlZellenHtml(ek3, escT, "", "", namen)) && !/vd-grenze/.test(kennzahlZellenHtml(ek3, escT, "", "", namen)) &&
-          (kennzahlZellenHtml(ek5b, escT, "", "", namen).match(/vd-grenze[ ']/g) || []).length === 2 && (kennzahlZellenHtml(ek1, escT, "", "", namen).match(/<td /g) || []).length === 2,
-        kennzahlZellenHtml(ek5b, escT, "", "", namen)
+        "v3.22 Max-Zeile, Einkauf begrenzt: \"max. 1.250/Tag · Einkauf\" in Warnfarbe, ohne Fragezeichen",
+        maxTxt(ek1) === "max. 1.250/Tag · Einkauf" && warn(ek1) && !/vd-tagmax-offen/.test(maxTagZeileHtml(ek1)) && maxTagZahl(ek1) === 1250,
+        maxTagZeileHtml(ek1)
+      );
+      pruefe("v3.22 Max-Zeile, Absatz begrenzt: \"max. 100/Tag · Absatz\", neutral", maxTxt(ek2) === "max. 100/Tag · Absatz" && !warn(ek2) && !/vd-tagmax-offen/.test(maxTagZeileHtml(ek2)), maxTagZeileHtml(ek2));
+      pruefe("v3.22 Max-Zeile, Fokus begrenzt: \"max. 200/Tag · Fokus\", neutral; die alte Unterzeile \"Fokus begrenzt\" entfaellt", maxTxt(ek3) === "max. 200/Tag · Fokus" && !warn(ek3) && !/Fokus begrenzt/.test(kennzahlZellenHtml(ek3, escT, "", "", namen).replace(/title='[^']*'/g, "")), maxTagZeileHtml(ek3));
+      pruefe(
+        "v3.22 Max-Zeile, Zutatenvolumen unbekannt: bindet der Einkauf einer bekannten Zutat \"max. 1.250/Tag · Einkauf ?\" (Warnfarbe, Fragezeichen dezent); bindet der Absatz \"max. 6.702/Tag · Absatz · Einkauf ?\" (neutral)",
+        maxTxt(ek5b) === "max. 1.250/Tag · Einkauf ?" && warn(ek5b) && /<span class='vd-tagmax-offen'>\?<\/span>/.test(maxTagZeileHtml(ek5b)) &&
+          maxTxt(ek5) === "max. 6.702/Tag · Absatz · Einkauf ?" && !warn(ek5) && /<span class='vd-tagmax-offen'>· Einkauf \?<\/span>/.test(maxTagZeileHtml(ek5)),
+        maxTagZeileHtml(ek5b) + " / " + maxTagZeileHtml(ek5)
+      );
+      const duenn = kz(false, 2, []); // 25 % von 2 = 0,5 Stueck
+      const knapp21 = kz(false, 83.6, []); // 25 % von 83,6 = 20,9 Stueck
+      pruefe(
+        "v3.22 Max-Zeile: unter 1 Stueck \"max. unter 1/Tag\" (nicht 0); genau 0 (Zutat ohne erfassten Handel) \"max. 0/Tag · Einkauf\"",
+        duenn.stueckJeTagErreichbar === 0.5 && maxTxt(duenn) === "max. unter 1/Tag · Absatz" && maxTagZahl(duenn) === 0 && maxTagText(duenn) === "max. unter 1/Tag" &&
+          ek6.stueckJeTagErreichbar === 0 && maxTxt(ek6) === "max. 0/Tag · Einkauf" && warn(ek6),
+        maxTxt(duenn) + " / " + maxTxt(ek6)
+      );
+      pruefe(
+        "v3.22 Max-Zeile rundet AB: 20,9 Stueck wird \"max. 20/Tag\"; ein Gleitkommarest knapp unter der ganzen Zahl (0,29 x 100) zaehlt als 29; Tausenderpunkt",
+        Math.abs(knapp21.stueckJeTagErreichbar - 20.9) < 1e-9 && maxTagZahl(knapp21) === 20 && maxTxt(knapp21) === "max. 20/Tag · Absatz" &&
+          maxTagZahl({ gewinnJeTag: 1, stueckJeTagErreichbar: 0.29 * 100 }) === 29 && maxTagText({ gewinnJeTag: 1, stueckJeTagErreichbar: 31499.99 }) === "max. 31.499/Tag",
+        maxTxt(knapp21) + " / " + 0.29 * 100
+      );
+      pruefe(
+        "v3.22 Max-Zeile: ohne erfassten Handel keine Zeile (Gewinn/Tag leer); die Zelle bleibt eine von zwei, der Tooltip unveraendert",
+        maxTagZeileHtml(e0) === "" && maxTagText(e0) === "" && maxTagZahl(e0) === null && !/vd-tagmax/.test(kennzahlZellenHtml(e0, escT)) && maxTagZeileHtml(e1) === "" &&
+          (kennzahlZellenHtml(ek1, escT, "", "", namen).match(/<td /g) || []).length === 2 && kennzahlZellenHtml(ek1, escT, "", "", namen).indexOf(">176.250<div class='vd-tagmax vd-tagmax-warn'>") !== -1 &&
+          kennzahlZellenHtml(ek1, escT, "", "", namen).indexOf("title='" + escT(tagTitel(ek1, namen)) + "'") !== -1 && !/vd-grenze/.test(kennzahlZellenHtml(ek5b, escT, "", "", namen)),
+        kennzahlZellenHtml(e0, escT)
+      );
+      pruefe(
+        "v3.22 Zaehler: Planung ueber dem Tagesmaximum wird hervorgehoben (21 gegen 20), bei Gleichstand (20) und darunter (19) nicht; ohne bekanntes Maximum nie",
+        planUeberMax(20, 21) === true && planUeberMax(20, 20) === false && planUeberMax(20, 19) === false && planUeberMax(null, 99) === false && planUeberMax(0, 1) === true &&
+          zaehlerMax(knapp21, 21).klasse === " cg-ueber" && zaehlerMax(knapp21, 20).klasse === "" && zaehlerMax(knapp21, 0).klasse === "" && zaehlerMax(knapp21, 20).titel === "" &&
+          zaehlerMax(knapp21, 20).attr === " data-vd-max='20' data-vd-grenze='absatz'" && JSON.stringify(zaehlerMax(e0, 5)) === JSON.stringify({ klasse: "", attr: "", titel: "" }),
+        JSON.stringify(zaehlerMax(knapp21, 21))
+      );
+      pruefe(
+        "v3.22 Zaehler-Tooltip nennt Planung, Tagesmaximum und den Grund je Grenze (Absatz, Einkauf, Fokus)",
+        zaehlerMax(knapp21, 30).titel === "Geplant 30, am Tag erreichbar etwa 20: mehr wird vermutlich nicht verkauft. " &&
+          /^Geplant 2\.000, am Tag erreichbar etwa 1\.250: dafür reichen die Zutaten am Markt vermutlich nicht\. $/.test(zaehlerMax(ek1, 2000).titel) &&
+          /am Tag erreichbar etwa 200: dafür reicht der Fokus eines Tages nicht/.test(zaehlerMax(ek3, 201).titel) && /am Tag erreichbar weniger als 1: /.test(zaehlerMax(duenn, 1).titel),
+        zaehlerMax(knapp21, 30).titel + " | " + zaehlerMax(ek1, 2000).titel
+      );
+      pruefe(
+        "v3.22 Produktschild der Einkaufsliste: \" · max. 20/Tag\" neben der geplanten Menge, Warnfarbe nur wenn die Planung darueber liegt; ohne Maximum kein Zusatz",
+        (function () {
+          const p = (stueck) => ({ stueck, maxJeTag: maxTagZahl(knapp21), maxText: maxTagText(knapp21), tagGrenze: knapp21.tagGrenze });
+          const drunter = planMaxHtml(p(3), escT);
+          const gleich = planMaxHtml(p(20), escT);
+          const drueber = planMaxHtml(p(30), escT);
+          return drunter.replace(/<[^>]+>/g, "") === " · max. 20/Tag" && /class='cg-plan-max'/.test(drunter) && /class='cg-plan-max'/.test(gleich) && /class='cg-plan-max cg-ueber'/.test(drueber) &&
+            /title='Geplant 30, am Tag erreichbar etwa 20: mehr wird vermutlich nicht verkauft\.'/.test(drueber) && planMaxHtml({ stueck: 3, maxJeTag: null, maxText: "" }, escT) === "";
+        })(),
+        planMaxHtml({ stueck: 30, maxJeTag: 20, maxText: "max. 20/Tag", tagGrenze: "absatz" }, escT)
       );
       (function () {
         // Stein hat je Rohstoffstufe ein Rezept mit eigener Ausbeute (1/2/4/8 Bloecke je Vorgang).
@@ -1927,12 +2081,12 @@ const VEREDELN = (function () {
         KOPF_TITEL.tag(25)
       );
       pruefe(
-        "o4 Zellen: Gewinn/Tag und Mehrgewinn je Fokuspunkt als zwei Zahlenzellen mit Tooltip, Hinweis nur wenn der Fokus begrenzt",
+        "o4 Zellen: Gewinn/Tag und Mehrgewinn je Fokuspunkt als zwei Zahlenzellen mit Tooltip; seit v3.22.0 steht die begrenzende Groesse in der Max-Zeile",
         (function () {
           const esc = (s) => String(s).replace(/'/g, "&#39;");
           const h1 = kennzahlZellenHtml(a, esc);
           const h2 = kennzahlZellenHtml(b, esc);
-          return (h1.match(/<td /g) || []).length === 2 && />945\.053</.test(h1) && />1,2</.test(h1) && !/Fokus begrenzt<\/div>/.test(h1) && />40\.000<div class='vd-klein vd-umbruch'>Fokus begrenzt<\/div>/.test(h2) &&
+          return (h1.match(/<td /g) || []).length === 2 && />945\.053</.test(h1) && />1,2</.test(h1) && />945\.053<div class='vd-tagmax'>max\. <span>6\.702\/Tag<\/span> <span>· Absatz<\/span><\/div><\/td>/.test(h1) && />40\.000<div class='vd-tagmax'>max\. <span>200\/Tag<\/span> <span>· Fokus<\/span><\/div><\/td>/.test(h2) &&
             // v3.19.0 (O5): optionaler Vorspann vor dem Gewinn/Tag (Wert vom Merken), ohne ihn unveraendert
             />VOR945\.053</.test(kennzahlZellenHtml(a, esc, "VOR")) && kennzahlZellenHtml(a, esc, "") === h1 &&
             kennzahlZellenHtml(a, esc, "", "DAVOR").indexOf("title='DAVOR\n\n") !== -1 && h1.indexOf("DAVOR") === -1 &&
@@ -2774,6 +2928,14 @@ const VEREDELN = (function () {
     zutatHandelText,
     tagText,
     tagTitel,
+    maxTagZahl,
+    maxTagText,
+    maxTagZeileHtml,
+    planUeberMax,
+    planUeberMaxText,
+    zaehlerMax,
+    zaehlerMaxSetzen,
+    planMaxHtml,
     jeFokusText,
     jeFokusTitel,
     KOPF_TITEL,

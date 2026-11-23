@@ -1282,7 +1282,7 @@ const GELEGENHEITEN = (function () {
       "Lymhurst::T5_ORE::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 1e9 } } },
       "Lymhurst::T4_METALBAR::a": { abgerufenAm: am, jeQ: { 1: { stueckJeTag: 1e9 } } },
     };
-    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 0, Schmelze: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null };
+    const einst = { premium: true, stationssaetze: { Kriegerschmiede: 0, Schmelze: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, absatzAnteilProzent: 25 }; // 25 ausdruecklich gesetzt (Vorgabe seit v3.22.0: 10), die Zahlen der Tests rechnen damit
     const zBreit = zeilenRechnen([breit], klein, einst, leser(daten), T0)[0];
     // Breitschwert T5.0 in Lymhurst: 16 Barren a 100 + 8 Leder a 200 = 3.200,
     // Craft-Bonus Schwert (B 0,33): 3.200 / 1,33; Verkaufsorder zum
@@ -1994,10 +1994,11 @@ const GELEGENHEITEN = (function () {
       const n = e().plan[z.schluessel] || 0;
       const schritt = z.ausbeute || 1;
       const t = schritt > 1 ? " (ein Vorgang ergibt " + schritt + " Stück)" : "";
+      const mx = V.zaehlerMax(z, n); // v3.22.0: Planung ueber dem Tagesmaximum hervorheben
       return (
-        "<div class='cg-zaehler" + (n ? " an" : "") + "' data-gl-plan='" + esc(z.schluessel) + "' data-gl-schritt='" + schritt + "'>" +
+        "<div class='cg-zaehler" + (n ? " an" : "") + mx.klasse + "' data-gl-plan='" + esc(z.schluessel) + "' data-gl-schritt='" + schritt + "'" + mx.attr + " data-vd-titel='Geplante Stückzahl für die Einkaufsliste" + esc(t) + "'>" +
         "<button type='button' class='cg-zb' data-gl-delta='-1' aria-label='" + esc(name) + ": weniger einplanen' title='Weniger" + esc(t) + "'>−</button>" +
-        "<input type='number' class='cg-zn' min='0' step='" + schritt + "' value='" + n + "' aria-label='Geplante Stückzahl " + esc(name) + "' title='Geplante Stückzahl für die Einkaufsliste" + esc(t) + "'>" +
+        "<input type='number' class='cg-zn' min='0' step='" + schritt + "' value='" + n + "' aria-label='Geplante Stückzahl " + esc(name) + "' title='" + esc(mx.titel) + "Geplante Stückzahl für die Einkaufsliste" + esc(t) + "'>" +
         "<button type='button' class='cg-zb' data-gl-delta='1' aria-label='" + esc(name) + ": auf die Einkaufsliste' title='Auf die Einkaufsliste" + esc(t) + "'>+</button></div>"
       );
     }
@@ -2153,6 +2154,7 @@ const GELEGENHEITEN = (function () {
       wurzel.querySelectorAll(".cg-zaehler[data-gl-plan]").forEach((w) => {
         if (w.dataset.glPlan !== schluessel) return;
         w.classList.toggle("an", n > 0);
+        V.zaehlerMaxSetzen(w, n);
         const inp = w.querySelector(".cg-zn");
         if (inp && document.activeElement !== inp) inp.value = n;
       });
@@ -2218,7 +2220,7 @@ const GELEGENHEITEN = (function () {
           return (
             "<span class='cg-plan-produkt" + (imRang ? "" : " gl-ausser-rang") + "' title='" + esc(titel) + "'>" + icon(p.marktId, 24, name) +
             "<span class='gl-plan-text'><span>" + zahl(p.stueck) + "× " + esc(name) + " <span class='vd-klein'>T" + p.tier + "." + (p.vorgangsStufe != null ? p.vorgangsStufe : p.stufe) +
-            (p.ausbeute > 1 ? ", " + p.vorgaenge + " Vorgänge = " + zahl(p.hergestellt) + " Stück" : "") + "</span></span>" +
+            (p.ausbeute > 1 ? ", " + p.vorgaenge + " Vorgänge = " + zahl(p.hergestellt) + " Stück" : "") + "</span>" + V.planMaxHtml(p, esc) + "</span>" +
             "<span class='vd-klein'>Erlös " + fmtN(p.erloes) + " · Gewinn <b class='" + (p.gewinn == null ? "" : p.gewinn >= 0 ? "gl-plus" : "gl-minus") + "'>" + fmtN(p.gewinn) + "</b></span></span>" +
             "<button type='button' class='vd-reset cg-plan-weg' data-gl-weg='" + esc(p.schluessel) + "' title='Aus der Planung nehmen' aria-label='" + esc(name) + " aus der Planung nehmen'>×</button></span>"
           );
