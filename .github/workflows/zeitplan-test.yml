@@ -1,0 +1,19 @@
+# Diagnose (23.11.2026): prueft, ob GitHub in diesem Repo ueberhaupt Zeitplaene
+# ausloest. Der Workflow "Preisstand" lief nur von Hand, nie nach Zeitplan.
+# Nach der Klaerung wieder entfernen.
+
+name: Zeitplan-Test
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: echo "Ausgeloest durch ${{ github.event_name }} um $(date -u +%H:%M) UTC"
