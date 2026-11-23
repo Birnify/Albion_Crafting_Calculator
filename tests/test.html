@@ -65,6 +65,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
 <script src="../rezepte.js"></script>
 <script src="../item-namen.js"></script>
 <script src="../js/preise.js"></script>
+<script src="../js/gemeinsam.js"></script>
 <script src="../js/regeln.js"></script>
 <script src="../js/rechenkern.js"></script>
 <script src="../js/ui.js"></script>
@@ -4724,6 +4725,334 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
   }
 
   // -----------------------------------------------------------------------
+  // v3.23.0 (O9): gemeinsamer Preisstand. Einmischen in den Bestand, Lader
+  // mit nachgebildetem GitHub-Abruf, Schalter, Anzeige. Das Abrufskript
+  // selbst und der Rundlauf Skript -> App: node tests/preisstand-test.js.
+  // -----------------------------------------------------------------------
+  async function gemeinsamTests() {
+    const DB = PREISE.BESTAND_DB_NAME + "_test_gemeinsam";
+    const LS = "albion_kostenrechner_preiscache_test_gemeinsam";
+    const MERKER = "albion_kostenrechner_gemeinsam_test";
+    const GM = GEMEINSAM;
+    const G = GELEGENHEITEN;
+    const echtesFetch = window.fetch;
+    const MIN = 60000;
+    const TAG = 24 * 60 * MIN;
+    const stellen = () => PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS });
+    const frisch = async () => {
+      await PREISE.testEinstellen({ pauseMs: 0, dbName: DB, lsKey: LS });
+      PREISE.preisCacheLeeren();
+      await PREISE.bestandGeschrieben();
+    };
+    const pe = (id, stadt, preis, am) => ({ id, stadt, sell: { preis, datum: SYNTH.DATUM, kein: false }, buy: { preis: null, datum: "0001-01-01T00:00:00", kein: true }, abgerufenAm: am });
+    const maschinen = [];
+    const lader = [];
+    try {
+      await PREISE.testDatenbankLoeschen(DB);
+      localStorage.removeItem(LS);
+      localStorage.removeItem(MERKER);
+      await stellen();
+      const jetzt = Date.now();
+      const K = (id) => PREISE.cacheSchluessel("Lymhurst", id, 1);
+
+      // ---- Regel: je Eintrag gewinnt der juengere Abruf ----
+      await PREISE.testBestandSchreiben("preise", [
+        [K("T4_GM_ALT"), pe("T4_GM_ALT", "Lymhurst", 100, jetzt - 10 * MIN)],
+        [K("T4_GM_FRISCH"), pe("T4_GM_FRISCH", "Lymhurst", 100, jetzt - 1 * MIN)],
+        [K("T4_GM_GLEICH"), pe("T4_GM_GLEICH", "Lymhurst", 100, jetzt - 5 * MIN)],
+      ]);
+      await PREISE.testBestandSchreiben("volumen", [["Lymhurst::T4_GM_FRISCH::a7", { abgerufenAm: jetzt - 1 * MIN, jeQ: {} }]]);
+      const r = PREISE.bestandEinmischen(
+        {
+          preise: [
+            [K("T4_GM_ALT"), pe("T4_GM_ALT", "Lymhurst", 222, jetzt - 5 * MIN)],
+            [K("T4_GM_FRISCH"), pe("T4_GM_FRISCH", "Lymhurst", 222, jetzt - 5 * MIN)],
+            [K("T4_GM_GLEICH"), pe("T4_GM_GLEICH", "Lymhurst", 222, jetzt - 5 * MIN)],
+            [K("T4_GM_NEU"), pe("T4_GM_NEU", "Lymhurst", 222, jetzt - 5 * MIN)],
+            [K("T4_GM_ACHT"), pe("T4_GM_ACHT", "Lymhurst", 222, jetzt - 8 * TAG)],
+            [K("T4_GM_SECHS"), pe("T4_GM_SECHS", "Lymhurst", 222, jetzt - 6 * TAG)],
+            [K("T4_GM_ZUKUNFT"), pe("T4_GM_ZUKUNFT", "Lymhurst", 222, jetzt + 10 * MIN)],
+            [K("T4_GM_OHNE"), { sell: { preis: 1 }, buy: { preis: 1 } }],
+          ],
+          volumen: [
+            ["Lymhurst::T4_GM_FRISCH::a7", { abgerufenAm: jetzt - 5 * MIN, jeQ: { 1: { stueckJeTag: 9 } } }],
+            ["Lymhurst::T4_GM_NEU::a7", { abgerufenAm: jetzt - 5 * MIN, jeQ: { 1: { stueckJeTag: 9 } } }],
+            ["Lymhurst::T4_GM_ACHT::a7", { abgerufenAm: jetzt - 8 * TAG, jeQ: {} }],
+          ],
+        },
+        { jetzt }
+      );
+      const p = (id) => PREISE.bestandPreis("Lymhurst", id, 1);
+      pruefe("gemeinsam: ein juengerer gemeinsamer Eintrag ersetzt den aelteren lokalen, ein neuer wird uebernommen", p("T4_GM_ALT").sell.preis === 222 && p("T4_GM_ALT").abgerufenAm === jetzt - 5 * MIN && p("T4_GM_NEU").sell.preis === 222, p("T4_GM_ALT").sell.preis);
+      pruefe("gemeinsam: ein aelterer gemeinsamer Eintrag ersetzt den frischeren lokalen NICHT (Preis und verkauft/Tag); bei gleicher Abrufzeit bleibt der lokale", p("T4_GM_FRISCH").sell.preis === 100 && p("T4_GM_GLEICH").sell.preis === 100 && Object.keys(PREISE.bestandAbsatz("Lymhurst", "T4_GM_FRISCH", 7).jeQ).length === 0, p("T4_GM_FRISCH").sell.preis);
+      pruefe("gemeinsam: Eintraege aelter als 7 Tage und solche ohne Abrufzeit werden verworfen, 6 Tage alte uebernommen", !p("T4_GM_ACHT") && !p("T4_GM_OHNE") && p("T4_GM_SECHS") && !PREISE.bestandAbsatz("Lymhurst", "T4_GM_ACHT", 7), JSON.stringify(r));
+      pruefe("gemeinsam: ein Eintrag mit Abrufzeit in der Zukunft wird nicht uebernommen (er wuerde spaetere eigene Abrufe verdraengen)", !p("T4_GM_ZUKUNFT") && r.zukunft === 1);
+      pruefe(
+        "gemeinsam: bestandEinmischen meldet Zahlen und betroffene Markt-IDs; bestandInfo() fuehrt die Summe",
+        r.preise === 3 && r.volumen === 1 && r.aelter === 3 && r.zuAlt === 3 && r.zukunft === 1 && r.ids.slice().sort().join() === "T4_GM_ALT,T4_GM_NEU,T4_GM_SECHS" && PREISE.bestandInfo().eingemischt.preise === 3 && PREISE.bestandInfo().eingemischt.volumen === 1,
+        JSON.stringify(r)
+      );
+      await PREISE.bestandGeschrieben();
+      await stellen(); // Bestand schliessen und neu laden
+      pruefe("gemeinsam: eingemischte Eintraege liegen dauerhaft im Bestand (nach neuem Laden noch da)", p("T4_GM_ALT") && p("T4_GM_ALT").sell.preis === 222 && p("T4_GM_NEU") && !!PREISE.bestandAbsatz("Lymhurst", "T4_GM_NEU", 7), PREISE.bestandInfo().modus);
+
+      // ---- Ein Stand, wie ihn das Skript schreibt: ueber die Abruffunktionen der App gefuellt, dann gepackt ----
+      const UMFANG = { warengruppen: ["sword"], rohstoffe: ["ore"], tiers: [4, 5], stufen: [0, 1], artefakte: false, einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Lymhurst", "Thetford"], fertigungsstadt: "Lymhurst", minAbsatz: 0, scanAn: false };
+      const eU = G.einstellungenBereinigen(UMFANG);
+      const liste = G.kandidaten(eU);
+      const zutaten = new Set();
+      liste.forEach((x) => x.zutatIds.forEach((id) => zutaten.add(id)));
+      const preisZeile = (id, stadt, q) => {
+        const h = SYNTH.hash(stadt + "|" + id);
+        const sell = (zutaten.has(id) ? 50 + (h % 50) : 5000 + (h % 20000)) + q * 10;
+        return { item_id: id, city: stadt, quality: q, sell_price_min: sell, sell_price_min_date: SYNTH.DATUM, buy_price_max: q === 5 ? 0 : Math.floor(sell * 0.8), buy_price_max_date: q === 5 ? "0001-01-01T00:00:00" : SYNTH.DATUM };
+      };
+      const apiLog = [];
+      window.fetch = async (url) => {
+        url = String(url);
+        apiLog.push(url);
+        const u = decodeURIComponent(url);
+        const staedte = /[?&]locations=([^&]+)/.exec(u)[1].split(",");
+        const pm = /\/prices\/(.+)\.json/.exec(u);
+        if (pm) {
+          const qs = /[?&]qualities=([^&]+)/.exec(u)[1].split(",").map(Number);
+          return { status: 200, ok: true, json: async () => [].concat(...staedte.map((stadt) => [].concat(...pm[1].split(",").map((id) => qs.map((q) => preisZeile(id, stadt, q)))))) };
+        }
+        return { status: 200, ok: true, json: async () => SYNTH.antwortFuer(url) };
+      };
+      await frisch();
+      const STAEDTE = VEREDELN.STAEDTE;
+      const f = G.faelligFuer(liste, G.einstellungenBereinigen(Object.assign({}, UMFANG, { einkaufStaedte: STAEDTE, verkaufStaedte: STAEDTE })), { preis: () => null, alleQ: () => null, absatz: () => null }, Date.now(), null);
+      await PREISE.preiseAbrufen(f.q1, { staedte: STAEDTE, qualitaet: 1 });
+      await PREISE.preiseAlleQualitaetenAbrufen(f.alleQ, { staedte: STAEDTE });
+      await PREISE.absatzAbrufen(f.absatz.concat(f.zutatAbsatz), { staedte: STAEDTE, tageFenster: 7 });
+      const quelle = PREISE.bestandEintraege();
+      const pack = GM.packen(quelle);
+      const erzeugtAm = Date.now();
+      const kopfVon = (zeit, mehr) =>
+        Object.assign(
+          {
+            schema: 1,
+            erzeugtAm: zeit,
+            dateien: { preise: { name: "preise.json", geaendertAm: zeit }, volumen: { name: "volumen.json", geaendertAm: zeit } },
+            laeufe: { voll: { begonnenAm: zeit - 5 * MIN, vollstaendigAm: zeit, abrufe: 137, abgebrochen: false, grund: null }, schnell: { begonnenAm: zeit - 2 * MIN, vollstaendigAm: null, abrufe: 3, abgebrochen: true, grund: "erneut HTTP 429 nach einmaligem Warten" } },
+          },
+          mehr || {}
+        );
+      const ordner = { "stand.json": kopfVon(erzeugtAm), "preise.json": JSON.parse(JSON.stringify(pack.preise)), "volumen.json": JSON.parse(JSON.stringify(pack.volumen)) };
+      const ghLog = [];
+      let ghStoerung = null;
+      const github = async (url, init) => {
+        const name = String(url).split("/").pop();
+        ghLog.push({ url: String(url), name, init });
+        if (ghStoerung) {
+          const s = ghStoerung(name);
+          if (s && s.wirf) throw new Error(s.wirf);
+          if (s) return s;
+        }
+        return { status: 200, ok: true, json: async () => JSON.parse(JSON.stringify(ordner[name])) };
+      };
+      let an = true;
+      const neuerLader = (mehr) => {
+        const l = GM.erzeugen(Object.assign({ fetch: github, an: () => an, speicherKey: MERKER }, mehr || {}));
+        lader.push(l);
+        return l;
+      };
+
+      // ---- Lader: leerer Bestand, Rangliste aus dem gemeinsamen Stand ----
+      await frisch();
+      localStorage.removeItem(MERKER);
+      apiLog.length = 0;
+      const einst = { premium: true, stationssaetze: { Kriegerschmiede: 300, Schmelze: 400 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null, fceAusnahmen: {}, spezialisierung: {}, absatzAnteilProzent: 10 };
+      const m = G.erzeugen({ einstellungen: UMFANG, einstellungenLesen: () => einst });
+      maschinen.push(m);
+      await m.oeffnen();
+      await m.fertig();
+      const zeilenVorher = m.rangliste().zeilen.length;
+      const L1 = neuerLader();
+      let ereignis = null;
+      L1.beiAenderung((ev) => {
+        if (ev.typ === "eingemischt") {
+          ereignis = ev;
+          m.bestandGeaendert(ev.ids);
+        }
+      });
+      const erg = await L1.laden();
+      await m.fertig();
+      const st1 = L1.status();
+      pruefe(
+        "gemeinsam: der Lader holt erst den Kopf, dann beide Dateien (drei Abrufe, von der benannten Adresse des Zweigs daten, ohne Browser-Cache) und mischt alles ein",
+        ghLog.length === 3 && ghLog[0].name === "stand.json" && ghLog.every((x) => x.url.indexOf(GM.BASIS_URL) === 0 && x.init && x.init.cache === "no-store") && GM.BASIS_URL === "https://raw.githubusercontent.com/Birnify/Albion_Crafting_Calculator/daten/" &&
+          erg && erg.geladen === 2 && st1.zustand === "ok" && st1.uebernommen.preise === quelle.preise.length && st1.uebernommen.volumen === quelle.volumen.length && apiLog.length === 0,
+        JSON.stringify(st1.uebernommen) + ", Quelle " + quelle.preise.length + " / " + quelle.volumen.length
+      );
+      const zid = liste.find((x) => x.art === "craften").produktId;
+      const aq = PREISE.bestandAlleQualitaeten("Martlock", zid);
+      const ab = PREISE.bestandAbsatz("Thetford", zid, 7);
+      const sollAb = SYNTH.historieZeilen(zid, "Thetford");
+      pruefe(
+        "gemeinsam: Merker \"alle Qualitaeten\" und Preise kommen richtig an (Stadt, ID und Qualitaet stimmen, \"kein Kaufgesuch\" bleibt null)",
+        aq && Object.keys(aq.jeQ).length === 5 && [1, 2, 3, 4, 5].every((q) => aq.jeQ[q].sell.preis === preisZeile(zid, "Martlock", q).sell_price_min && aq.jeQ[q].id === zid && aq.jeQ[q].stadt === "Martlock" && aq.jeQ[q].sell.datum === SYNTH.DATUM) &&
+          aq.jeQ[5].buy.preis === null && aq.jeQ[5].buy.kein === true && aq.jeQ[5].buy.datum === "0001-01-01T00:00:00" && aq.jeQ[2].buy.preis === preisZeile(zid, "Martlock", 2).buy_price_max &&
+          PREISE.bestandAlleQualitaeten("Lymhurst", zid).jeQ[3].sell.preis === preisZeile(zid, "Lymhurst", 3).sell_price_min,
+        zid + ": " + (aq ? JSON.stringify(Object.keys(aq.jeQ).map((q) => aq.jeQ[q].sell.preis)) : "fehlt")
+      );
+      pruefe(
+        "gemeinsam: verkauft/Tag kommt richtig an (Stadt, ID, Qualitaet, Stueck je Tag aus Summe durch 7)",
+        ab && [1, 2].every((q) => ab.jeQ[q] && ab.jeQ[q].stueckGesamt === sollAb[q - 1].data[0].item_count && ab.jeQ[q].stueckJeTag === sollAb[q - 1].data[0].item_count / 7 && ab.jeQ[q].qualitaet === q && ab.jeQ[q].stadt === "Thetford" && ab.jeQ[q].id === zid),
+        ab ? JSON.stringify(ab.jeQ[1]) : "fehlt"
+      );
+      const nachher = PREISE.bestandEintraege();
+      const sortiert = (paare) => JSON.stringify(paare.slice().sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+      pruefe("gemeinsam: der eingemischte Bestand ist Eintrag fuer Eintrag der, den die Abruffunktionen der App abgelegt hatten", sortiert(nachher.preise) === sortiert(quelle.preise) && sortiert(nachher.volumen) === sortiert(quelle.volumen), nachher.preise.length + " / " + nachher.volumen.length);
+      pruefe(
+        "gemeinsam: nach dem Einmischen rechnet \"Gelegenheiten\" die betroffenen Zeilen neu (leerer Bestand: 0 Zeilen, danach die Rangliste), ohne einen Abruf an die Preis-Schnittstelle",
+        zeilenVorher === 0 && m.rangliste().zeilen.length > 5 && ereignis && ereignis.ids.length > 0 && apiLog.length === 0,
+        zeilenVorher + " Zeilen vorher, " + m.rangliste().zeilen.length + " nachher"
+      );
+      // Rundlauf in der App: dieselben Zeilen wie aus dem Bestand, den die Abruffunktionen gefuellt hatten.
+      const kernVon = (z) => JSON.stringify([z.schluessel, z.silber, z.erloes, z.gewinn, z.marge, z.stueckJeTag, z.gewinnJeTag, z.vkStadt, z.preisAbrufAm, z.volAbrufAm]);
+      const zeilenLader = m.rangliste().zeilen.map(kernVon);
+      await frisch();
+      await PREISE.testBestandSchreiben("preise", quelle.preise);
+      await PREISE.testBestandSchreiben("volumen", quelle.volumen);
+      const m2 = G.erzeugen({ einstellungen: UMFANG, einstellungenLesen: () => einst });
+      maschinen.push(m2);
+      await m2.oeffnen();
+      await m2.fertig();
+      pruefe("gemeinsam: rundlauf in der App, die Rangliste aus dem gemeinsamen Stand gleicht der aus dem selbst abgerufenen Bestand (Werte, Reihenfolge, Alter)", zeilenLader.length > 5 && JSON.stringify(zeilenLader) === JSON.stringify(m2.rangliste().zeilen.map(kernVon)), zeilenLader.length + " Zeilen");
+
+      // ---- Gueltigkeit: eingemischte Eintraege gelten wie eigene (30/60 Min.), keine Sonderregel ----
+      const lesen = { preis: PREISE.bestandPreis, alleQ: PREISE.bestandAlleQualitaeten, absatz: PREISE.bestandAbsatz };
+      const t0 = Date.now();
+      const fFrisch = G.faelligFuer(liste, eU, lesen, t0, null);
+      const f40 = G.faelligFuer(liste, eU, lesen, t0 + 40 * MIN, null);
+      const f70 = G.faelligFuer(liste, eU, lesen, t0 + 70 * MIN, null);
+      pruefe(
+        "gemeinsam: der Scan behandelt eingemischte Eintraege nach denselben Gueltigkeiten: frisch nichts faellig, nach 40 Min. die Preise, nach 70 Min. auch verkauft/Tag",
+        fFrisch.abrufe === 0 && f40.alleQ.length > 0 && f40.q1.length > 0 && f40.absatz.length === 0 && f40.zutatAbsatz.length === 0 && f70.absatz.length > 0,
+        fFrisch.abrufe + " / " + f40.abrufe + " / " + f70.abrufe + " Abrufe faellig"
+      );
+
+      // ---- Unveraenderter Kopf: kein Abruf der grossen Dateien ----
+      ghLog.length = 0;
+      const erg2 = await L1.laden();
+      pruefe("gemeinsam: ein unveraenderter Kopf loest keinen Abruf der grossen Dateien aus (nur stand.json)", ghLog.length === 1 && ghLog[0].name === "stand.json" && erg2 && erg2.geladen === 0 && L1.status().zustand === "ok", ghLog.map((x) => x.name).join());
+      ghLog.length = 0;
+      const L2 = neuerLader(); // neue Seite: der Merker im localStorage kennt den eingemischten Stand
+      await L2.laden();
+      pruefe("gemeinsam: auch nach dem Neuladen der Seite (neuer Lader, gespeicherter Merker) bleibt es beim Kopf; die Anzeige kennt den Stand weiter", ghLog.length === 1 && GM.vollZeit(L2.status().kopf) === erzeugtAm, ghLog.map((x) => x.name).join());
+      ordner["stand.json"] = kopfVon(erzeugtAm + 1000, { dateien: { preise: { name: "preise.json", geaendertAm: erzeugtAm + 1000 }, volumen: { name: "volumen.json", geaendertAm: erzeugtAm } } });
+      ghLog.length = 0;
+      await L2.laden();
+      pruefe("gemeinsam: hat nur preise.json einen neuen Stand (schneller Lauf), wird volumen.json nicht erneut geholt", ghLog.map((x) => x.name).join() === "stand.json,preise.json", ghLog.map((x) => x.name).join());
+      await frisch(); // geleerter Bestand: der Merker zaehlt nicht mehr
+      ghLog.length = 0;
+      await L2.laden();
+      pruefe("gemeinsam: ist der Bestand leer (geleert, neuer Browser), wird trotz Merker alles geholt", ghLog.length === 3 && PREISE.bestandInfo().preise === quelle.preise.length, ghLog.map((x) => x.name).join());
+
+      // ---- Fehler stoeren nichts ----
+      const vorFehler = sortiert(PREISE.bestandEintraege().preise);
+      const pruefFehler = async (name, stoerung, muster, erwarteteAbrufe) => {
+        localStorage.removeItem(MERKER);
+        ordner["stand.json"] = kopfVon(Date.now() + ghLog.length); // neuer Stand, damit die grossen Dateien gebraucht wuerden
+        ghStoerung = stoerung;
+        ghLog.length = 0;
+        const l = neuerLader();
+        let geworfen = null;
+        let ergebnis;
+        try {
+          ergebnis = await l.laden();
+        } catch (e) {
+          geworfen = e;
+        }
+        ghStoerung = null;
+        const s = l.status();
+        pruefe(
+          "gemeinsam: " + name + " stoert nichts (kein Wurf, Bestand unveraendert, Grund in status() und im Tooltip)",
+          !geworfen && ergebnis === null && s.zustand === "fehler" && muster.test(s.fehler || "") && sortiert(PREISE.bestandEintraege().preise) === vorFehler && ghLog.length === erwarteteAbrufe && GM.anzeigeTitel(s, Date.now()).indexOf(s.fehler) !== -1 && GM.anzeigeText(s, Date.now()) === "Gemeinsamer Stand fehlt",
+          (geworfen ? "Wurf: " + geworfen : s.fehler) + ", " + ghLog.length + " Abrufe"
+        );
+      };
+      await pruefFehler("HTTP 404 (Zweig daten gibt es noch nicht)", () => ({ status: 404, ok: false, json: async () => ({}) }), /404/, 1);
+      await pruefFehler("ein Netzfehler (offline)", () => ({ wirf: "Failed to fetch" }), /nicht erreichbar/, 1);
+      await pruefFehler("ein Kopf mit falschem Schema", (n) => (n === "stand.json" ? { status: 200, ok: true, json: async () => Object.assign(kopfVon(Date.now()), { schema: 2 }) } : null), /Schema/, 1);
+      await pruefFehler("ein Kopf, der kein JSON ist", (n) => (n === "stand.json" ? { status: 200, ok: true, json: async () => { throw new SyntaxError("Unexpected token <"); } } : null), /nicht lesbar/, 1);
+      await pruefFehler("eine kaputte Datei preise.json", (n) => (n === "preise.json" ? { status: 200, ok: true, json: async () => ({ schema: 1, basis: 1, staedte: ["Lymhurst"], p: { T4_X: [[0, 9, "x"]] }, m: {} }) } : null), /kaputte Zeile/, 2);
+      await pruefFehler("eine Datei volumen.json mit falschem Schema", (n) => (n === "volumen.json" ? { status: 200, ok: true, json: async () => ({ schema: 7 }) } : null), /Schema/, 3);
+      await pruefFehler("eine Datei, die fehlt (HTTP 500)", (n) => (n === "preise.json" ? { status: 500, ok: false, json: async () => ({}) } : null), /HTTP 500/, 2);
+
+      // ---- Schalter AUS: kein Abruf ----
+      an = false;
+      ghLog.length = 0;
+      const L3 = neuerLader();
+      const ergAus = await L3.starten();
+      L3.faelligPruefen();
+      await L3.schalterGeaendert();
+      pruefe("gemeinsam: Schalter AUS loest keinen Abruf aus (starten, Wiederholung, schalterGeaendert), die Anzeige bleibt leer", ghLog.length === 0 && ergAus === null && L3.status().zustand === "aus" && L3.status().an === false && GM.anzeigeText(L3.status(), Date.now()) === "");
+      an = true;
+      localStorage.removeItem(MERKER);
+      ordner["stand.json"] = kopfVon(erzeugtAm);
+      await L3.schalterGeaendert();
+      pruefe("gemeinsam: beim Einschalten wird sofort geladen", ghLog.length >= 1 && ghLog[0].name === "stand.json" && L3.status().zustand === "ok", ghLog.map((x) => x.name).join());
+
+      // ---- Wiederholung: alle 15 Minuten, nur bei sichtbarer Seite ----
+      let uhr = 1000000;
+      let sichtbar = true;
+      ghLog.length = 0;
+      const L4 = neuerLader({ jetzt: () => uhr, sichtbar: () => sichtbar, speicherKey: null });
+      await L4.laden();
+      const nachStart = ghLog.length;
+      uhr += 5 * MIN;
+      L4.faelligPruefen();
+      const nach5 = ghLog.length;
+      uhr += 10 * MIN;
+      sichtbar = false;
+      L4.faelligPruefen();
+      const verborgen = ghLog.length;
+      sichtbar = true;
+      L4.faelligPruefen();
+      await L4.laden();
+      pruefe(
+        "gemeinsam: Wiederholung fruehestens nach 15 Minuten (benannte Konstante) und nur bei sichtbarer Seite",
+        GM.LADE_INTERVALL_MS === 15 * MIN && nachStart >= 1 && nach5 === nachStart && verborgen === nachStart && ghLog.length === nachStart + 1,
+        [nachStart, nach5, verborgen, ghLog.length].join(" / ")
+      );
+
+      // ---- Anzeige ----
+      const sOk = { an: true, zustand: "ok", fehler: null, letzterErfolg: erzeugtAm, kopf: GM.kopfPruefen(kopfVon(erzeugtAm)), uebernommen: { um: erzeugtAm, preise: 1234, volumen: 56, aelter: 7, zuAlt: 0, zukunft: 0 } };
+      const uhrText = new Date(erzeugtAm).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      const titel = GM.anzeigeTitel(sOk, erzeugtAm);
+      pruefe(
+        "gemeinsam: Anzeige nennt die Zeit des letzten vollen Laufs in Ortszeit; der Tooltip die uebernommenen Eintraege, beide Laeufe und einen abgebrochenen Lauf mit Grund",
+        GM.anzeigeText(sOk, erzeugtAm) === "Gemeinsamer Stand von " + uhrText && titel.indexOf("1.234 Preiseinträge") !== -1 && titel.indexOf("Voller Lauf: vollständig " + uhrText) !== -1 && titel.indexOf("abgebrochen (erneut HTTP 429") !== -1 && titel.indexOf("\u2014") === -1 && titel.indexOf("\u2013") === -1,
+        GM.anzeigeText(sOk, erzeugtAm)
+      );
+      pruefe("gemeinsam: liegt der volle Lauf an einem anderen Tag, steht das Datum dabei", /^Gemeinsamer Stand von \d\d\.\d\d\. \d\d:\d\d$/.test(GM.anzeigeText(sOk, erzeugtAm + 2 * TAG)), GM.anzeigeText(sOk, erzeugtAm + 2 * TAG));
+
+      // ---- Einstellung des Reiters ----
+      pruefe(
+        "gemeinsam: Schalter \"Gemeinsamen Preisstand laden\" ist Vorgabe AN, wird gespeichert und aendert weder Scanumfang noch Rechnung",
+        G.standardEinstellungen().gemeinsamLaden === true && G.einstellungenBereinigen({}).gemeinsamLaden === true && G.einstellungenBereinigen({ gemeinsamLaden: false }).gemeinsamLaden === false && m2.einstellen({ gemeinsamLaden: false }) === "anzeige" && m2.einstellungen().gemeinsamLaden === false
+      );
+    } catch (e) {
+      pruefe("gemeinsam: asynchrone Tests laufen ohne Ausnahme durch", false, (e && e.stack) || e);
+    } finally {
+      maschinen.forEach((m) => m.beenden());
+      lader.forEach((l) => l.beenden());
+      window.fetch = echtesFetch;
+      try {
+        localStorage.removeItem(MERKER);
+        await PREISE.testEinstellen(null); // zurueck zum echten Bestand
+        await PREISE.testDatenbankLoeschen(DB);
+        localStorage.removeItem(LS);
+      } catch (e) {
+        pruefe("gemeinsam: Aufraeumen", false, e);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Anzeige der Selbsttests
   // -----------------------------------------------------------------------
   function renderErgebnisse(ergebnisse) {
@@ -4752,7 +5081,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     const zsf = document.getElementById("zusammenfassung");
     zsf.textContent += ", asynchrone Tests zu Preisbestand, Abrufplaner und Gelegenheiten laufen ...";
     zsf.className = "zusammenfassung";
-    bestandTests().then(planerTests).then(gelegenheitenTests).then(() => {
+    bestandTests().then(planerTests).then(gelegenheitenTests).then(gemeinsamTests).then(() => {
       renderErgebnisse(alleTests);
       document.body.dataset.testsFertig = "1";
     });

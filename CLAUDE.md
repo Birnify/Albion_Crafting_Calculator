@@ -928,6 +928,7 @@ dort) - der Git-Commit bleibt dort trotzdem Pflicht.
 | `js/veredeln.js` | Reiter „Veredeln leveln": Veredeln mit Gewinn oder etwa Null; Einkaufs- und Verkaufsstädte mehrfach, eine Fertigungsstadt (seit v3.10.0) |
 | `js/karte.js` | Reiter „Ancient Lands“: Karte, Lauf-Tracker, eigene Marker (seit v3.14.0) |
 | `js/lootsplit.js` | Reiter „Lootsplit“ (seit v3.20.0): Beute einer Gruppe aufteilen, Regear vorab, Gildenkasse in % |
+| `js/gemeinsam.js`, `tools/preisstand.js`, `.github/workflows/preisstand.yml` | Gemeinsamer Preisstand (seit v3.23.0): Zeitplan bei GitHub schreibt den Zweig `daten`, die App mischt ihn ein |
 | `build_karte.py` | Erzeugt `assets/ancient-lands.webp` und `js/karte-daten.js` aus dem Client-Dump |
 | `vendor/leaflet/` | Leaflet 1.9.4, lokal statt CDN |
 | `rezepte.js`, `item-namen.js` | Von `build_graph.py` erzeugt, nicht von Hand bearbeiten |

@@ -1,0 +1,112 @@
+# Gemeinsamer Preisstand (v3.23.0, Paket O9).
+#
+# Ruft regelmaessig Preise und Handelsvolumen ab (tools/preisstand.js) und legt
+# das Ergebnis auf dem verwaisten Zweig "daten" ab. Der Zweig besteht immer aus
+# genau EINEM Commit und wird bei jedem Lauf ueberschrieben (force-push nur
+# dorthin), damit die Historie nicht waechst. "main" wird nie veraendert.
+#
+# Lauf-Arten:
+#   schnell  alle 15 Minuten: nur die Preise der Spitze der Rangliste, hoechstens 30 Abrufe
+#   voll     stuendlich: der ganze Vorgabe-Scanumfang, hoechstens 300 Abrufe
+# Von Hand: Actions > Preisstand > Run workflow, Lauf-Art waehlen.
+#
+# Hinweis: GitHub schaltet Zeitplaene in oeffentlichen Repos ab, wenn 60 Tage
+# lang nichts im Repo geschieht. Dann unter Actions wieder einschalten.
+
+name: Preisstand
+
+on:
+  schedule:
+    # Zeiten in UTC. Versetzt, damit voller und schneller Lauf nicht gleichzeitig starten.
+    - cron: "5,20,35,50 * * * *" # schnell
+    - cron: "10 * * * *" # voll
+  workflow_dispatch:
+    inputs:
+      art:
+        description: "Lauf-Art"
+        type: choice
+        options:
+          - schnell
+          - voll
+        default: voll
+
+# Nie zwei Laeufe gleichzeitig: ein neuer wartet, bis der laufende fertig ist.
+# Wartet schon einer, ersetzt der neuere den wartenden. Ein laufender wird nie abgebrochen.
+concurrency:
+  group: preisstand
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  preisstand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: main auschecken (Skript und App-Dateien)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Lauf-Art bestimmen
+        id: art
+        env:
+          EREIGNIS: ${{ github.event_name }}
+          ZEITPLAN: ${{ github.event.schedule }}
+          EINGABE: ${{ inputs.art }}
+        run: |
+          if [ "$EREIGNIS" = "workflow_dispatch" ]; then
+            ART="$EINGABE"
+          elif [ "$ZEITPLAN" = "10 * * * *" ]; then
+            ART="voll"
+          else
+            ART="schnell"
+          fi
+          case "$ART" in
+            voll|schnell) ;;
+            *) echo "Unbekannte Lauf-Art: $ART" >&2; exit 1 ;;
+          esac
+          echo "art=$ART" >> "$GITHUB_OUTPUT"
+          echo "Lauf-Art: $ART"
+
+      - name: Vorhandenen Stand vom Zweig daten holen
+        run: |
+          mkdir -p _daten
+          if git ls-remote --exit-code --heads origin daten > /dev/null; then
+            git fetch --depth=1 origin daten
+            git archive FETCH_HEAD | tar -x -C _daten
+            echo "Vorhandener Stand:"
+            ls -l _daten
+          else
+            echo "Zweig daten gibt es noch nicht."
+          fi
+
+      - name: Abrufen
+        run: node tools/preisstand.js "--${{ steps.art.outputs.art }}" --aus _daten
+
+      - name: Zweig daten mit einem Commit ueberschreiben
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          if [ ! -f _daten/stand.json ]; then
+            echo "Kein Stand geschrieben (schneller Lauf ohne vollen Stand), nichts zu veroeffentlichen."
+            exit 0
+          fi
+          # Baum nur aus dem Inhalt von _daten bauen, mit eigenem Index:
+          # weder der Arbeitsbaum noch der Index von main werden beruehrt.
+          export GIT_INDEX_FILE="$RUNNER_TEMP/daten-index"
+          rm -f "$GIT_INDEX_FILE"
+          git --work-tree=_daten add --all --force .
+          BAUM=$(git write-tree)
+          COMMIT=$(git commit-tree "$BAUM" -m "Preisstand ${{ steps.art.outputs.art }} $(date -u +%Y-%m-%dT%H:%MZ)")
+          git push --force origin "$COMMIT:refs/heads/daten"
+          echo "Zweig daten zeigt jetzt auf $COMMIT (ein Commit ohne Vorgaenger)."

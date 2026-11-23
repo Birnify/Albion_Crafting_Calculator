@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-23 · Version: v3.22.0 · O8: Tagesmaximum sichtbar, Marktanteil 10 %
+Stand: 2026-11-23 · Version: v3.23.0 · O9: gemeinsamer Preisstand über GitHub
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -64,7 +64,7 @@ der Historie, Block „Ausgelagert am 22.11.2026 (Paket O6)“.
 Die Runde ist damit abgeschlossen.** Ziele laut `OPTIMIERUNG-PLAN.md`: kurzer Weg vom
 Fund zum Einkauf, Potenzialerkennung ohne Vorauswahl, Performance nur wo
 nötig. Einzelheiten je Version: Historie, Nachträge v3.15.0 bis v3.19.0.
-Selbsttest zuletzt **920/920** grün.
+Selbsttest zuletzt **950/950** grün, dazu `node tests/preisstand-test.js` 27/27.
 
 - **O1, v3.15.0, gemeinsamer Preisbestand.** Preise und Handelsvolumen von
   `js/preise.js` liegen in IndexedDB (`albion_kostenrechner_bestand`), mit
@@ -137,6 +137,33 @@ T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
 hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
 entscheidet weiter der angenommene Marktanteil.
 
+**O9, v3.23.0 (23.11.2026), gemeinsamer Preisstand.** Wunsch des Nutzers:
+Preisdaten nicht nur im Browser jedes Einzelnen. Nutzer können nicht ins
+Repo schreiben (kein Token in der App); stattdessen ruft ein Zeitplan bei
+GitHub ab und legt den Stand auf dem **verwaisten Zweig `daten`** ab (immer
+genau ein Commit, wird überschrieben; `main` bleibt unberührt).
+- `tools/preisstand.js --voll | --schnell [--aus daten] [--max-abrufe N]`:
+  voller Lauf = Vorgabe-Scanumfang für alle sieben Städte, 137 Abrufe, rund
+  3,5 Min.; schneller Lauf = Preise der Spitze der Rangliste, höchstens 30
+  Abrufe. Nutzt Abruf, Normalisierung und Planer der App (keine zweite
+  Implementierung). 429: einmal bis zur Reset-Zeit warten, sonst sauber mit
+  Teilergebnis enden. Die Vorgabe-Einstellungen sind im Skript gespiegelt
+  (`vorgabeEinstellungen()`), bei Änderungen in `ui.js` nachziehen.
+- Workflow: schnell `5,20,35,50 * * * *`, voll `10 * * * *` (UTC), von Hand
+  über „Run workflow“; nur `contents: write`, kein Geheimnis.
+- Dateien auf `daten` (Format in `js/gemeinsam.js`): `stand.json` (Kopf),
+  `preise.json`, `volumen.json`; hochgerechnet rund 2,7 MB und 0,6 MB roh.
+- App: `GEMEINSAM` lädt beim Start und alle 15 Min. `stand.json` von
+  `raw.githubusercontent.com/.../daten/`, große Dateien nur bei Änderung,
+  nicht über den Planer. `PREISE.bestandEinmischen()`: **je Eintrag gewinnt
+  der jüngere `abgerufenAm`**, älter als 7 Tage oder aus der Zukunft wird
+  verworfen. Schalter „Gemeinsamen Preisstand laden“ in „Gelegenheiten“
+  (Vorgabe an), Anzeige „Gemeinsamer Stand von HH:MM“ in der Leiste.
+  Fehler (404, offline) stören nicht.
+- Gemessen (Umsetzer, nachgebildet): leerer Bestand, erste Zeile 0,5 s nach
+  dem Klick. Rundlauf Skript → Datei → App → Rangliste: 2.851 Zeilen ohne
+  Abweichung (Hauptsitzung nachgelaufen).
+
 **O8, v3.22.0 (23.11.2026), Tagesmaximum sichtbar.** Wunsch des Nutzers:
 kein Tagesbudget in Silber, stattdessen die maximale Stückzahl sichtbar.
 Unter „Gewinn/Tag“ steht in allen drei Gewinn-Reitern `max. 20/Tag ·
@@ -203,6 +230,7 @@ meldet; die anderen Reiter ziehen nach.
 | `albion_kostenrechner_eintopf_preise_v1`, `..._eintopf_einstellungen_v1` | Preise und Einstellungen des Eintopf-Rechners | `js/eintopf-preise.js`, `js/eintopf-ui.js` |
 | `albion_kostenrechner_preisvergleich_v1`, `..._preisvergleich_staedte_v1` | Itemliste und Städte des Preisvergleichs | `js/preisvergleich.js` |
 | `albion_kostenrechner_karte_v1` | Ebenen, Lauf, eigene Marker | `js/karte.js` |
+| `albion_kostenrechner_gemeinsam_v1` | Merker, welcher gemeinsame Stand schon eingemischt ist | `js/gemeinsam.js` |
 | `albion_kostenrechner_lootsplit_v1` | Mitglieder mit Werten, Gildenkasse % | `js/lootsplit.js` |
 
 ## Dateistruktur
@@ -231,7 +259,11 @@ der Änderungsgeschichte je Datei steht in der Historie, Block „Ausgelagert am
 | `assets/ancient-lands.webp` | **Erzeugt** von `build_karte.py`: Kartenbild |
 | `build_graph.py` | Baut `rezepte.js` und `item-namen.js` aus dem Client-Dump (`--refresh`) |
 | `build_karte.py` | Baut Kartenbild und `js/karte-daten.js` aus dem Client-Dump |
-| `tests/test.html` | Selbsttest aller Module, 920 Tests |
+| `tests/test.html` | Selbsttest aller Module, 950 Tests |
+| `tests/preisstand-test.js` | Node-Tests des Abrufskripts (27), Aufruf `node tests/preisstand-test.js` |
+| `tools/preisstand.js` | Abrufskript für den gemeinsamen Preisstand (Node 20, lädt die App-Dateien in einen `vm`-Kontext) |
+| `.github/workflows/preisstand.yml` | Zeitplan bei GitHub: schnell alle 15 Min., voll stündlich, schreibt den Zweig `daten` |
+| `js/gemeinsam.js` | Format und Lader des gemeinsamen Preisstands (`GEMEINSAM`) |
 | `vendor/leaflet/` | Leaflet 1.9.4 lokal (js, css, LICENSE) |
 | `assets/lymhurst-bg.jpg`, `assets/radiantwilds-bg.jpg` | Banner; das zweite ist bisher unbenutzt |
 | `design.md` | Verbindliche Design-Spezifikation |
@@ -271,7 +303,7 @@ Außerhalb des Repos, eine Ebene höher: `Kostenrechner öffnen.bat`,
   ungeprüft übernehmen, immer selbst nachlaufen lassen.
   **Die Seite ist erst fertig bei
   `document.body.dataset.testsFertig === "1"`** (ein Teil der Tests läuft
-  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 920/920.
+  asynchron); wer vorher liest, sieht eine zu kleine Zahl. Stand: 950/950.
 - **Nach jeder Änderung im Browser gegenprüfen**, nicht nur den Code lesen. Im
   Eintopf-Projekt fielen mehrere Fehler erst in der gerenderten Seite auf.
 - **Rechenergebnisse unabhängig nachziehen** (kurzes Python-Skript im Scratchpad).
@@ -306,6 +338,15 @@ Startblock, kein Nutzen für die Ziele der Runde). Nicht erneut vorschlagen,
 solange sich daran nichts ändert.
 
 **Rechnung und Daten**
+
+- Gemeinsamer Preisstand: ob die API die Abrufe der GitHub-Runner
+  durchlässt und ob GitHub den Takt hält, zeigt erst der Betrieb; ein
+  regelmäßig abgebrochener voller Lauf lässt immer dieselben hinteren
+  Blöcke alt (keine Rotation); stündlich rund 48 MB Antwortdaten von der
+  API; im `localStorage`-Rückfall sprengen 131.000 Einträge die Grenze;
+  beim Öffnen mit leerem Bestand geht ein Scan-Abruf hinaus, bevor der
+  gemeinsame Stand eingemischt ist; GitHub schaltet Zeitpläne nach 60 Tagen
+  ohne Aktivität im Repo ab (v3.23.0).
 
 - Tagesmaximum bei Massenware bleibt auch mit 10 % Marktanteil vierstellig
   (Kunstvoller Stoff T5.0: 5.587 je Tag). Ein Tagesbudget in Silber hat der

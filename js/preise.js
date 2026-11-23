@@ -426,6 +426,7 @@ const PREISE = (function () {
       ladeMs: null,
       migriert: 0,
       entfernt: 0, // beim Laden wegen BESTAND_MAX_ALTER_TAGE entfernte Eintraege
+      eingemischt: null, // Zaehler des letzten bestandEinmischen() (gemeinsamer Preisstand, v3.23.0)
       fehler: null,
       kette: Promise.resolve(),
     };
@@ -573,8 +574,74 @@ const PREISE = (function () {
       ladeMs: bestand.ladeMs,
       migriert: bestand.migriert,
       entfernt: bestand.entfernt,
+      eingemischt: bestand.eingemischt,
       fehler: bestand.fehler ? String(bestand.fehler) : null,
     };
+  }
+
+  /**
+   * Alle Eintraege der Arbeitskopie als Paarlisten [Schluessel, Eintrag]
+   * (v3.23.0). Fuer tools/preisstand.js (schreibt daraus den gemeinsamen
+   * Preisstand) und fuer Tests.
+   */
+  function bestandEintraege() {
+    return { preise: Array.from(bestand.preise), volumen: Array.from(bestand.volumen) };
+  }
+
+  /**
+   * Fremde Eintraege (gemeinsamer Preisstand, js/gemeinsam.js) in den Bestand
+   * einmischen (v3.23.0). Regel je Eintrag: der juengere abgerufenAm gewinnt;
+   * ein vorhandener Eintrag, der gleich alt oder juenger ist, bleibt stehen.
+   * Nicht uebernommen wird, was aelter als BESTAND_MAX_ALTER_TAGE ist, keine
+   * Abrufzeit traegt oder (nach der Uhr dieses Rechners) aus der Zukunft
+   * stammt: ein solcher Eintrag wuerde sonst jeden spaeteren eigenen Abruf
+   * als "aelter" verdraengen. Geschrieben wird ueber den gewoehnlichen
+   * Bestandsweg (Arbeitskopie sofort, dauerhaft im Hintergrund). Der Aufrufer
+   * wartet vorher auf bestandBereit().
+   *
+   * @param {{preise?: Array<[string, object]>, volumen?: Array<[string, object]>}} daten
+   * @param {{jetzt?: number}} [o]
+   * @returns {{preise:number, volumen:number, aelter:number, zuAlt:number, zukunft:number, ids:string[]}}
+   *   preise/volumen = uebernommene Eintraege, aelter = vom Bestand geschlagen,
+   *   ids = Markt-IDs der uebernommenen Eintraege
+   */
+  function bestandEinmischen(daten, o) {
+    const jetzt = o && o.jetzt != null ? o.jetzt : Date.now();
+    const grenze = jetzt - BESTAND_MAX_ALTER_TAGE * 24 * 60 * 60 * 1000;
+    const out = { preise: 0, volumen: 0, aelter: 0, zuAlt: 0, zukunft: 0, ids: [] };
+    const ids = new Set();
+    [
+      [STORE_PREISE, bestand.preise, "preise"],
+      [STORE_VOLUMEN, bestand.volumen, "volumen"],
+    ].forEach(([store, map, feld]) => {
+      const neu = [];
+      ((daten && daten[feld]) || []).forEach((paar) => {
+        const key = paar && paar[0];
+        const e = paar && paar[1];
+        if (typeof key !== "string" || !e || !(e.abgerufenAm >= grenze)) {
+          out.zuAlt++;
+          return;
+        }
+        if (e.abgerufenAm > jetzt) {
+          out.zukunft++;
+          return;
+        }
+        const da = map.get(key);
+        if (da && da.abgerufenAm >= e.abgerufenAm) {
+          out.aelter++;
+          return;
+        }
+        neu.push([key, e]);
+        const teile = key.split("::");
+        if (teile.length === 3) ids.add(teile[1]);
+      });
+      bestand.schreiben(store, neu);
+      out[feld] = neu.length;
+    });
+    out.ids = Array.from(ids);
+    const vor = bestand.eingemischt || { preise: 0, volumen: 0, laeufe: 0 };
+    bestand.eingemischt = { um: jetzt, preise: vor.preise + out.preise, volumen: vor.volumen + out.volumen, laeufe: vor.laeufe + 1 };
+    return out;
   }
 
   /** Erfuellt, sobald alle bisherigen Schreibvorgaenge dauerhaft abgelegt sind. */
@@ -2156,6 +2223,8 @@ const PREISE = (function () {
     bestandBereit,
     bestandInfo,
     bestandGeschrieben,
+    bestandEintraege,
+    bestandEinmischen,
     bestandPreis,
     bestandAlleQualitaeten,
     bestandAbsatz,

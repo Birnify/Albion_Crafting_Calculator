@@ -30,10 +30,49 @@ speichert sie zwischen, dafuer braucht sie beim ersten Aufruf Internetzugang.
 | `js/karte.js` | Reiter „Ancient Lands“: interaktive Karte mit Lauf-Tracker und eigenen Markern |
 | `build_karte.py` | Erzeugt Kartenbild und Kartendaten der Ancient Lands aus dem Client-Dump |
 | `tests/test.html` | Testsuite, per Doppelklick |
+| `js/gemeinsam.js` | Gemeinsamer Preisstand: Dateiformat und Lader der App |
+| `tools/preisstand.js` | Abrufer des gemeinsamen Preisstands (Node 20, ohne Abhängigkeiten) |
+| `tests/preisstand-test.js` | Tests des Abrufers: `node tests/preisstand-test.js` |
+| `.github/workflows/preisstand.yml` | Zeitplan des Abrufers bei GitHub |
 
 Die belegten Spielregeln und Formeln, auf denen die Rechnung beruht, stehen
 in `CLAUDE.md`. Der Auftrag in Arbeitspaketen steht in
 `kostenrechner-PLAN.md`, der laufende Stand in `kostenrechner-KONTEXT.md`.
+
+## Gemeinsamer Preisstand
+
+Damit Preisdaten nicht nur im Browser jedes Einzelnen liegen, ruft ein
+Workflow bei GitHub (`.github/workflows/preisstand.yml`) regelmäßig Preise und
+Handelsvolumen ab und legt sie als Dateien auf dem Zweig **`daten`** ab
+(`stand.json`, `preise.json`, `volumen.json`). Die App lädt sie beim Start und
+dann alle 15 Minuten von
+`https://raw.githubusercontent.com/Birnify/Albion_Crafting_Calculator/daten/`,
+mischt sie in ihren Preisbestand (je Eintrag gewinnt der jüngere Abruf) und
+ersetzt sie durch den eigenen Scan Stück für Stück. Abschalten: Reiter
+„Gelegenheiten“, Einstellungen, Schalter „Gemeinsamen Preisstand laden“. Die
+App schreibt nichts zu GitHub.
+
+- **Der Zweig `daten` ist kein gewöhnlicher Zweig.** Er hat keine gemeinsame
+  Geschichte mit `main`, besteht immer aus genau einem Commit und wird bei
+  jedem Lauf überschrieben (force-push). Nichts von Hand dort ablegen, es
+  geht beim nächsten Lauf verloren. `main` wird vom Workflow nie verändert.
+- **Wie oft:** stündlich ein voller Lauf (ganzer Vorgabe-Scanumfang von
+  „Gelegenheiten“, alle sieben Städte, höchstens 300 Abrufe), alle 15 Minuten
+  ein schneller Lauf (nur die Preise der Spitze der Rangliste, höchstens 30
+  Abrufe). GitHub startet Zeitpläne oft einige Minuten verspätet. Einträge,
+  die älter als 7 Tage sind, fallen heraus.
+- **Von Hand starten:** auf GitHub unter „Actions“, Workflow „Preisstand“,
+  „Run workflow“, Lauf-Art `voll` oder `schnell` wählen. Der allererste Lauf
+  muss ein voller sein; ohne dessen Stand tut der schnelle nichts.
+- **Lokal ausprobieren:** `node tools/preisstand.js --voll --aus daten`
+  (schreibt in den ignorierten Ordner `daten/`), mit `--max-abrufe N` für
+  einen kurzen Versuch. Tests ohne echte Abrufe: `node tests/preisstand-test.js`.
+- **GitHub schaltet Zeitpläne ab**, wenn in einem öffentlichen Repo 60 Tage
+  lang nichts geschieht. Dann unter „Actions“ den Workflow wieder
+  einschalten; bis dahin arbeitet die App mit ihrem eigenen Bestand weiter.
+- Wird die Preis-Schnittstelle gedrosselt (HTTP 429), wartet ein Lauf
+  höchstens einmal bis zur genannten Reset-Zeit und endet sonst vorzeitig:
+  was geholt ist, wird geschrieben, der Rest bleibt auf dem alten Stand.
 
 ## Datenquellen
 

@@ -290,6 +290,7 @@ tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
 #tab-gelegenheiten .gl-kopfzeile{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
 #tab-gelegenheiten .gl-kopfzeile .cg-umfang{flex:1 1 260px;font-size:13px;color:var(--text);cursor:help}
 #tab-gelegenheiten .gl-kopfzeile .vd-tgl{width:auto;flex:0 1 250px}
+#tab-gelegenheiten .gl-kopfzeile .vd-tgl[data-gl-schalter="gemeinsam"]{flex-basis:300px}
 #tab-gelegenheiten .gl-lbl-zeile{display:flex;align-items:center;gap:10px}
 #tab-gelegenheiten .gl-lbl-zeile .mini{padding:2px 8px;font-size:11px}
 #tab-gelegenheiten .gl-umfang-inhalt{display:flex;flex-direction:column;gap:16px;margin-top:14px}
@@ -302,6 +303,8 @@ tr.vd-verlust .vd-wert,tr.vd-verlust .vd-wert2{color:var(--bad)}
 .gl-leiste[data-scan="ruht"] #glStand::before{background:var(--gold)}
 .gl-leiste[data-scan="fehler"] #glStand::before{background:var(--red)}
 #glStatus{margin-left:auto;font-size:13px;color:var(--dim);cursor:help}
+.gl-gemeinsam{font-size:12px;font-weight:700;color:var(--dim);white-space:nowrap;cursor:help}
+.gl-gemeinsam[data-zustand="fehler"]{color:var(--warn)}
 .gl-warnung{padding:4px 10px;border:1px solid var(--warn);border-radius:var(--r-tag);background:var(--warn-bg);color:var(--warn);font-size:12px;font-weight:800;white-space:nowrap;cursor:help}
 .gl-warnung::before{content:"\26A0";margin-right:6px}
 #tab-gelegenheiten #glNeuSortieren{min-height:36px;border-radius:var(--r);border-color:var(--gold);white-space:nowrap}
@@ -1363,6 +1366,8 @@ ol.ls-ueberweisungen b{color:var(--gold)}
       <div id="glUmfang" class="cg-umfang"></div>
       <span class="sr-only" id="glLblVerborgen">Scan bei verborgenem Tab</span>
       <button type="button" class="vd-tgl" role="switch" aria-checked="false" aria-labelledby="glLblVerborgen" data-gl-schalter="verborgen" title="Der Scan ruht, solange der Browser-Tab verborgen ist. Eingeschaltet läuft er auch dann weiter."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button>
+      <span class="sr-only" id="glLblGemeinsam">Gemeinsamer Preisstand</span>
+      <button type="button" class="vd-tgl" role="switch" aria-checked="true" aria-labelledby="glLblGemeinsam" data-gl-schalter="gemeinsam" title="Lädt beim Start und dann alle 15 Minuten einen Preisstand, den ein Abrufer bei GitHub regelmäßig ablegt (öffentliche Datei, es wird nichts gesendet). Er füllt auf, was der eigene Preisbestand nicht oder nur älter hat; der eigene Scan ersetzt ihn Stück für Stück. Ausgeschaltet: kein Abruf bei GitHub."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button>
     </div>
     <details class="vd-mehr">
       <summary>Umfang ändern</summary>
@@ -1389,6 +1394,7 @@ ol.ls-ueberweisungen b{color:var(--gold)}
   <button type="button" id="glGemerkt" class="mini" aria-pressed="false" title="Zeigt nur die gemerkten Zeilen, auch ohne Gewinn oder unter „Mind. verkauft/Tag“, mit den Zahlen vom Merken gegen den heutigen Stand.">★ Gemerkt (0)</button>
   <button type="button" id="glZurListe" class="mini" hidden title="Springt zur Einkaufsliste unter der Rangliste.">Einkaufsliste</button>
   <span id="glWarnung" class="gl-warnung" role="status" hidden></span>
+  <span id="glGemeinsam" class="gl-gemeinsam" role="status" hidden></span>
   <span id="glStatus"></span>
 </div>
 
@@ -1692,25 +1698,26 @@ ol.ls-ueberweisungen b{color:var(--gold)}
 
 </div>
 
-<script src="rezepte.js?v=3.22.0"></script>
-<script src="item-namen.js?v=3.22.0"></script>
-<script src="js/preise.js?v=3.22.0"></script>
-<script src="js/regeln.js?v=3.22.0"></script>
-<script src="js/rechenkern.js?v=3.22.0"></script>
-<script src="js/ui.js?v=3.22.0"></script>
-<script src="js/eintopf-daten.js?v=3.22.0"></script>
-<script src="js/eintopf-preise.js?v=3.22.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.22.0"></script>
-<script src="js/eintopf-ui.js?v=3.22.0"></script>
-<script src="js/tabs.js?v=3.22.0"></script>
-<script src="js/preisvergleich.js?v=3.22.0"></script>
-<script src="js/veredeln.js?v=3.22.0"></script>
-<script src="js/craften.js?v=3.22.0"></script>
-<script src="js/gelegenheiten.js?v=3.22.0"></script>
+<script src="rezepte.js?v=3.23.0"></script>
+<script src="item-namen.js?v=3.23.0"></script>
+<script src="js/preise.js?v=3.23.0"></script>
+<script src="js/gemeinsam.js?v=3.23.0"></script>
+<script src="js/regeln.js?v=3.23.0"></script>
+<script src="js/rechenkern.js?v=3.23.0"></script>
+<script src="js/ui.js?v=3.23.0"></script>
+<script src="js/eintopf-daten.js?v=3.23.0"></script>
+<script src="js/eintopf-preise.js?v=3.23.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.23.0"></script>
+<script src="js/eintopf-ui.js?v=3.23.0"></script>
+<script src="js/tabs.js?v=3.23.0"></script>
+<script src="js/preisvergleich.js?v=3.23.0"></script>
+<script src="js/veredeln.js?v=3.23.0"></script>
+<script src="js/craften.js?v=3.23.0"></script>
+<script src="js/gelegenheiten.js?v=3.23.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.22.0"></script>
-<script src="js/karte.js?v=3.22.0"></script>
-<script src="js/lootsplit.js?v=3.22.0"></script>
+<script src="js/karte-daten.js?v=3.23.0"></script>
+<script src="js/karte.js?v=3.23.0"></script>
+<script src="js/lootsplit.js?v=3.23.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

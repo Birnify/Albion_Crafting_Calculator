@@ -96,6 +96,7 @@ const GELEGENHEITEN = (function () {
       sortTagUmgestellt: true, // Merker der einmaligen Umstellung, s. VEREDELN.sortierungBereinigen()
       scanAn: true,
       scanAuchVerborgen: false,
+      gemeinsamLaden: true, // v3.23.0 (O9): gemeinsamen Preisstand von GitHub laden, s. js/gemeinsam.js
       einstellungenOffen: false, // der eingeklappte Block ueber der Rangliste
       plan: {}, // v3.19.0 (O5): Zeilenschluessel -> geplante Stueckzahl (Einkaufsliste)
       merkliste: {}, // v3.19.0 (O5): Zeilenschluessel -> Zahlen im Moment des Merkens, s. merkEintrag()
@@ -222,6 +223,7 @@ const GELEGENHEITEN = (function () {
       sortTagUmgestellt: true,
       scanAn: roh.scanAn == null ? true : !!roh.scanAn,
       scanAuchVerborgen: !!roh.scanAuchVerborgen,
+      gemeinsamLaden: roh.gemeinsamLaden == null ? true : !!roh.gemeinsamLaden,
       einstellungenOffen: !!roh.einstellungenOffen,
       plan: planBereinigen(roh.plan),
       merkliste: merklisteBereinigen(roh.merkliste),
@@ -1128,6 +1130,24 @@ const GELEGENHEITEN = (function () {
       return p;
     }
 
+    /**
+     * v3.23.0 (O9): der Bestand hat sich ohne eigenen Abruf geaendert
+     * (gemeinsamer Preisstand eingemischt). Wie nach einem Scan-Block: neu
+     * rechnen, was diese Markt-IDs als Produkt oder Zutat braucht (ohne
+     * Angabe alles). Der Scan sieht die neuen Eintraege von selbst, er liest
+     * die Faelligkeit vor jeder Einheit aus dem Bestand.
+     */
+    function bestandGeaendert(ids) {
+      standCache = null;
+      if (!geoeffnet) return Promise.resolve();
+      if (!ids) return anfordern();
+      const betroffen = new Set();
+      ids.forEach((id) => (nutzer.get(id) || []).forEach((n) => betroffen.add(n)));
+      const p = betroffen.size ? anfordern(Array.from(betroffen)) : Promise.resolve();
+      melden({ typ: "status" });
+      return p;
+    }
+
     /** Gemeinsame Einstellungen haben sich geaendert (Stationssatz, Tagesbonus, Premium): neu rechnen, kein Abruf. */
     function neuRechnen() {
       return geoeffnet ? anfordern() : Promise.resolve();
@@ -1146,6 +1166,7 @@ const GELEGENHEITEN = (function () {
       einstellen,
       oeffnen,
       neuRechnen,
+      bestandGeaendert,
       fertig,
       rangliste,
       zeile: (schluessel) => zeilen.get(schluessel) || null,
@@ -1173,6 +1194,7 @@ const GELEGENHEITEN = (function () {
   const aktionen = [];
   let neuZeichnen = function () {};
   let maschine = null;
+  let gemeinsamLader = null;
 
   /**
    * Weitere Spalte in der Rangliste, vor "Alter".
@@ -1737,6 +1759,7 @@ const GELEGENHEITEN = (function () {
     const listeEl = el("glEinkaufsliste");
     const gemerktEl = el("glGemerkt");
     const zurListeEl = el("glZurListe");
+    const gemeinsamEl = el("glGemeinsam");
     let nurGemerkt = false; // Filter "Gemerkt"; bewusst nicht gespeichert, die App startet mit der ganzen Rangliste
 
     let gespeichert = null;
@@ -1870,6 +1893,7 @@ const GELEGENHEITEN = (function () {
       verkaufsweg: { an: "Eigene Verkaufsorder", aus: "Sofortverkauf", lesen: () => e().verkaufsweg === "order", setzen: (an) => m.einstellen({ verkaufsweg: an ? "order" : "sofort" }) },
       fokus: { an: "Mit Fokus", aus: "Ohne Fokus", lesen: () => e().mitFokus, setzen: (an) => m.einstellen({ mitFokus: an }) },
       premium: { an: "Mit Premium (4 % Steuer)", aus: "Ohne Premium (8 % Steuer)", lesen: () => UI.einstellungenLesen().premium !== false, setzen: (an) => UI.premiumSetzen(an, "gelegenheiten") },
+      gemeinsam: { an: "Gemeinsamen Preisstand laden", aus: "Gemeinsamer Preisstand aus", lesen: () => e().gemeinsamLaden, setzen: (an) => m.einstellen({ gemeinsamLaden: an }) },
       artefakte: { an: "Mit Artefakt-Items", aus: "Ohne Artefakt-Items", lesen: () => e().artefakte, setzen: (an) => m.einstellen({ artefakte: an }) },
     };
 
@@ -2433,6 +2457,31 @@ const GELEGENHEITEN = (function () {
         : "";
     }
 
+    // ---- Gemeinsamer Preisstand (v3.23.0, O9) ----
+
+    // Laedt beim Start der App und dann alle 15 Minuten den Stand, den der
+    // Abrufer bei GitHub ablegt (js/gemeinsam.js), und mischt ihn in den
+    // Bestand. Laeuft neben dem Start her: die Rangliste aus dem eigenen
+    // Bestand wartet nicht darauf.
+    const gemeinsam = typeof GEMEINSAM !== "undefined" ? GEMEINSAM.erzeugen({ an: () => e().gemeinsamLaden }) : null;
+    gemeinsamLader = gemeinsam;
+    function gemeinsamSetzen() {
+      if (!gemeinsamEl) return;
+      const s = gemeinsam ? gemeinsam.status() : { an: false };
+      const text = gemeinsam ? GEMEINSAM.anzeigeText(s, Date.now()) : "";
+      gemeinsamEl.hidden = !text;
+      gemeinsamEl.textContent = text;
+      gemeinsamEl.title = text ? GEMEINSAM.anzeigeTitel(s, Date.now()) : "";
+      gemeinsamEl.dataset.zustand = s.zustand || "aus";
+    }
+    if (gemeinsam) {
+      gemeinsam.beiAenderung((ev) => {
+        if (ev.typ === "eingemischt") m.bestandGeaendert(ev.ids);
+        gemeinsamSetzen();
+        if (ev.typ === "eingemischt" && m.status().geoeffnet) statusSetzen();
+      });
+    }
+
     // ---- Ereignisse ----
 
     m.beiAenderung((ev) => {
@@ -2501,7 +2550,13 @@ const GELEGENHEITEN = (function () {
         const name = schalter.dataset.glSchalter;
         const s = SCHALTER[name];
         const art = s.setzen(!s.lesen());
-        if (name === "scan" || name === "verborgen") {
+        if (name === "gemeinsam") {
+          // Kein Einfluss auf Rechnung oder Scanumfang: nur speichern und den Lader benachrichtigen (AUS = kein Abruf bei GitHub).
+          speichern();
+          schalterSetzen();
+          gemeinsamSetzen();
+          if (gemeinsam) gemeinsam.schalterGeaendert();
+        } else if (name === "scan" || name === "verborgen") {
           // Der Scan-Schalter sitzt in der mitlaufenden Leiste: die Liste bleibt, wie sie ist.
           speichern();
           schalterSetzen();
@@ -2627,6 +2682,8 @@ const GELEGENHEITEN = (function () {
     kurzSetzen();
     leisteKnoepfeSetzen();
     speichern();
+    gemeinsamSetzen();
+    if (gemeinsam) gemeinsam.starten();
     ausgabeEl.innerHTML = "<div class='vd-leer'>Rechne aus dem Preisbestand ...</div>";
   }
 
@@ -2637,6 +2694,7 @@ const GELEGENHEITEN = (function () {
 
   return {
     SPEICHER_KEY,
+    TAGE_FENSTER,
     SCHEIBE,
     MAX_ZEILEN,
     SCAN_GRUPPE,
@@ -2667,6 +2725,8 @@ const GELEGENHEITEN = (function () {
     gemerkteZeilen,
     /** Die Maschine des Reiters in der App (null in tests/test.html). */
     maschine: () => maschine,
+    /** Der Lader des gemeinsamen Preisstands in der App (null in tests/test.html). */
+    gemeinsam: () => gemeinsamLader,
     messung,
     prozentText,
     selbsttest,
