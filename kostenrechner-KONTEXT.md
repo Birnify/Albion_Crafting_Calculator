@@ -219,6 +219,23 @@ genau ein Commit, wird überschrieben; `main` bleibt unberührt).
   (`vorgabeEinstellungen()`), bei Änderungen in `ui.js` nachziehen.
 - Workflow: schnell `7,22,37,52 * * * *`, voll `12 * * * *` (UTC), von Hand
   über „Run workflow“; nur `contents: write`, kein Geheimnis.
+- **Ausgelöst wird seit 23.11.2026 von außen über cron-job.org**, weil
+  GitHub in diesem Repo keine Zeitpläne startet (s. Backlog). Zwei Jobs im
+  Konto des Nutzers: „Preisstand schnell“ (Minute 7, 22, 37, 52) und
+  „Preisstand voll“ (stündlich, Minute 12), Zeitzone Europe/Berlin. Beide
+  senden `POST .../actions/workflows/preisstand.yml/dispatches` mit
+  `{"ref":"main","inputs":{"art":"schnell"|"voll"}}`, Kopfzeilen `Accept:
+  application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`,
+  `Content-Type: application/json`, `Authorization: Bearer <Token>`.
+  Token: feingranular, Name „Preisstand-Zeitgeber“, nur dieses Repo, nur
+  Actions lesen/schreiben, **läuft am 23.11.2027 ab**, dann neu erzeugen
+  und in beiden Jobs ersetzen. Erster Lauf 23.11.2026 17:12 Berliner Zeit:
+  cron-job.org meldet 204, GitHub-Lauf 16:12 bis 16:16 UTC erfolgreich,
+  Zweig `daten` neu geschrieben. `raw.githubusercontent.com` liefert ihn mit
+  `Cache-Control: max-age=300`, die App sieht neue Stände also bis zu 5 Min.
+  später. Fängt GitHub später
+  doch an, die Zeitpläne auszuführen, laufen beide Auslöser; `concurrency`
+  reiht sie hintereinander, dann die Jobs bei cron-job.org abschalten.
 - Dateien auf `daten` (Format in `js/gemeinsam.js`): `stand.json` (Kopf),
   `preise.json`, `volumen.json`; hochgerechnet rund 2,7 MB und 0,6 MB roh.
 - App: `GEMEINSAM` lädt beim Start und alle 15 Min. `stand.json` von
@@ -444,7 +461,8 @@ solange sich daran nichts ändert.
   Danach in der Community-Diskussion 185355 gemeldet (Kommentar
   `discussioncomment-19835309`), dort hatte GitHub-Personal um Repo, Pfad
   und Cron-Zeile gebeten; Reaktion abwarten. Stand 16:00 UTC weiter null
-  geplante Läufe. `zeitplan-test.yml` nach der Klärung wieder entfernen.
+  geplante Läufe. Ersatz über cron-job.org eingerichtet (s. O9 oben).
+  `zeitplan-test.yml` nach der Klärung wieder entfernen.
 - O10: der Handelspreis zählt ohne eigenes Höchstalter, solange der Absatz
   im Bestand liegt; die Detailreiter nennen die Zahl unsicherer Zeilen
   nicht; „Preise aktualisieren“ braucht bei gestörter API rund 45 s bis
