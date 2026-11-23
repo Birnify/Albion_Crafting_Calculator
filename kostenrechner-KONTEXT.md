@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-23 · Version: v3.25.0 · O11: Qualität im Verkauf (Mittel über die gewürfelte Qualität, Aufwerten)
+Stand: 2026-11-23 · Version: v3.25.1 · „Cache leeren“ lädt den gemeinsamen Preisstand sofort neu
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -136,6 +136,16 @@ T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
 (25 % von 109.647 Himmelsblume, Bedarf 1,9 je Stück). **Die Grenze halbiert
 hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
 entscheidet weiter der angenommene Marktanteil.
+
+**v3.25.1 (23.11.2026), Fix „Cache leeren“.** Der Knopf im Kostenrechner
+leerte den ganzen Bestand, also auch die Daten von GitHub. Der Lader mischte
+sie nur neu ein, wenn der Bestand beim nächsten Laden noch völlig leer war;
+genügte ein eigener Abruf dazwischen, fehlten sie bis zum nächsten Lauf bei
+GitHub (Nutzerbeobachtung). Jetzt ruft der Knopf `nachLeeren()` des Laders
+(`js/gemeinsam.js`): Merker vergessen, sofort neu laden. Statuszeile meldet
+„gemeinsamer Preisstand neu geladen“. Geprüft: Node 28/28 (neuer Test),
+Selbsttest 1014/1014, live 131.621 Preise und 23.566 Volumen direkt nach dem
+Klick wieder im Bestand.
 
 **O11, v3.25.0 (23.11.2026), Qualität im Verkauf.** Anlass: die App nahm
 für ein qualifizierbares Produkt einen einzigen Preis an, obwohl der Wurf

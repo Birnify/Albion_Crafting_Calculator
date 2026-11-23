@@ -472,6 +472,23 @@ const GEMEINSAM = (function () {
       beenden,
       faelligPruefen,
       status,
+      /**
+       * Nach "Cache leeren" (v3.25.1): den Merker vergessen und den Stand
+       * sofort wieder einmischen. Vorher zaehlte der Merker weiter, sobald der
+       * Bestand nicht mehr ganz leer war (ein eigener Abruf genuegte), und die
+       * Daten von GitHub fehlten bis zum naechsten Lauf dort.
+       */
+      nachLeeren() {
+        const vergessen = () => {
+          z.eingemischt = {};
+          if (speicherKey) {
+            const alt = merkerLesen(speicherKey);
+            if (alt) merkerSchreiben(speicherKey, Object.assign({}, alt, { eingemischt: {} }));
+          }
+          return laden();
+        };
+        return laeuft ? laeuft.then(vergessen, vergessen) : vergessen();
+      },
       /** Der Schalter wurde umgelegt: Anzeige nachziehen, beim Einschalten sofort laden. */
       schalterGeaendert() {
         melden({ typ: "status" });

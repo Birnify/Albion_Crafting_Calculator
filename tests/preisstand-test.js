@@ -405,6 +405,23 @@ async function haupt() {
     r1.zeilen.length + " gegen " + r2.zeilen.length + " Zeilen der Rangliste (" + r1.gerechnet + " gerechnet), abweichend " + abweichend.length + (abweichend.length ? ", z.B. " + abweichend[0].schluessel : "")
   );
 
+  // v3.25.1: "Cache leeren" darf den gemeinsamen Stand nicht bis zum naechsten
+  // Lauf bei GitHub verlieren. nachLeeren() mischt ihn sofort wieder ein, auch
+  // wenn der Bestand schon wieder Eintraege hat (dann zaehlte der Merker bisher).
+  const clVorher = app1.PREISE.bestandInfo();
+  app1.PREISE.preisCacheLeeren();
+  const clLeer = app1.PREISE.bestandInfo();
+  const clAbrufeVor = githubAbrufe;
+  const clNeu1 = await lader.nachLeeren();
+  const clNach1 = app1.PREISE.bestandInfo();
+  const clOhne = await lader.laden();
+  const clNeu2 = await lader.nachLeeren();
+  pruefe(
+    "cache leeren: nachLeeren() mischt den gemeinsamen Stand sofort wieder vollstaendig ein; laden() allein holt danach nichts, nachLeeren() holt auch bei gefuelltem Bestand neu",
+    clLeer.preise === 0 && clLeer.volumen === 0 && clNeu1 && clNeu1.geladen === 2 && clNach1.preise === clVorher.preise && clNach1.volumen === clVorher.volumen && clOhne && clOhne.geladen === 0 && clNeu2 && clNeu2.geladen === 2 && githubAbrufe === clAbrufeVor + 3 + 1 + 3,
+    JSON.stringify({ vorher: clVorher, leer: clLeer, nach: clNach1, neu1: clNeu1 && clNeu1.geladen, ohne: clOhne && clOhne.geladen, neu2: clNeu2 && clNeu2.geladen, abrufe: githubAbrufe - clAbrufeVor })
+  );
+
   const ok = ergebnisse.filter((e) => e.ok).length;
   console.log("\n" + ok + "/" + ergebnisse.length + " Tests gruen");
   process.exit(ok === ergebnisse.length ? 0 : 1);

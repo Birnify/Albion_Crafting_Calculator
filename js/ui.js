@@ -1306,7 +1306,14 @@ const UI = (function () {
     refreshBtn.addEventListener("click", () => berechnen(true));
     cacheBtn.addEventListener("click", () => {
       PREISE.preisCacheLeeren();
-      setStatus("Preis-Zwischenspeicher geleert.");
+      // v3.25.1: der gemeinsame Stand von GitHub bleibt erhalten, er wird sofort neu eingemischt.
+      const lader = typeof GELEGENHEITEN !== "undefined" && GELEGENHEITEN.gemeinsam ? GELEGENHEITEN.gemeinsam() : null;
+      if (lader && lader.status().an) {
+        setStatus("Preis-Zwischenspeicher geleert, gemeinsamer Preisstand wird neu geladen ...");
+        lader.nachLeeren().then((r) => setStatus(r ? "Preis-Zwischenspeicher geleert, gemeinsamer Preisstand neu geladen." : "Preis-Zwischenspeicher geleert. Gemeinsamer Preisstand nicht erreichbar."));
+      } else {
+        setStatus("Preis-Zwischenspeicher geleert.");
+      }
     });
 
     /**
