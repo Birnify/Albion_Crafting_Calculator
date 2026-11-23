@@ -437,8 +437,9 @@ const CRAFTEN = (function () {
       const craft = auswahl.mitFokus ? craftMit : craftOhne;
       const rezept = (craft && craft.weg && k.rezepte.find((r) => r.rezeptIndex === craft.weg.rezeptIndex)) || k.rezepte[0];
       const kandidat = Object.assign({}, k, { rezeptIndex: rezept.rezeptIndex, menge: rezept.menge, zutaten: rezept.zutaten });
-      const vkEintraege = verkaufDaten.map((d) => ({ stadt: d.stadt, eintrag: produktEintrag(d.produktJeQ[k.marktId], maxPreisAlterMin, zeit) }));
-      const vk = V.verkaufWaehlen(vkEintraege, erloesOpts) || { stadt: null, erloes: { netto: null, grund: "keine Verkaufsstadt angehakt" } };
+      // O10: handel = gehandelter Durchschnittspreis in Normal; V.verkaufAbsichern() nimmt den niedrigeren aus Angebot und Handel.
+      const vkEintraege = verkaufDaten.map((d) => ({ stadt: d.stadt, eintrag: produktEintrag(d.produktJeQ[k.marktId], maxPreisAlterMin, zeit), handel: V.handelspreisVon((d.absatz || {})[k.marktId]) }));
+      const vk = V.verkaufAbsichern(vkEintraege, erloesOpts) || { stadt: null, erloes: { netto: null, grund: "keine Verkaufsstadt angehakt" } };
       const vkDaten = verkaufDaten.find((d) => d.stadt === vk.stadt) || {};
       const vkEintrag = (vkEintraege.find((e) => e.stadt === vk.stadt) || {}).eintrag || null;
       const zeile = V.zeileBauen(kandidat, fertigung, craft, vk.erloes, null, Object.assign({}, auswahl, { herkunft }));
@@ -450,6 +451,7 @@ const CRAFTEN = (function () {
       zeile.sellQualitaet = vkEintrag ? vkEintrag.sellQualitaet : null;
       zeile.vkStadt = vk.stadt;
       zeile.vkAlle = vk.alle || null;
+      V.preisAbsicherungSetzen(zeile, vk);
       // Nach dem Volumen: Gewinn/Tag nutzt dieselbe Zahl, die die Zeile als verkauft/Tag zeigt.
       V.zutatAbsatzSetzen(zeile, stadtDaten);
       V.kennzahlenSetzen(zeile, craftMit, craftOhne, kennzahlCtx);
@@ -522,9 +524,22 @@ const CRAFTEN = (function () {
    * Zeile (Material nach Rueckgewinnung plus Stationsgebuehr) mal Menge, so
    * dass gilt: erloes - kostenNetto = gewinn. In die drei Summen gehen nur
    * Produkte ein, die alle drei Werte haben (sonst ergebnisVollstaendig = false).
+   *
+   * O10 (23.11.2026): `menge` je Posten ist die KAUFMENGE nach
+   * Rueckgewinnung, nicht mehr Menge je Vorgang x Vorgaenge. Je Produkt p
+   * und Zutat i, mit n Vorgaengen, q je Vorgang und Rueckgewinnung r der Zeile:
+   *   Bedarf(p,i)   = q + (n - 1) x q x (1 - r)
+   *   Kaufmenge(i)  = aufrunden(Summe Bedarf x (1 + Puffer/100))  wenn r > 0 in mindestens einem Produkt
+   *                 = aufrunden(Summe Bedarf)                     sonst
+   *   Rest(i)       = Kaufmenge(i) - Summe n x q x (1 - r)
+   * Je Posten dazu: mengeRezept (alter Wert), bedarf, verbrauch, rest,
+   * mitRueckgewinnung, pufferProzent, abgerufenAm (aeltester Zutatenpreis).
+   * kosten und summe rechnen mit der Kaufmenge. opts.pufferProzent: 0 bis 50,
+   * Vorgabe 0. Zeilen ohne effektiveMenge (r unbekannt) rechnen mit r = 0.
    */
-  function einkaufsliste(zeilen, plan, schluesselVon) {
+  function einkaufsliste(zeilen, plan, schluesselVon, opts) {
     const schluessel = typeof schluesselVon === "function" ? schluesselVon : (z) => z.marktId;
+    const puffer = pufferBereinigen(opts && opts.pufferProzent);
     const nachId = {};
     (zeilen || []).forEach((z) => {
       const k = z ? schluessel(z) : null;
@@ -568,18 +583,156 @@ const CRAFTEN = (function () {
       z.zutatenPreise.forEach((x) => {
         const schluessel = x.marktId + "|" + x.stadt;
         if (!posten[schluessel]) {
-          posten[schluessel] = { marktId: x.marktId, n: x.n, stufe: x.stufe, stadt: x.stadt, menge: 0, basisPreis: x.basisPreis, preis: x.preis, kosten: 0 };
+          posten[schluessel] = { marktId: x.marktId, n: x.n, stufe: x.stufe, stadt: x.stadt, menge: 0, basisPreis: x.basisPreis, preis: x.preis, kosten: 0, mengeRezept: 0, bedarf: 0, verbrauch: 0, mitRueckgewinnung: false, pufferProzent: 0, rest: 0, abgerufenAm: null };
           reihenfolge.push(schluessel);
         }
-        const m = x.menge * vorgaenge;
-        posten[schluessel].menge += m;
-        if (x.preis != null && isFinite(x.preis)) {
-          posten[schluessel].kosten += m * x.preis;
-          summe += m * x.preis;
-        } else vollstaendig = false;
+        // O10: Bedarf nach Rueckgewinnung. Der Anteil, der je Vorgang
+        // verbraucht wird (1 - r), kommt aus der Zeile: effektiveMenge des
+        // Rechenkerns (je Stueck, nach Rueckgewinnung) mal Ausbeute durch die
+        // Rezeptmenge je Vorgang. Keine eigene Formel; fehlt die Angabe, gilt
+        // r = 0 (volle Menge).
+        const po = posten[schluessel];
+        const q = x.menge;
+        const anteil = verbrauchsAnteil(x, z.ausbeute || 1);
+        po.mengeRezept += q * vorgaenge;
+        po.bedarf += q + (vorgaenge - 1) * q * anteil; // der letzte Vorgang braucht noch die volle Rezeptmenge
+        po.verbrauch += vorgaenge * q * anteil;
+        if (anteil < 1) po.mitRueckgewinnung = true;
+        if (!x.uebersteuert && x.roh && x.roh.abgerufenAm > 0 && (po.abgerufenAm == null || x.roh.abgerufenAm < po.abgerufenAm)) po.abgerufenAm = x.roh.abgerufenAm;
+        if (!(x.preis != null && isFinite(x.preis))) po.ohnePreis = true;
       });
     });
-    return { posten: reihenfolge.map((k) => posten[k]), produkte, fehlend, summe, vollstaendig, erloes: erloesSumme, gewinn: gewinnSumme, kostenNetto: kostenSumme, ergebnisVollstaendig };
+    // Kaufmenge je Zutat: aufgerundet; der Puffer wirkt nur, wo es Rueckgewinnung gibt (sonst steht die Menge fest).
+    reihenfolge.forEach((k) => {
+      const po = posten[k];
+      po.pufferProzent = po.mitRueckgewinnung ? puffer : 0;
+      po.menge = Math.ceil(po.bedarf * (1 + po.pufferProzent / 100) - 1e-9);
+      po.rest = Math.max(0, po.menge - po.verbrauch);
+      if (po.ohnePreis) vollstaendig = false;
+      else {
+        po.kosten = po.menge * po.preis;
+        summe += po.kosten;
+      }
+      delete po.ohnePreis;
+    });
+    return { posten: reihenfolge.map((k) => posten[k]), produkte, fehlend, summe, vollstaendig, erloes: erloesSumme, gewinn: gewinnSumme, kostenNetto: kostenSumme, ergebnisVollstaendig, pufferProzent: puffer };
+  }
+
+  // ---- O10: Puffer der Einkaufsliste, gemeinsam fuer "Gelegenheiten" und "Craften: Gewinn" ----
+  const LISTE_KEY = "albion_kostenrechner_einkaufsliste_v1";
+  const LISTE_EVENT = "albion:einkaufsliste";
+  const PUFFER_VORGABE = 0; // Nutzer-Entscheidung 23.11.2026: die Rueckgewinnung wird je Vorgang gerechnet und nur gerundet (Wiki Resource_return_rate)
+  const PUFFER_MAX = 50;
+
+  /** Puffer in Prozent: 0 bis 50, eine Nachkommastelle; Unlesbares ergibt die Vorgabe. Versteht "2,5". */
+  function pufferBereinigen(wert) {
+    const n = typeof wert === "string" ? Number(wert.replace(",", ".")) : Number(wert);
+    if (wert === "" || wert == null || typeof wert === "boolean" || !isFinite(n)) return PUFFER_VORGABE;
+    return Math.round(Math.min(PUFFER_MAX, Math.max(0, n)) * 10) / 10;
+  }
+  function pufferLesen() {
+    try {
+      const roh = JSON.parse(localStorage.getItem(LISTE_KEY) || "null");
+      return pufferBereinigen(roh && roh.pufferProzent);
+    } catch (e) {
+      return PUFFER_VORGABE;
+    }
+  }
+  /** Speichert den Puffer und meldet LISTE_EVENT ({quelle}), damit die andere Einkaufsliste nachzieht. */
+  function pufferSetzen(wert, quelle) {
+    const p = pufferBereinigen(wert);
+    try {
+      localStorage.setItem(LISTE_KEY, JSON.stringify({ pufferProzent: p }));
+    } catch (e) {
+      /* localStorage evtl. nicht verfuegbar */
+    }
+    if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") document.dispatchEvent(new CustomEvent(LISTE_EVENT, { detail: { quelle: quelle || null, pufferProzent: p } }));
+    return p;
+  }
+
+  /**
+   * Anteil der Rezeptmenge, der je Vorgang wirklich verbraucht wird (1 - r),
+   * aus der Zutat einer Zeile: effektiveMenge (je Stueck Produkt, nach
+   * Rueckgewinnung, so wie der Rechenkern sie ansetzt) x Ausbeute / Menge je
+   * Vorgang. 1 bei Zutaten ohne Rueckgewinnung (Artefakte) und ohne Angabe.
+   */
+  function verbrauchsAnteil(x, ausbeute) {
+    if (!x || !(x.menge > 0) || x.effektiveMenge == null || !isFinite(x.effektiveMenge)) return 1;
+    const a = (x.effektiveMenge * (ausbeute || 1)) / x.menge;
+    return a > 0 && a < 1 ? a : 1;
+  }
+
+  const deZahl = (n, stellen) => Number(n).toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: stellen == null ? 0 : stellen });
+
+  /** Text neben der Ueberschrift: "Bedarf nach Rückgewinnung", mit Pufferangabe nur, wenn einer gesetzt ist. */
+  function einkaufslisteLabel(liste) {
+    const p = liste ? liste.pufferProzent : 0;
+    return "Bedarf nach Rückgewinnung" + (p > 0 ? ", Puffer " + deZahl(p, 1) + " %" : "");
+  }
+  const LISTE_LABEL_TITEL =
+    "Kaufmengen für mehrere Durchgänge: die Rückgewinnung jedes Vorgangs wird im nächsten wiederverwendet, für den letzten Vorgang liegt noch die volle Rezeptmenge bereit. Maßgeblich ist die Rückgewinnung der jeweiligen Zeile (Fertigungsstadt, Fokus-Schalter). Zutaten ohne Rückgewinnung stehen mit der vollen Menge da.";
+  const PUFFER_TITEL =
+    "Puffer in Prozent auf die Kaufmenge aller Zutaten mit Rückgewinnung, 0 bis 50. Die Rückgewinnung wird je Vorgang aus der Menge gerechnet und nur gerundet; über mehrere Durchgänge kann am Ende ein Stück fehlen. Wer sichergehen will, trägt 1 bis 2 % ein. Kein Puffer auf Zutaten ohne Rückgewinnung, deren Menge steht fest. Gilt für die Einkaufslisten in Gelegenheiten und Craften: Gewinn.";
+
+  /** Tooltip der Zelle "Menge" einer Zutat. */
+  function einkaufslisteMengeTitel(p) {
+    const voll = deZahl(p.mengeRezept);
+    if (!p.mitRueckgewinnung) return "Rezeptmenge " + voll + ". Diese Zutat hat keine Rückgewinnung: die Menge steht fest, kein Puffer.";
+    return (
+      "Rezeptmenge ohne Rückgewinnung: " + voll + ". Rechnerischer Bedarf nach Rückgewinnung: " + deZahl(p.bedarf, 1) +
+      (p.pufferProzent > 0 ? ", mit Puffer " + deZahl(p.pufferProzent, 1) + " %: " + deZahl(p.bedarf * (1 + p.pufferProzent / 100), 1) : ", kein Puffer") +
+      ", aufgerundet " + deZahl(p.menge) + ". Rest nach allen Vorgängen etwa " + deZahl(Math.floor(p.rest + 1e-9)) + ".\n\n" +
+      "Wer alles in EINEM Vorgang craften will, braucht die volle Rezeptmenge (" + voll + "). Die Kaufmenge (" + deZahl(p.menge) +
+      ") reicht nur, wenn in mehreren Durchgängen gecraftet und die Rückgewinnung wiederverwendet wird."
+    );
+  }
+
+  /** Aeltester Abruf unter den Preisen der Liste (Zutaten ohne eigenen Preis), null ohne Angabe. */
+  function einkaufslisteAeltester(liste) {
+    let t = null;
+    ((liste && liste.posten) || []).forEach((p) => {
+      if (p.abgerufenAm > 0 && (t == null || p.abgerufenAm < t)) t = p.abgerufenAm;
+    });
+    return t;
+  }
+
+  /** "Preise von 12:45" fuer die Einkaufsliste; weitereZeiten: Abrufzeiten der Verkaufspreise der geplanten Produkte. Leer ohne Angabe. */
+  function einkaufslisteAlterHtml(liste, weitereZeiten, esc) {
+    let t = einkaufslisteAeltester(liste);
+    (weitereZeiten || []).forEach((w) => {
+      if (w > 0 && (t == null || w < t)) t = w;
+    });
+    if (!(t > 0)) return "";
+    return (
+      "<span class='vd-klein cg-el-alter' title='" + esc("Ältester verwendeter Preis der Einkaufsliste (Zutaten und Verkaufspreise der geplanten Produkte): abgerufen " + V.abrufAlterText(t) + ". „Preise aktualisieren“ holt sie frisch.") + "'>Preise von " +
+      new Date(t).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) + "</span>"
+    );
+  }
+
+  /** Knopf "Preise aktualisieren" (beide Reiter), steht neben "Alles kopieren"; gesperrt, solange der Abruf laeuft. */
+  function einkaufslisteFrischKnopfHtml(attr, zustand, esc) {
+    const an = !!(zustand && zustand.laeuft);
+    return (
+      "<button type='button' class='mini' data-" + attr + "-preise-frisch='1'" + (an ? " disabled" : "") +
+      " title='" + esc("Holt die Preise der Zutaten dieser Liste (in den Einkaufsstädten) und die Verkaufspreise samt verkauft/Tag der geplanten Produkte (in den Verkaufsstädten) sofort frisch, auch wenn sie noch als frisch gelten. Danach rechnen die Zeilen und die Liste neu.") + "'>" +
+      (an ? "Aktualisiere ..." : "Preise aktualisieren") + "</button>"
+    );
+  }
+
+  /**
+   * Bedienzeile der Einkaufsliste (beide Reiter): Feld "Puffer %", Alter der
+   * Preise, Meldung des Abrufs. attr: Praefix der data-Attribute ("cg" oder
+   * "gl"); zustand: {laeuft, text, fehler}.
+   */
+  function einkaufslisteBedienHtml(liste, attr, zustand, weitereZeiten, esc) {
+    const zs = zustand || {};
+    return (
+      "<div class='cg-el-bedien'><label class='cg-el-puffer' title='" + esc(PUFFER_TITEL) + "'><span>Puffer %</span>" +
+      "<input type='number' min='0' max='" + PUFFER_MAX + "' step='0.5' value='" + liste.pufferProzent + "' data-" + attr + "-puffer='1' aria-label='Puffer der Einkaufsliste in Prozent'></label>" +
+      einkaufslisteAlterHtml(liste, weitereZeiten, esc) +
+      (zs.text ? "<span class='cg-el-meldung" + (zs.fehler ? " err" : "") + "' role='status'>" + esc(zs.text) + "</span>" : "") +
+      "</div>"
+    );
   }
 
   /**
@@ -597,18 +750,18 @@ const CRAFTEN = (function () {
       "<tfoot>" +
       zeile(
         "Einkauf gesamt" + (o.order ? " (inkl. 2,5 % Einstellgebühr)" : "") + (liste.vollstaendig ? "" : ", ohne Zutaten ohne Preis"),
-        "So viel Silber muss für die Zutaten vorgestreckt werden (Mengen vor Rückgewinnung). Die Rückgewinnung fließt beim Craften als Material zurück, nicht als Silber.",
+        "Kaufmenge mal Preis: so viel Silber kostet der Einkauf dieser Liste. Unterschied zu „Kosten nach Rückgewinnung“: hier fehlt die Stationsgebühr, dafür sind der Rest, der nach dem letzten Vorgang übrig bleibt, und der Puffer mitbezahlt.",
         liste.summe, "einkauf"
       ) +
       zeile(
         "Kosten nach Rückgewinnung" + luecke,
-        "Kosten/Stück der Zeilen mal Menge: Material nach Rückgewinnung plus Stationsgebühr. Die Rückgewinnung senkt den Betrag gegenüber dem Einkauf, die Stationsgebühr hebt ihn; bei hoher Gebühr kann er über dem Einkauf liegen.",
+        "Kosten/Stück der Zeilen mal Menge: verbrauchtes Material plus Stationsgebühr. Unterschied zu „Einkauf gesamt“: die Stationsgebühr kommt hinzu, der Wert des Rests (Rückgewinnung des letzten Vorgangs, Aufrundung) und des Puffers fällt weg, denn dieses Material bleibt im Lager.",
         liste.kostenNetto, "kosten"
       ) +
       zeile("Erlös gesamt" + luecke, "Nach Steuer, bei eigener Verkaufsorder auch nach 2,5 % Einstellgebühr, für die hergestellte Menge.", liste.erloes, "erloes") +
       zeile(
         "Gewinn gesamt",
-        "Erlös gesamt minus Kosten nach Rückgewinnung, also Gewinn/Stück der Zeilen mal Menge. Erlös minus Einkauf ergibt nicht den Gewinn, weil die Rückgewinnung erst beim Craften zurückfließt.",
+        "Erlös gesamt minus Kosten nach Rückgewinnung, also Gewinn/Stück der Zeilen mal Menge. Erlös minus Einkauf ergibt nicht den Gewinn: im Einkauf fehlt die Stationsgebühr, und der Rest bleibt als Material im Lager.",
         liste.gewinn, "gewinn", liste.gewinn >= 0 ? "gl-plus" : "gl-minus"
       ) +
       "</tfoot>"
@@ -819,7 +972,7 @@ const CRAFTEN = (function () {
       const barren = l.posten.find((p) => p.marktId === "BARREN");
       const fleisch = l.posten.find((p) => p.marktId === "FLEISCH");
       pruefe(
-        "einkaufsliste: Mengen vor Rueckgewinnung, gleiche Zutat zusammengezaehlt (3 x 16 + 20 Barren), Speisen in ganzen Vorgaengen (15 Stueck = 2 Vorgaenge)",
+        "einkaufsliste: Zeilen ohne Angabe zur Rueckgewinnung rechnen mit der vollen Menge, gleiche Zutat zusammengezaehlt (3 x 16 + 20 Barren), Speisen in ganzen Vorgaengen (15 Stueck = 2 Vorgaenge)",
         barren.menge === 68 && fleisch.menge === 144 && l.posten.length === 4 && l.fehlend.join() === "WEG" &&
           Math.abs(l.summe - (68 * 100 + 24 * 200 + 12 * 50 + 144 * 30)) < 1e-9,
         JSON.stringify(l.posten.map((p) => p.marktId + ":" + p.menge)) + " / " + l.summe
@@ -885,7 +1038,9 @@ const CRAFTEN = (function () {
       const planRef = { EINTOPF: 25, SCHWERT: 7, OHNEPREIS: 2, AXT: 3, LEER: 1, WEG: 4 };
       const alt = referenzV3120(zeilenRef, planRef);
       const neu = einkaufsliste(zeilenRef, planRef);
-      const kern = (x) => JSON.stringify({ posten: x.posten, fehlend: x.fehlend, summe: x.summe, vollstaendig: x.vollstaendig, produkte: x.produkte.map((p) => [p.marktId, p.item, p.stufe, p.tier, p.stueck, p.vorgaenge, p.ausbeute]) });
+      // O10: die Posten tragen neue Felder (bedarf, rest, ...); verglichen werden die Felder der Fassung v3.12.0. Die Testzeilen haben keine effektiveMenge, also r = 0: Kaufmenge = Rezeptmenge.
+      const postenAlt = (liste) => liste.map((p) => ({ marktId: p.marktId, n: p.n, stufe: p.stufe, stadt: p.stadt, menge: p.menge, basisPreis: p.basisPreis, preis: p.preis, kosten: p.kosten }));
+      const kern = (x) => JSON.stringify({ posten: postenAlt(x.posten), fehlend: x.fehlend, summe: x.summe, vollstaendig: x.vollstaendig, produkte: x.produkte.map((p) => [p.marktId, p.item, p.stufe, p.tier, p.stueck, p.vorgaenge, p.ausbeute]) });
       pruefe(
         "o5 einkaufsliste: nach dem Umbau dieselben Posten, Mengen, Kosten, Summe und Produkte wie die Fassung v3.12.0 (Referenz im Test, sechs geplante Produkte, eine Zutat ohne Preis, zwei fehlende)",
         kern(alt) === kern(neu) && alt.posten.length === 5 && alt.fehlend.join() === "LEER,WEG" && alt.vollstaendig === false &&
@@ -933,6 +1088,208 @@ const CRAFTEN = (function () {
           s5.ergebnisVollstaendig === false && s5.kostenNetto === 6300 && s5.erloes === 8100 && s5.gewinn === 1800 && s5.summe === 3 * 2800 + 2 * 400 &&
           /ohne Produkte ohne Verkaufspreis/.test(einkaufslisteSummenHtml(s5, { spalten: 3, order: true, fmt: String, esc: String })) && /Einstellgebühr/.test(einkaufslisteSummenHtml(s5, { spalten: 3, order: true, fmt: String, esc: String })),
         JSON.stringify(fussWerte)
+      );
+    })();
+
+    // ---- O10, Teil 2: Einkaufsliste mit Bedarf nach Rueckgewinnung ----
+    (function () {
+      const nahe = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-9 : tol);
+      // Gegenprobe Klerikerrobe T4.2 in Lymhurst (kein Stoffruestung-Bonus):
+      // 16 Stoff je Robe, r = 0,18 / 1,18, also 1 - r = 1 / 1,18 = 0,847458.
+      // 30 Roben: Bedarf 16 + 29 x 16 x 0,847458 = 409,22 -> 410; mit 2 %:
+      // 417,41 -> 418; mit 12,5 %: 460,37 -> 461. Rezeptmenge 480.
+      // Verbrauch 30 x 16 x 0,847458 = 406,78; Rest 410 - 406,78 = 3,22.
+      const robeK = kandidaten({ warengruppen: ["cloth_armor"], tiers: [4], stufen: [2], artefakte: false }).find((k) => k.item === "T4_ARMOR_CLOTH_SET2");
+      const stoffId = robeK ? marktIdVon(robeK.rezepte[0].zutaten[0].n, robeK.rezepte[0].zutaten[0].stufe) : "";
+      const spR = (p) => ({ sell: { preis: p, kein: false, datum: "" }, buy: { preis: null, kein: true, datum: "" }, abgerufenAm: 1700000000000 });
+      const datR = [{ stadt: "Lymhurst", preiseRoh: { [stoffId]: spR(1000) }, produktJeQ: { "T4_ARMOR_CLOTH_SET2@2": { 1: spR(30000) } }, absatz: {} }];
+      const aR = einstellungenBereinigen({ warengruppen: ["cloth_armor"], verkaufsweg: "order", mitFokus: false });
+      const eR = { premium: true, stationssaetze: { Magierturm: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null };
+      const zR = robeK ? zeilenRechnen([robeK], datR, aR, eR)[0] : null;
+      const zRF = robeK ? zeilenRechnen([robeK], datR, Object.assign({}, aR, { mitFokus: true }), eR)[0] : null;
+      const lst = (z, n, puffer) => einkaufsliste([z], { [z.marktId]: n }, null, puffer == null ? undefined : { pufferProzent: puffer });
+      const l0 = zR ? lst(zR, 30) : null;
+      const p0 = l0 ? l0.posten[0] : {};
+      pruefe(
+        "o10 einkaufsliste: Gegenprobe 30 Klerikerroben T4.2 (16 Stoff, r = 0,18 / 1,18): Bedarf 16 + 29 x 16 / 1,18 = 409,22, Kaufmenge 410 in der Vorgabe (Puffer 0), Rezeptmenge 480, Rest 3,22; Kosten und Summe = 410 x Preis",
+        !!zR && zR.zutatenPreise.length === 1 && zR.zutatenPreise[0].menge === 16 && nahe(zR.rrr, 0.18 / 1.18) && l0.pufferProzent === 0 && PUFFER_VORGABE === 0 &&
+          p0.menge === 410 && p0.mengeRezept === 480 && nahe(p0.bedarf, 16 + (29 * 16) / 1.18) && nahe(p0.bedarf, 409.22, 0.005) && nahe(p0.verbrauch, 480 / 1.18) && nahe(p0.rest, 410 - 480 / 1.18) && nahe(p0.rest, 3.22, 0.005) &&
+          p0.mitRueckgewinnung === true && p0.kosten === 410000 && l0.summe === 410000 && p0.abgerufenAm === 1700000000000,
+        JSON.stringify(p0)
+      );
+      pruefe(
+        "o10 einkaufsliste: Puffer 2 % ergibt 418 (409,22 x 1,02 = 417,41), 12,5 % ergibt 461 (460,37), 0 ergibt 410; der Puffer wird auf 0 bis 50 mit einer Nachkommastelle begrenzt",
+        !!zR && lst(zR, 30, 2).posten[0].menge === 418 && lst(zR, 30, 12.5).posten[0].menge === 461 && lst(zR, 30, 0).posten[0].menge === 410 && lst(zR, 30, 2).posten[0].pufferProzent === 2 &&
+          nahe(lst(zR, 30, 2).posten[0].rest, 418 - 480 / 1.18) && lst(zR, 30, 2).summe === 418000 &&
+          pufferBereinigen("12,54") === 12.5 && pufferBereinigen(99) === 50 && pufferBereinigen(-3) === 0 && pufferBereinigen("") === 0 && pufferBereinigen("x") === 0 && pufferBereinigen(null) === 0,
+        zR ? [lst(zR, 30, 2).posten[0].menge, lst(zR, 30, 12.5).posten[0].menge].join() : ""
+      );
+      pruefe(
+        "o10 einkaufsliste: ein einziger Vorgang braucht die volle Rezeptmenge (16); der Puffer wirkt dort nur ueber das Aufrunden (2 %: 16,32 -> 17)",
+        !!zR && lst(zR, 1).posten[0].menge === 16 && lst(zR, 1, 2).posten[0].menge === 17 && nahe(lst(zR, 1).posten[0].rest, 16 - 16 / 1.18),
+        zR ? lst(zR, 1, 2).posten[0].menge : ""
+      );
+      pruefe(
+        "o10 einkaufsliste: mit Fokus (B 0,77, 1 - r = 1 / 1,77) sinkt der Bedarf: 16 + 29 x 16 / 1,77 = 278,15 -> 279 statt 410",
+        !!zRF && nahe(zRF.rrr, 0.77 / 1.77) && nahe(lst(zRF, 30).posten[0].bedarf, 16 + (29 * 16) / 1.77) && lst(zRF, 30).posten[0].menge === 279,
+        zRF ? lst(zRF, 30).posten[0].bedarf : ""
+      );
+      // Zutat ohne Rueckgewinnung: Artefakt-Item, echte Zeile aus dem Rechenkern.
+      const artK = kandidaten({ warengruppen: ["sword"], tiers: [5], stufen: [0], artefakte: true }).find((k) => k.artefakt);
+      (function () {
+        const prA = {};
+        artK.rezepte.forEach((r) => r.zutaten.forEach((zt) => (prA[marktIdVon(zt.n, zt.stufe)] = spR(istArtefakt(zt.n) ? 50000 : 100))));
+        const zA = zeilenRechnen([artK], [{ stadt: "Lymhurst", preiseRoh: prA, produktJeQ: { [artK.marktId]: { 1: spR(900000) } }, absatz: {} }], einstellungenBereinigen({ warengruppen: ["sword"] }), { premium: true, stationssaetze: { Kriegerschmiede: 0 }, fce: 0, tagesbonus: {}, maxPreisAlterMin: null })[0];
+        const lA = einkaufsliste([zA], { [zA.marktId]: 5 }, null, { pufferProzent: 10 });
+        const art = lA.posten.find((p) => istArtefakt(p.n));
+        const mat = lA.posten.find((p) => !istArtefakt(p.n));
+        const xArt = zA.zutatenPreise.find((x) => istArtefakt(x.n));
+        pruefe(
+          "o10 einkaufsliste: Zutat ohne Rueckgewinnung (Artefakt von " + artK.item + "): volle Menge 5 x " + (xArt ? xArt.menge : "?") + ", kein Puffer trotz 10 %; das Material derselben Zeile bekommt Rueckgewinnung und Puffer",
+          !!art && !!mat && verbrauchsAnteil(xArt, 1) === 1 && art.menge === 5 * xArt.menge && art.mitRueckgewinnung === false && art.pufferProzent === 0 && art.rest === 0 &&
+            mat.mitRueckgewinnung === true && mat.pufferProzent === 10 && mat.menge < mat.mengeRezept && mat.menge === Math.ceil(mat.bedarf * 1.1 - 1e-9),
+          JSON.stringify([art, mat].map((p) => p && [p.marktId, p.menge, p.mengeRezept, p.pufferProzent]))
+        );
+      })();
+      // Zwei Produkte teilen eine Zutat (synthetische Zeilen, effektiveMenge je Stueck):
+      //   A: 3 Vorgaenge, 16 Barren, 1 - r = 0,75: Bedarf 16 + 2 x 12 = 40, Verbrauch 36
+      //   B: 2 Vorgaenge, 20 Barren ohne Rueckgewinnung: Bedarf 40, Verbrauch 40
+      //   Summe 80; Puffer 10 % (weil A Rueckgewinnung hat): 88; Rest 88 - 76 = 12
+      //   C (Speise, Ausbeute 10): 15 Stueck = 2 Vorgaenge, 72 Fleisch je Vorgang,
+      //   effektiveMenge 7,2 / 1,18 je Stueck: Bedarf 72 + 72 / 1,18 = 133,02; mit 10 %: 146,32 -> 147
+      const zq = (n, menge, eff, preis) => ({ n, stufe: 0, marktId: n, menge, effektiveMenge: eff, preis, basisPreis: preis, stadt: "Lymhurst" });
+      const zwei = [
+        { marktId: "A", item: "A", stufe: 0, ausbeute: 1, zutatenPreise: [zq("BARREN", 16, 12, 100)] },
+        { marktId: "B", item: "B", stufe: 0, ausbeute: 1, zutatenPreise: [zq("BARREN", 20, 20, 100)] },
+        { marktId: "C", item: "C", stufe: 0, ausbeute: 10, zutatenPreise: [zq("FLEISCH", 72, 7.2 / 1.18, 30)] },
+      ];
+      const l2 = einkaufsliste(zwei, { A: 3, B: 2, C: 15 }, null, { pufferProzent: 10 });
+      const l2o = einkaufsliste(zwei, { A: 3, B: 2, C: 15 });
+      const bar = l2.posten.find((p) => p.marktId === "BARREN");
+      const fl = l2.posten.find((p) => p.marktId === "FLEISCH");
+      pruefe(
+        "o10 einkaufsliste: zwei Produkte teilen eine Zutat (40 + 40 = 80, mit 10 % Puffer 88, Rest 12; ohne Puffer 80, Rest 4); Speise mit Ausbeute 10: 15 Stueck = 2 Vorgaenge, Bedarf 72 + 72 / 1,18 = 133,02 -> 134, mit 10 %: 147",
+        bar.menge === 88 && nahe(bar.bedarf, 80) && nahe(bar.verbrauch, 76) && nahe(bar.rest, 12) && bar.mengeRezept === 88 && bar.kosten === 8800 &&
+          l2o.posten.find((p) => p.marktId === "BARREN").menge === 80 && nahe(l2o.posten.find((p) => p.marktId === "BARREN").rest, 4) &&
+          l2.produkte[2].vorgaenge === 2 && fl.mengeRezept === 144 && nahe(fl.bedarf, 72 + 72 / 1.18) && fl.menge === 147 && l2o.posten.find((p) => p.marktId === "FLEISCH").menge === 134 &&
+          l2.summe === 8800 + 147 * 30,
+        JSON.stringify(l2.posten.map((p) => [p.marktId, p.menge, p.bedarf, p.rest]))
+      );
+      const alleListen = [l2, l2o].concat(zR ? [l0, lst(zR, 30, 2), lst(zR, 1), lst(zR, 7, 0.5), lst(zRF, 30, 50)] : []);
+      pruefe(
+        "o10 einkaufsliste: der erwartete Rest ist nie negativ und die Kaufmenge nie groesser als Rezeptmenge mal (1 + Puffer), in allen Listen dieser Tests",
+        alleListen.every((l) => l.posten.every((p) => p.rest >= 0 && p.menge >= p.verbrauch - 1e-9 && Number.isInteger(p.menge) && p.menge <= Math.ceil(p.mengeRezept * (1 + p.pufferProzent / 100)))),
+        alleListen.length + " Listen"
+      );
+      pruefe(
+        "o10 einkaufslisteText: der Kopiertext nennt die Kaufmengen (88 Barren, 147 Fleisch)",
+        einkaufslisteText(l2, (n) => n) === "88\tBARREN\n147\tFLEISCH" && (!zR || einkaufslisteText(l0, () => "Stoff") === "410\tStoff"),
+        einkaufslisteText(l2, (n) => n)
+      );
+      const tt = zR ? einkaufslisteMengeTitel(p0) : "";
+      const tt2 = zR ? einkaufslisteMengeTitel(lst(zR, 30, 2).posten[0]) : "";
+      pruefe(
+        "o10 einkaufsliste: Tooltip der Menge nennt Rezeptmenge 480, Bedarf 409,2, Puffer, Rest und den Hinweis auf EINEN Vorgang; das Label nennt den Puffer nur, wenn er gesetzt ist",
+        /480/.test(tt) && /409,2/.test(tt) && /kein Puffer/.test(tt) && /Rest nach allen Vorgängen etwa 3\./.test(tt) && /EINEM Vorgang/.test(tt) && /Puffer 2 %: 417,4/.test(tt2) && /etwa 11\./.test(tt2) &&
+          einkaufslisteLabel(l0) === "Bedarf nach Rückgewinnung" && einkaufslisteLabel(lst(zR, 30, 2)) === "Bedarf nach Rückgewinnung, Puffer 2 %" && einkaufslisteLabel(lst(zR, 30, 12.5)) === "Bedarf nach Rückgewinnung, Puffer 12,5 %" &&
+          /keine Rückgewinnung/.test(einkaufslisteMengeTitel({ mengeRezept: 5, mitRueckgewinnung: false })),
+        tt
+      );
+      const bed = einkaufslisteBedienHtml(l0, "cg", { laeuft: false, text: "Fehlertext", fehler: true }, [1600000000000], (t) => String(t));
+      pruefe(
+        "o10 einkaufsliste: Bedienzeile mit Feld Puffer (0 bis 50), Alter des aeltesten Preises (\"Preise von hh:mm\", hier der Verkaufspreis, aelter als der Stoff) und Fehlertext; der Knopf ist waehrend des Abrufs gesperrt",
+        /data-cg-puffer='1'/.test(bed) && /max='50'/.test(bed) && /value='0'/.test(bed) && /Preise von \d\d:\d\d/.test(bed) && /cg-el-meldung err/.test(bed) && /Fehlertext/.test(bed) &&
+          einkaufslisteAeltester(l0) === 1700000000000 && / disabled/.test(einkaufslisteFrischKnopfHtml("gl", { laeuft: true }, String)) && !/ disabled/.test(einkaufslisteFrischKnopfHtml("gl", { laeuft: false }, String)) &&
+          /data-gl-preise-frisch='1'/.test(einkaufslisteFrischKnopfHtml("gl", null, String)),
+        bed.slice(0, 200)
+      );
+      const sd = stadtDatenMischen(
+        [{ stadt: "Lymhurst", preiseRoh: { A: 1, B: 2 }, produktJeQ: { P: 1, Q: 2 }, absatz: { P: 1 } }, { stadt: "Martlock", preiseRoh: { A: 5 } }],
+        [{ stadt: "Lymhurst", preiseRoh: { A: 9 }, produktJeQ: { P: 8 }, absatz: { P: 7 }, zutatAbsatz: { A: 6 } }, { stadt: "Thetford", preiseRoh: { A: 0 } }]
+      );
+      pruefe(
+        "o10 stadtDatenMischen: frisch geholte Werte ersetzen nur ihre IDs, der Rest der letzten Suche bleibt",
+        JSON.stringify(sd) === JSON.stringify([{ stadt: "Lymhurst", preiseRoh: { A: 9, B: 2 }, produktJeQ: { P: 8, Q: 2 }, absatz: { P: 7 }, zutatAbsatz: { A: 6 } }, { stadt: "Martlock", preiseRoh: { A: 5 } }]),
+        JSON.stringify(sd)
+      );
+    })();
+
+    // ---- O10, Teil 1: Verkaufspreis absichern ----
+    (function () {
+      const nahe = (a, b) => Math.abs(a - b) < 1e-6;
+      const mit = (jeQ, absatzJeQ) => [Object.assign({}, stadtDaten[0], { produktJeQ: { T5_MAIN_SWORD: jeQ }, absatz: { T5_MAIN_SWORD: absatzJeQ } })];
+      const h = (stueck, p) => ({ stueckJeTag: stueck, mengengewichteterPreis: p });
+      const basis = zeilenRechnen([kBreit], stadtDaten, auswahl, einst)[0];
+      // Scherzangebot: 31.111.111 als einziges Angebot, gehandelt fuer 82.000.
+      const scherz = zeilenRechnen([kBreit], mit({ 1: sp(31111111) }, { 1: h(500, 82000) }), auswahl, einst)[0];
+      pruefe(
+        "o10 zeilenRechnen: Scherzangebot (Angebot 31.111.111, gehandelt 82.000): verwendet 82.000, Quelle \"handel\", Erloes 82.000 x 0,935 = 76.670; Kosten unveraendert",
+        scherz.produktPreis === 82000 && scherz.produktPreisAngebot === 31111111 && scherz.produktPreisHandel === 82000 && scherz.preisQuelle === "handel" && scherz.preisUnsicher === false &&
+          nahe(scherz.erloes, 76670) && nahe(scherz.gewinn, 76670 - 3200 / 1.33) && scherz.silber === basis.silber && nahe(scherz.gewinnJeTag, scherz.gewinn * 0.25 * 500),
+        JSON.stringify([scherz.produktPreis, scherz.preisQuelle, scherz.erloes])
+      );
+      const drunter = zeilenRechnen([kBreit], mit({ 1: sp(80997) }, { 1: h(500, 82000) }), auswahl, einst)[0];
+      const gleich = zeilenRechnen([kBreit], mit({ 1: sp(82000) }, { 1: h(500, 82000) }), auswahl, einst)[0];
+      pruefe(
+        "o10 zeilenRechnen: Angebot unter dem Handelspreis (80.997 gegen 82.000): das Angebot zaehlt, Quelle \"angebot\", nicht unsicher; bei Gleichstand ebenso",
+        drunter.produktPreis === 80997 && drunter.preisQuelle === "angebot" && drunter.produktPreisHandel === 82000 && drunter.preisUnsicher === false && nahe(drunter.erloes, 80997 * 0.935) &&
+          gleich.preisQuelle === "angebot" && gleich.produktPreis === 82000,
+        JSON.stringify([drunter.produktPreis, drunter.preisQuelle])
+      );
+      const ohneHandel = zeilenRechnen([kBreit], mit({ 1: sp(31111111) }, {}), auswahl, einst)[0];
+      const nurGutHandel = zeilenRechnen([kBreit], mit({ 1: sp(5000) }, { 2: h(9, 100) }), auswahl, einst)[0];
+      const ohnePreisfeld = zeilenRechnen([kBreit], mit({ 1: sp(5000) }, { 1: { stueckJeTag: 0, mengengewichteterPreis: null } }), auswahl, einst)[0];
+      pruefe(
+        "o10 zeilenRechnen: kein erfasster Handel in Normal (gar keiner, nur in Gut, oder 0 Stueck): das Angebot bleibt, preisUnsicher",
+        ohneHandel.produktPreis === 31111111 && ohneHandel.preisQuelle === "angebot" && ohneHandel.produktPreisHandel === null && ohneHandel.preisUnsicher === true &&
+          nurGutHandel.produktPreis === 5000 && nurGutHandel.preisUnsicher === true && ohnePreisfeld.preisUnsicher === true && ohnePreisfeld.produktPreis === 5000 && basis.preisUnsicher === true,
+        JSON.stringify([ohneHandel.produktPreis, ohneHandel.preisUnsicher, nurGutHandel.preisUnsicher])
+      );
+      // Heiligenstab-Fall: billigstes (einziges) Angebot ist Exzellent 69.958, gehandelt wird Normal fuer 30.000.
+      const exz = zeilenRechnen([kBreit], mit({ 4: sp(69958) }, { 1: h(12, 30000), 4: h(1, 70000) }), auswahl, einst)[0];
+      const exzOhne = zeilenRechnen([kBreit], mit({ 4: sp(69958) }, { 4: h(1, 70000) }), auswahl, einst)[0];
+      pruefe(
+        "o10 zeilenRechnen: qualifizierbares Produkt, billigstes Angebot Exzellent 69.958, Handel Normal 30.000: verwendet 30.000 (Quelle \"handel\", das Angebot bleibt als produktPreisAngebot und sellQualitaet 4 sichtbar); ohne Normal-Handel bleibt 69.958 und die Zeile ist unsicher",
+        exz.qualifizierbar && exz.produktPreis === 30000 && exz.preisQuelle === "handel" && exz.produktPreisAngebot === 69958 && exz.sellQualitaet === 4 && nahe(exz.erloes, 30000 * 0.935) &&
+          exzOhne.produktPreis === 69958 && exzOhne.preisUnsicher === true && exzOhne.preisQuelle === "angebot",
+        JSON.stringify([exz.produktPreis, exz.preisQuelle, exzOhne.produktPreis])
+      );
+      // Sofortverkauf: ueberhoehte Kauforder 5.000.000 in Normal, gehandelt 30.000; nur Steuer 4 %.
+      const sofort = Object.assign({}, auswahl, { verkaufsweg: "sofort" });
+      const kauf = (sell, buy) => ({ sell: { preis: sell, kein: false, datum: "" }, buy: { preis: buy, kein: false, datum: "" } });
+      const ueber = zeilenRechnen([kBreit], mit({ 1: kauf(40000, 5000000) }, { 1: h(50, 30000) }), sofort, einst)[0];
+      const normalSofort = zeilenRechnen([kBreit], mit({ 1: kauf(40000, 25000) }, { 1: h(50, 30000) }), sofort, einst)[0];
+      pruefe(
+        "o10 zeilenRechnen: Sofortverkauf mit ueberhoehter Kauforder (5.000.000 gegen gehandelte 30.000): verwendet 30.000, Erloes 30.000 x 0,96; eine Kauforder unter dem Handelspreis (25.000) zaehlt selbst",
+        ueber.produktPreis === 30000 && ueber.preisQuelle === "handel" && ueber.produktPreisAngebot === 5000000 && nahe(ueber.erloes, 28800) &&
+          normalSofort.produktPreis === 25000 && normalSofort.preisQuelle === "angebot" && nahe(normalSofort.erloes, 24000),
+        JSON.stringify([ueber.produktPreis, ueber.erloes, normalSofort.produktPreis])
+      );
+      // Zwei Verkaufsstaedte: die Stadtwahl laeuft ueber den abgesicherten Preis.
+      const zweiVk = zeilenRechnen(
+        [kBreit],
+        [
+          Object.assign({}, stadtDaten[0], { produktJeQ: { T5_MAIN_SWORD: { 1: sp(31111111) } }, absatz: { T5_MAIN_SWORD: { 1: h(500, 82000) } } }),
+          { stadt: "Martlock", produktJeQ: { T5_MAIN_SWORD: { 1: sp(90000) } }, absatz: { T5_MAIN_SWORD: { 1: h(40, 95000) } } },
+        ],
+        Object.assign({}, auswahl, { verkaufStaedte: ["Lymhurst", "Martlock"] }),
+        einst
+      )[0];
+      pruefe(
+        "o10 zeilenRechnen: zwei Verkaufsstaedte, das Scherzangebot in Lymhurst gewinnt die Stadtwahl nicht mehr: Martlock mit echten 90.000 schlaegt Lymhurst mit abgesicherten 82.000",
+        zweiVk.vkStadt === "Martlock" && zweiVk.produktPreis === 90000 && zweiVk.preisQuelle === "angebot" && zweiVk.stueckJeTag === 40 &&
+          nahe(zweiVk.vkAlle.find((a) => a.stadt === "Lymhurst").netto, 76670),
+        JSON.stringify([zweiVk.vkStadt, zweiVk.produktPreis])
+      );
+      const fmtT = (n) => String(Math.round(n));
+      const kz = V.preisKennzeichen(scherz, fmtT);
+      const kzU = V.preisKennzeichen(ohneHandel, fmtT);
+      const kzA = V.preisKennzeichen(drunter, fmtT);
+      pruefe(
+        "o10 preisKennzeichen: \"gehandelt\" mit beiden Werten im Tooltip, \"?\" bei unsicherem Preis, nichts Sichtbares, wenn das Angebot zaehlt",
+        /vd-preis-handel/.test(kz.html) && /gehandelt/.test(kz.html) && /82000/.test(kz.titel) && /31111111/.test(kz.titel) && /niedrigere/.test(kz.titel) &&
+          /vd-preis-unsicher/.test(kzU.html) && /unsicher/.test(kzU.titel) && kzA.html === "" && /82000/.test(kzA.titel) && V.preisKennzeichen(null, fmtT).html === "",
+        kz.html + " / " + kzU.html
       );
     })();
 
@@ -1074,6 +1431,29 @@ const CRAFTEN = (function () {
         viele.length > 100 && abweichend.length === 0,
         abweichend.slice(0, 5).join(", ")
       );
+      // O10: liegt der Handelspreis nicht unter dem Angebot, aendert die Absicherung nichts (die Rechnung oben laeuft ohne Handelspreis und entspricht der Fassung vor O10).
+      (function () {
+        const abH = {};
+        ids.produkte.forEach((id, i) => (abH[id] = { 1: { stueckJeTag: 9, mengengewichteterPreis: prP[id][1].sell.preis + (i % 3 === 0 ? 0 : 1 + i) } }));
+        const datH = [{ stadt: "Lymhurst", preiseRoh: prZ, produktJeQ: prP, absatz: abH }];
+        const anders = [];
+        let n = 0;
+        [false, true].forEach((mitFokus) => {
+          const a = Object.assign({}, auswahl, { mitFokus });
+          const ohne = zeilenRechnen(viele, datV, a, e3);
+          const mitH = zeilenRechnen(viele, datH, a, e3);
+          ohne.forEach((z, i) => {
+            n++;
+            const m = mitH[i];
+            if (["silber", "erloes", "gewinn", "marge", "produktPreis", "rezeptIndex"].some((f) => String(z[f]) !== String(m[f])) || m.preisQuelle !== "angebot" || m.preisUnsicher || !z.preisUnsicher) anders.push(z.marktId);
+          });
+        });
+        pruefe(
+          "o10 Vorher-Nachher: mit Handelspreis gleich oder ueber dem Angebot sind Kosten, Erloes, Gewinn, Marge und Preis zeichengleich zur Rechnung ohne Handelspreis (" + n + " Zeilen, mit und ohne Fokus)",
+          n > 200 && anders.length === 0,
+          anders.slice(0, 5).join(", ")
+        );
+      })();
 
       const alt1 = einstellungenBereinigen({ sortierung: "marge" });
       const bewusst = einstellungenBereinigen(Object.assign({}, alt1, { sortierung: "marge" }));
@@ -1161,6 +1541,35 @@ const CRAFTEN = (function () {
       return eintrag;
     });
     return { stadtDaten, ids, abrufe: PREISE.abrufZaehler() - start };
+  }
+
+  /**
+   * O10: "Preise aktualisieren" der Einkaufsliste. Holt fuer die geplanten
+   * Produkte (plan: Markt-ID -> Stueck) sofort frisch, was datenAbrufen()
+   * sonst aus dem Bestand naehme: Zutatenpreise in den Einkaufsstaedten,
+   * Verkaufspreise aller Qualitaeten und verkauft/Tag in den Verkaufsstaedten
+   * (dazu verkauft/Tag der Zutaten, wie jede Suche). Keine eigene
+   * Abrufschicht: datenAbrufen() mit frisch = true, Vordergrund ueber den
+   * Planer. Bei Artefakt-Items gehoeren die Zutaten beider Rezepte dazu,
+   * weil die Zeile das billigere waehlt.
+   * @returns {Promise<?object>} Ergebnis von datenAbrufen() oder null, wenn kein geplantes Produkt unter den Kandidaten ist
+   */
+  async function planAktualisieren(kand, auswahl, plan, opts) {
+    const geplant = (kand || []).filter((k) => plan && plan[k.marktId] > 0);
+    if (!geplant.length) return null;
+    return datenAbrufen(geplant, auswahl, Object.assign({}, opts || {}, { frisch: true }));
+  }
+
+  /** Frisch geholte stadtDaten (Teilmenge der IDs) in die Daten der letzten Suche einsetzen. */
+  function stadtDatenMischen(ziel, neu) {
+    (neu || []).forEach((n) => {
+      const a = (ziel || []).find((x) => x.stadt === n.stadt);
+      if (!a) return;
+      ["preiseRoh", "produktJeQ", "absatz", "zutatAbsatz"].forEach((f) => {
+        if (n[f]) a[f] = Object.assign({}, a[f] || {}, n[f]);
+      });
+    });
+    return ziel;
   }
 
   function boot() {
@@ -1458,6 +1867,12 @@ const CRAFTEN = (function () {
         planSetzen(zaehlerEl.dataset.cgPlan, ev.target.value);
         return;
       }
+      // O10: Puffer der Einkaufsliste, gemeinsam mit "Gelegenheiten".
+      if (ev.target.closest("input[data-cg-puffer]")) {
+        pufferSetzen(ev.target.value, "craften");
+        listeRendern();
+        return;
+      }
       const preisEl = ev.target.closest("input[data-vd-markt]");
       if (preisEl) {
         const stadt = preisEl.dataset.vdStadt;
@@ -1545,7 +1960,11 @@ const CRAFTEN = (function () {
         return;
       }
       if (ev.target.closest("button[data-cg-alle-kopieren]")) {
-        kopieren(einkaufslisteText(einkaufsliste(letzteZeilen ? letzteZeilen.zeilen : [], auswahl.plan), (n, st) => suchName(nameVon(n, st), n, st)), ev.target.closest("button"));
+        kopieren(einkaufslisteText(planListe(), (n, st) => suchName(nameVon(n, st), n, st)), ev.target.closest("button"));
+        return;
+      }
+      if (ev.target.closest("button[data-cg-preise-frisch]")) {
+        listePreiseAktualisieren();
         return;
       }
       const weg = ev.target.closest("button[data-cg-weg]");
@@ -1555,7 +1974,7 @@ const CRAFTEN = (function () {
       }
       if (ev.target.closest("button[data-cg-leeren]") || ev.target.closest("button[data-cg-fehlend-weg]")) {
         const nurFehlend = !!ev.target.closest("button[data-cg-fehlend-weg]");
-        const ids = nurFehlend ? einkaufsliste(letzteZeilen ? letzteZeilen.zeilen : [], auswahl.plan).fehlend : Object.keys(auswahl.plan);
+        const ids = nurFehlend ? planListe().fehlend : Object.keys(auswahl.plan);
         ids.forEach((id) => planSetzen(id, 0));
         return;
       }
@@ -1600,6 +2019,12 @@ const CRAFTEN = (function () {
       if (ev.detail && ev.detail.quelle === "craften") return;
       anteilSetzen();
       rechnen();
+    });
+
+    // O10: Puffer in der Einkaufsliste von "Gelegenheiten" geaendert.
+    document.addEventListener(LISTE_EVENT, (ev) => {
+      if (ev.detail && ev.detail.quelle === "craften") return;
+      listeRendern();
     });
 
     function alterText(min) {
@@ -1736,10 +2161,50 @@ const CRAFTEN = (function () {
     // v3.19.0: nach veredeln.js gezogen, damit "Gelegenheiten" dieselbe Funktion nutzt.
     const kopieren = V.kopieren;
 
+    /** Die Einkaufsliste des Reiters mit dem gemeinsamen Puffer (O10). */
+    function planListe() {
+      return einkaufsliste(letzteZeilen ? letzteZeilen.zeilen : [], auswahl.plan, null, { pufferProzent: pufferLesen() });
+    }
+
+    // O10: Knopf "Preise aktualisieren" der Einkaufsliste.
+    let listeZustand = { laeuft: false, text: "", fehler: false };
+    async function listePreiseAktualisieren() {
+      if (listeZustand.laeuft) return;
+      if (laeuft || !daten || !datenReichen()) {
+        listeZustand = { laeuft: false, fehler: true, text: laeuft ? "Die Suche läuft noch." : "Erst „Gelegenheiten suchen“: die Auswahl hat sich seit der letzten Suche geändert." };
+        listeRendern();
+        return;
+      }
+      listeZustand = { laeuft: true, text: "Preise werden abgerufen ...", fehler: false };
+      listeRendern();
+      try {
+        const ziel = daten;
+        const geholt = await planAktualisieren(kandidaten(auswahl), auswahl, auswahl.plan, {
+          aufStatus: (text) => {
+            listeZustand.text = text;
+            const m = listeEl.querySelector(".cg-el-meldung");
+            if (m) m.textContent = text;
+          },
+        });
+        if (!geholt) listeZustand = { laeuft: true, fehler: true, text: "Keines der geplanten Produkte liegt in der aktuellen Suche." };
+        else {
+          stadtDatenMischen(ziel.stadtDaten, geholt.stadtDaten);
+          listeZustand = { laeuft: true, fehler: false, text: geholt.abrufe + (geholt.abrufe === 1 ? " Abruf" : " Abrufe") + ", Preise aktualisiert." };
+        }
+      } catch (e) {
+        listeZustand = { laeuft: true, fehler: true, text: "Preise nicht aktualisiert: " + (e && e.message ? e.message : e) };
+        if (typeof console !== "undefined") console.warn(e);
+      } finally {
+        listeZustand.laeuft = false;
+        if (!listeZustand.fehler && !rechnen()) listeRendern();
+        else if (listeZustand.fehler) listeRendern();
+      }
+    }
+
     function listeRendern() {
       if (!listeEl) return;
       const zeilen = letzteZeilen ? letzteZeilen.zeilen : [];
-      const liste = einkaufsliste(zeilen, auswahl.plan);
+      const liste = planListe();
       if (!Object.keys(auswahl.plan).length) {
         listeEl.hidden = true;
         listeEl.innerHTML = "";
@@ -1764,7 +2229,7 @@ const CRAFTEN = (function () {
           return (
             "<tr><td><div class='cg-el-name'>" + icon(x.n, 30, name) + "<span>" + esc(name) + "</span>" +
             "<button type='button' class='mini cg-kopie' data-cg-kopie='" + esc(suchName(name, x.n, x.stufe)) + "' title='„" + esc(suchName(name, x.n, x.stufe)) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button></div></td>" +
-            "<td class='num'>" + Math.round(x.menge).toLocaleString("de-DE") + "</td>" +
+            "<td class='num cg-el-menge' title='" + esc(einkaufslisteMengeTitel(x)) + "'>" + Math.round(x.menge).toLocaleString("de-DE") + "</td>" +
             (mehrEk ? "<td>" + stadtSchild(x.stadt, "Günstigste angehakte Einkaufsstadt. " + TRANSPORT) + "</td>" : "") +
             "<td class='num'>" + (x.basisPreis != null ? fmt(x.basisPreis) : "k. A.") + "</td>" +
             "<td class='num'>" + fmt(x.kosten) + "</td></tr>"
@@ -1776,14 +2241,22 @@ const CRAFTEN = (function () {
           " in der aktuellen Suche nicht enthalten und fehlen in der Liste: " + liste.fehlend.map((id) => esc(namenNachMarktId[id] || id)).join(", ") +
           ". <button type='button' class='mini' data-cg-fehlend-weg='1' title='Nimmt diese Produkte aus der Planung. Die übrige Liste bleibt.'>Entfernen</button></div>"
         : "";
+      // Abrufzeiten der Verkaufspreise der geplanten Produkte, fuer "Preise von 12:45".
+      const vkZeiten = [];
+      liste.produkte.forEach((p) => {
+        const z = zeilen.find((x) => x.marktId === p.marktId);
+        if (z) produktBestand(z).preise.forEach((e) => vkZeiten.push(e && e.abgerufenAm));
+      });
       listeEl.innerHTML =
         "<div class='cg-el-kopf'><h2 class='vd-kt'>Einkaufsliste</h2>" +
-        "<span class='vd-klein' title='Mengen, die für die geplanten Crafts im Inventar liegen müssen. Die Rückgewinnung gibt einen Teil davon nach dem Craften zurück; die Kosten in der Tabelle oben sind deshalb niedriger.'>vor Rückgewinnung</span>" +
+        "<span class='vd-klein cg-el-label' title='" + esc(LISTE_LABEL_TITEL) + "'>" + esc(einkaufslisteLabel(liste)) + "</span>" +
         "<span class='cg-el-knoepfe'><button type='button' class='mini' data-cg-alle-kopieren='1' title='Alle Zeilen als „Menge Name 4.1“ kopieren'>Alles kopieren</button>" +
+        einkaufslisteFrischKnopfHtml("cg", listeZustand, esc) +
         "<button type='button' class='mini' data-cg-leeren='1' title='Setzt alle Zähler auf 0 und leert die Einkaufsliste.'>Liste leeren</button></span></div>" +
+        einkaufslisteBedienHtml(liste, "cg", listeZustand, vkZeiten, esc) +
         "<div class='cg-plan'>" + produkte + "</div>" + fehlt +
         (liste.posten.length
-          ? "<div class='vd-tabrahmen'><table class='vd-tabelle cg-el-tabelle'><thead><tr><th>Zutat</th><th class='num'>Menge</th>" +
+          ? "<div class='vd-tabrahmen'><table class='vd-tabelle cg-el-tabelle'><thead><tr><th>Zutat</th><th class='num' title='Kaufmenge: Bedarf nach Rückgewinnung, aufgerundet. Einzelheiten je Zeile im Tooltip der Zahl.'>Menge</th>" +
             (mehrEk ? "<th>Stadt</th>" : "") + "<th class='num'>" + (order ? "Orderpreis" : "Preis") + "/Stück</th><th class='num'>Kosten</th></tr></thead><tbody>" +
             zeilenHtml + "</tbody>" + einkaufslisteSummenHtml(liste, { spalten: mehrEk ? 4 : 3, order, fmt, esc }) + "</table></div>"
           : "");
@@ -1825,10 +2298,12 @@ const CRAFTEN = (function () {
           const name = nameVon(z.item, z.stufe);
           const tierTitel = z.ausbeute > 1 ? "Ein Vorgang ergibt " + z.ausbeute + " Stück." : "";
           const fokus = z.fokusJeVorgang > 0 ? "<div class='vd-klein vd-umbruch'>" + fmtFokus(z.fokusJeVorgang) + "&nbsp;Fokus je&nbsp;Vorgang</div>" : "";
+          // O10: der Zusatz "(Exzellent)" bleibt nur, wenn wirklich ein Angebot dieser Qualitaet den Preis setzt.
           const qText =
-            kontext.verkaufsweg === "order" && z.qualifizierbar && z.sellQualitaet > 1
+            kontext.verkaufsweg === "order" && z.qualifizierbar && z.sellQualitaet > 1 && z.preisQuelle !== "handel"
               ? ", günstigstes Angebot in " + REGELN.QUALITAETEN[z.sellQualitaet - 1] + " (unter Normal)"
               : "";
+          const pk = V.preisKennzeichen(z, fmt);
           const pb = produktBestand(z);
           const preisAbruf = V.abrufAlterText(V.aeltesteAbrufzeit(pb.preise));
           const volAbruf = V.abrufAlterText(V.aeltesteAbrufzeit(pb.absatz));
@@ -1852,7 +2327,7 @@ const CRAFTEN = (function () {
                 : "Erlös je Stück nach Steuer" + (kontext.verkaufsweg === "order" ? " und 2,5 % Einstellgebühr" : "")
             ) +
             "'>" + fmt(z.erloes) + "</div>" +
-            "<div class='vd-klein' title='" + esc(preisTitel) + "'>Preis " + fmt(z.produktPreis) + (qText ? " (" + REGELN.QUALITAETEN[z.sellQualitaet - 1] + ")" : "") + "</div>" +
+            "<div class='vd-klein" + (pk.html ? " vd-umbruch" : "") + "' title='" + esc(preisTitel + (pk.titel ? ". " + pk.titel : "")) + "'><span class='vd-nw'>Preis " + fmt(z.produktPreis) + (qText ? " (" + REGELN.QUALITAETEN[z.sellQualitaet - 1] + ")" : "") + "</span>" + pk.html + "</div>" +
             (kontext.mehrVk ? "<div>" + stadtSchild(z.vkStadt, "Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "</div>" : "") +
             "</td>" +
             "<td class='num' title='" + esc(volTitel) + "'>" + stueck(z.stueckJeTag) + "</td>" +
@@ -2005,6 +2480,21 @@ const CRAFTEN = (function () {
     einkaufslisteSummenHtml,
     suchName,
     einkaufslisteText,
+    LISTE_KEY,
+    LISTE_EVENT,
+    PUFFER_VORGABE,
+    pufferBereinigen,
+    pufferLesen,
+    pufferSetzen,
+    verbrauchsAnteil,
+    einkaufslisteLabel,
+    LISTE_LABEL_TITEL,
+    einkaufslisteMengeTitel,
+    einkaufslisteAeltester,
+    einkaufslisteBedienHtml,
+    einkaufslisteFrischKnopfHtml,
+    planAktualisieren,
+    stadtDatenMischen,
     datenAbrufen,
     selbsttest,
   };

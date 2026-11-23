@@ -97,6 +97,7 @@ const GELEGENHEITEN = (function () {
       scanAn: true,
       scanAuchVerborgen: false,
       einstellungenOffen: false, // der eingeklappte Block ueber der Rangliste
+      unsichereZeigen: false, // O10: Zeilen ohne Handelspreis zum Abgleich (preisUnsicher) auch zeigen
       plan: {}, // v3.19.0 (O5): Zeilenschluessel -> geplante Stueckzahl (Einkaufsliste)
       merkliste: {}, // v3.19.0 (O5): Zeilenschluessel -> Zahlen im Moment des Merkens, s. merkEintrag()
     };
@@ -223,6 +224,7 @@ const GELEGENHEITEN = (function () {
       scanAn: roh.scanAn == null ? true : !!roh.scanAn,
       scanAuchVerborgen: !!roh.scanAuchVerborgen,
       einstellungenOffen: !!roh.einstellungenOffen,
+      unsichereZeigen: !!roh.unsichereZeigen,
       plan: planBereinigen(roh.plan),
       merkliste: merklisteBereinigen(roh.merkliste),
     };
@@ -522,11 +524,15 @@ const GELEGENHEITEN = (function () {
    * Die Rangliste: nur Zeilen mit Gewinn, mindestens minAbsatz verkauft/Tag
    * (Pflichtfilter, ohne erfassten Handel faellt die Zeile ab minAbsatz > 0
    * heraus), gefiltert nach Art, sortiert.
-   * @returns {{zeilen:object[], ausgeblendet:number}} ausgeblendet = Zeilen mit Gewinn unter dem Volumenfilter
+   * O10: Zeilen mit unsicherem Preis (preisUnsicher: Angebot ohne erfassten
+   * Handel zum Abgleich) fallen in der Vorgabe heraus und werden gezaehlt;
+   * e.unsichereZeigen laesst sie stehen.
+   * @returns {{zeilen:object[], ausgeblendet:number, unsicher:number}} ausgeblendet = Zeilen mit Gewinn unter dem Volumenfilter; unsicher = Zeilen, die sonst blieben, mit unsicherem Preis (auch wenn sie gezeigt werden)
    */
   function filtereUndSortiere(zeilen, e) {
     const min = e.minAbsatz > 0 ? e.minAbsatz : 0;
     let ausgeblendet = 0;
+    let unsicher = 0;
     const bleibt = zeilen.filter((z) => {
       if (!z || z.gewinn == null || z.marge == null || !(z.gewinn > 0)) return false;
       if (e.art && e.art !== "beides" && z.art !== e.art) return false;
@@ -534,9 +540,13 @@ const GELEGENHEITEN = (function () {
         ausgeblendet++;
         return false;
       }
+      if (z.preisUnsicher) {
+        unsicher++;
+        if (!e.unsichereZeigen) return false;
+      }
       return true;
     });
-    return { zeilen: sortiere(bleibt, e.sortierung), ausgeblendet };
+    return { zeilen: sortiere(bleibt, e.sortierung), ausgeblendet, unsicher };
   }
 
   /**
@@ -838,7 +848,7 @@ const GELEGENHEITEN = (function () {
       rangCache = null;
     }
 
-    const WERTE = ["silber", "erloes", "gewinn", "stueckJeTag", "vkStadt", "gewinnJeTag"]; // v3.21.0: gewinnJeTag, weil das Zutatenvolumen ihn aendert
+    const WERTE = ["silber", "erloes", "gewinn", "stueckJeTag", "vkStadt", "gewinnJeTag", "preisUnsicher", "preisQuelle"]; // v3.21.0: gewinnJeTag, weil das Zutatenvolumen ihn aendert
     function scheibeRechnen(indizes) {
       const start = typeof performance !== "undefined" ? performance.now() : Date.now();
       const teil = indizes.map((i) => liste[i]);
@@ -897,7 +907,7 @@ const GELEGENHEITEN = (function () {
     function rangliste() {
       if (!rangCache) {
         const r = filtereUndSortiere(Array.from(zeilen.values()), e);
-        rangCache = { zeilen: r.zeilen, ausgeblendet: r.ausgeblendet, vorgaenge: liste.length, gerechnet: zeilen.size };
+        rangCache = { zeilen: r.zeilen, ausgeblendet: r.ausgeblendet, unsicher: r.unsicher, vorgaenge: liste.length, gerechnet: zeilen.size };
       }
       return rangCache;
     }
@@ -1133,6 +1143,36 @@ const GELEGENHEITEN = (function () {
       return geoeffnet ? anfordern() : Promise.resolve();
     }
 
+    /**
+     * O10: "Preise aktualisieren" der Einkaufsliste. Holt fuer die geplanten
+     * Produkte sofort frisch (Vordergrund, erzwungen) die Zutatenpreise in den
+     * Einkaufsstaedten und Verkaufspreise samt verkauft/Tag in den
+     * Verkaufsstaedten, ueber die Abruffunktionen der Detailreiter
+     * (VEREDELN.datenAbrufen, CRAFTEN.datenAbrufen, die in den Bestand
+     * schreiben). Danach rechnen alle Zeilen neu, die eine der IDs brauchen.
+     * @returns {Promise<?{abrufe:number, produkte:number}>} null, wenn kein geplantes Produkt im Scanumfang liegt
+     */
+    async function planAktualisieren(aufStatus) {
+      const geplant = liste.filter((x) => e.plan[x.schluessel] > 0);
+      if (!geplant.length) return null;
+      const start = PREISE.abrufZaehler();
+      const version = umfangVersion;
+      const v = geplant.filter((x) => x.art === "veredeln").map((x) => x.k);
+      const c = geplant.filter((x) => x.art === "craften").map((x) => x.k);
+      if (v.length) await V.datenAbrufen(v, auswahlVeredeln(e), { frisch: true, aufStatus });
+      if (c.length) await C.datenAbrufen(c, auswahlCraften(e), { frisch: true, aufStatus });
+      if (version === umfangVersion) {
+        const betroffen = new Set();
+        geplant.forEach((x) => [x.produktId].concat(x.zutatIds).forEach((id) => (nutzer.get(id) || []).forEach((n) => betroffen.add(n))));
+        standCache = null;
+        if (geoeffnet) {
+          anfordern(Array.from(betroffen));
+          await fertig();
+        }
+      }
+      return { abrufe: PREISE.abrufZaehler() - start, produkte: geplant.length };
+    }
+
     function beenden() {
       scanStoppen();
       offen.clear();
@@ -1146,6 +1186,7 @@ const GELEGENHEITEN = (function () {
       einstellen,
       oeffnen,
       neuRechnen,
+      planAktualisieren,
       fertig,
       rangliste,
       zeile: (schluessel) => zeilen.get(schluessel) || null,
@@ -1643,10 +1684,11 @@ const GELEGENHEITEN = (function () {
       //     Einkauf je Stueck 16 x 100 + 8 x 150 = 2.800; Kosten 2.800 / 1,33 (Schwert-Bonus); Erloes 2.900 x 0,935 = 2.711,5
       //   Titanstahlbarren T6: 4 Erz (Lymhurst 80, Martlock 90) + 1 Stahlbarren (100)
       //     Einkauf je Stueck 420; Kosten 420 / 1,18 (kein Erz-Bonus in Lymhurst); Erloes 700 x 0,935 = 654,5
-      //   Plan 3 Schwerter und 10 Barren:
-      //     Stahlbarren Lymhurst 3 x 16 + 10 x 1 = 58 a 100 = 5.800
-      //     Leder Martlock 3 x 8 = 24 a 150 = 3.600
-      //     Erz Lymhurst 10 x 4 = 40 a 80 = 3.200          Einkauf gesamt 12.600
+      //   Plan 3 Schwerter und 10 Barren, seit O10 Bedarf nach Rueckgewinnung (Puffer 0),
+      //   Schwert 1 - r = 1 / 1,33, Barren 1 - r = 1 / 1,18:
+      //     Stahlbarren Lymhurst (16 + 2 x 16 / 1,33) + (1 + 9 x 1 / 1,18) = 40,06 + 8,63 = 48,69 -> 49 a 100 = 4.900 (Rezeptmenge 58)
+      //     Leder Martlock 8 + 2 x 8 / 1,33 = 20,03 -> 21 a 150 = 3.150 (Rezeptmenge 24)
+      //     Erz Lymhurst 4 + 9 x 4 / 1,18 = 34,51 -> 35 a 80 = 2.800 (Rezeptmenge 40)   Einkauf gesamt 10.850
       //     Erloes gesamt 3 x 2.711,5 + 10 x 654,5 = 14.679,5
       //     Gewinn gesamt 14.679,5 - 3 x 2.800 / 1,33 - 10 x 420 / 1,18 = 4.804,39
       const e2 = einstellungenBereinigen({ warengruppen: ["sword"], rohstoffe: ["ore"], tiers: [5, 6], stufen: [0], einkaufStaedte: ["Lymhurst", "Martlock"], verkaufStaedte: ["Lymhurst"] });
@@ -1667,15 +1709,15 @@ const GELEGENHEITEN = (function () {
       const liste = C.einkaufsliste(zl, { "c:T5_MAIN_SWORD": 3, "v:T6_METALBAR:0": 10 }, (z) => z.schluessel);
       const posten = (id) => liste.posten.find((p) => p.marktId === id) || {};
       pruefe(
-        "o5 Einkaufsliste im Reiter: Craft (3 Breitschwerter) und Veredelung (10 Titanstahlbarren) teilen sich den Stahlbarren (3 x 16 + 10 = 58, vor Rueckgewinnung), zwei Einkaufsstaedte (Barren und Erz Lymhurst, Leder Martlock)",
-        liste.posten.length === 3 && posten("T5_METALBAR").menge === 58 && posten("T5_METALBAR").stadt === "Lymhurst" && posten("T5_METALBAR").kosten === 5800 &&
-          posten("T5_LEATHER").menge === 24 && posten("T5_LEATHER").stadt === "Martlock" && posten("T5_LEATHER").kosten === 3600 &&
-          posten("T6_ORE").menge === 40 && posten("T6_ORE").stadt === "Lymhurst" && posten("T6_ORE").kosten === 3200 && liste.fehlend.length === 0,
+        "o5 Einkaufsliste im Reiter: Craft (3 Breitschwerter) und Veredelung (10 Titanstahlbarren) teilen sich den Stahlbarren (Rezeptmenge 3 x 16 + 10 = 58, seit O10 Bedarf nach Rueckgewinnung 48,69 -> 49), zwei Einkaufsstaedte (Barren und Erz Lymhurst, Leder Martlock)",
+        liste.posten.length === 3 && posten("T5_METALBAR").menge === 49 && posten("T5_METALBAR").mengeRezept === 58 && Math.abs(posten("T5_METALBAR").bedarf - (16 + 32 / 1.33 + 1 + 9 / 1.18)) < 1e-9 && posten("T5_METALBAR").stadt === "Lymhurst" && posten("T5_METALBAR").kosten === 4900 &&
+          posten("T5_LEATHER").menge === 21 && posten("T5_LEATHER").mengeRezept === 24 && posten("T5_LEATHER").stadt === "Martlock" && posten("T5_LEATHER").kosten === 3150 &&
+          posten("T6_ORE").menge === 35 && posten("T6_ORE").mengeRezept === 40 && posten("T6_ORE").stadt === "Lymhurst" && posten("T6_ORE").kosten === 2800 && liste.fehlend.length === 0,
         JSON.stringify(liste.posten.map((p) => [p.marktId, p.stadt, p.menge, p.kosten]))
       );
       pruefe(
-        "o5 Einkaufsliste im Reiter: Einkauf gesamt 12.600, Erloes gesamt 14.679,5, Gewinn gesamt 4.804,39 (Erloes minus Kosten nach Rueckgewinnung: 3 x 2.800 / 1,33 und 10 x 420 / 1,18), je Produkt die Zahlen der Zeile mal Menge",
-        liste.summe === 12600 && Math.abs(liste.erloes - 14679.5) < 1e-6 && Math.abs(liste.gewinn - (14679.5 - (3 * 2800) / 1.33 - (10 * 420) / 1.18)) < 1e-6 && Math.abs(liste.gewinn - 4804.39) < 0.005 &&
+        "o5 Einkaufsliste im Reiter: Einkauf gesamt 10.850 (seit O10 Kaufmengen nach Rueckgewinnung, vorher 12.600), Erloes gesamt 14.679,5, Gewinn gesamt 4.804,39 (Erloes minus Kosten nach Rueckgewinnung: 3 x 2.800 / 1,33 und 10 x 420 / 1,18), je Produkt die Zahlen der Zeile mal Menge",
+        liste.summe === 10850 && Math.abs(liste.erloes - 14679.5) < 1e-6 && Math.abs(liste.gewinn - (14679.5 - (3 * 2800) / 1.33 - (10 * 420) / 1.18)) < 1e-6 && Math.abs(liste.gewinn - 4804.39) < 0.005 &&
           liste.ergebnisVollstaendig && Math.abs(liste.produkte[0].gewinn - 3 * zl[0].gewinn) < 1e-9 && Math.abs(liste.produkte[1].erloes - 6545) < 1e-6 && liste.produkte[1].art === "veredeln" &&
           liste.summe > liste.erloes - liste.gewinn &&
           // Kosten nach Rueckgewinnung 3 x 2.800 / 1,33 + 10 x 420 / 1,18 = 9.875,11; Erloes minus diese Kosten = Gewinn
@@ -1687,7 +1729,8 @@ const GELEGENHEITEN = (function () {
         (function () {
           const hier = C.einkaufsliste(zl, { "c:T5_MAIN_SWORD": 3 }, (z) => z.schluessel);
           const dort = C.einkaufsliste(zl, { T5_MAIN_SWORD: 3 });
-          return JSON.stringify(hier.posten) === JSON.stringify(dort.posten) && hier.summe === dort.summe && hier.summe === 3 * 2800;
+          // O10: 16 + 2 x 16 / 1,33 = 40,06 -> 41 Barren a 100, 8 + 2 x 8 / 1,33 = 20,03 -> 21 Leder a 150 (vorher 3 x 2.800)
+          return JSON.stringify(hier.posten) === JSON.stringify(dort.posten) && hier.summe === dort.summe && hier.summe === 41 * 100 + 21 * 150;
         })(),
         ""
       );
@@ -1701,6 +1744,39 @@ const GELEGENHEITEN = (function () {
         art
       );
       mm.beenden();
+    })();
+
+    // ---- O10: unsichere Preise in der Rangliste ----
+    (function () {
+      const zr = (schluessel, extra) => Object.assign({ schluessel, art: "craften", gewinn: 10, marge: 0.1, stueckJeTag: 20, gewinnJeTag: 50 }, extra || {});
+      const zz = [zr("a"), zr("b", { preisUnsicher: true, gewinnJeTag: 900 }), zr("c", { preisUnsicher: true, stueckJeTag: 1 }), zr("d", { preisUnsicher: true, gewinn: -5 }), zr("e", { preisQuelle: "handel", gewinnJeTag: 70 })];
+      const aus = filtereUndSortiere(zz, einstellungenBereinigen({ minAbsatz: 5 }));
+      const an = filtereUndSortiere(zz, einstellungenBereinigen({ minAbsatz: 5, unsichereZeigen: true }));
+      pruefe(
+        "o10 filtereUndSortiere: Zeilen mit unsicherem Preis sind in der Vorgabe ausgeblendet und werden gezaehlt (nur die, die sonst blieben: nicht unter dem Volumenfilter, nicht ohne Gewinn); der Schalter zeigt sie",
+        aus.zeilen.map((z) => z.schluessel).join() === "e,a" && aus.unsicher === 1 && aus.ausgeblendet === 1 && an.zeilen.map((z) => z.schluessel).join() === "b,e,a" && an.unsicher === 1 &&
+          standardEinstellungen().unsichereZeigen === false && einstellungenBereinigen({}).unsichereZeigen === false && einstellungenBereinigen(JSON.parse(JSON.stringify(einstellungenBereinigen({ unsichereZeigen: true })))).unsichereZeigen === true,
+        JSON.stringify([aus.zeilen.map((z) => z.schluessel), aus.unsicher, an.zeilen.map((z) => z.schluessel)])
+      );
+      // Maschine: Schwert mit Scherzangebot. Ohne Handelspreis unsicher und ausgeblendet; mit Handelspreis 3.000 gesichert in der Rangliste.
+      const eU = einstellungenBereinigen({ warengruppen: ["sword"], rohstoffe: [], tiers: [5], stufen: [0], einkaufStaedte: ["Lymhurst"], verkaufStaedte: ["Lymhurst"], scanAn: false, minAbsatz: 5 });
+      const dU = (absatzQ1) => ({
+        "Lymhurst::T5_METALBAR::q1": preis(100, 80, am),
+        "Lymhurst::T5_LEATHER::q1": preis(200, 150, am),
+        "Lymhurst::T5_MAIN_SWORD::qA": { abgerufenAm: am, jeQ: { 1: preis(31111111, 2500, am) } },
+        "Lymhurst::T5_MAIN_SWORD::a": { abgerufenAm: am, jeQ: { 1: absatzQ1 } },
+      });
+      const kU = kandidaten(eU).filter((x) => x.schluessel === "c:T5_MAIN_SWORD");
+      const zU = zeilenRechnen(kU, eU, einst, leser(dU({ stueckJeTag: 6 })), T0)[0];
+      const zS = zeilenRechnen(kU, eU, einst, leser(dU({ stueckJeTag: 6, mengengewichteterPreis: 3000 })), T0)[0];
+      const rU = filtereUndSortiere([zU], eU);
+      const rS = filtereUndSortiere([zS], eU);
+      pruefe(
+        "o10 zeilenRechnen aus dem Bestand: Scherzangebot 31.111.111 ohne Handelspreis ist unsicher und faellt aus der Rangliste (gezaehlt); mit Handelspreis 3.000 aus dem Bestand rechnet die Zeile mit 3.000 (Erloes 2.805) und steht in der Rangliste",
+        zU.preisUnsicher === true && zU.produktPreis === 31111111 && rU.zeilen.length === 0 && rU.unsicher === 1 && filtereUndSortiere([zU], Object.assign({}, eU, { unsichereZeigen: true })).zeilen.length === 1 &&
+          zS.preisUnsicher === false && zS.preisQuelle === "handel" && zS.produktPreis === 3000 && Math.abs(zS.erloes - 2805) < 1e-6 && zS.silber === zU.silber && rS.zeilen.length === 1 && rS.unsicher === 0,
+        JSON.stringify([zU.produktPreis, zU.preisUnsicher, zS.produktPreis, zS.erloes, rU.unsicher])
+      );
     })();
 
     return ergebnisse;
@@ -1871,6 +1947,7 @@ const GELEGENHEITEN = (function () {
       fokus: { an: "Mit Fokus", aus: "Ohne Fokus", lesen: () => e().mitFokus, setzen: (an) => m.einstellen({ mitFokus: an }) },
       premium: { an: "Mit Premium (4 % Steuer)", aus: "Ohne Premium (8 % Steuer)", lesen: () => UI.einstellungenLesen().premium !== false, setzen: (an) => UI.premiumSetzen(an, "gelegenheiten") },
       artefakte: { an: "Mit Artefakt-Items", aus: "Ohne Artefakt-Items", lesen: () => e().artefakte, setzen: (an) => m.einstellen({ artefakte: an }) },
+      unsicher: { an: "Unsichere Preise zeigen", aus: "Unsichere Preise ausblenden", lesen: () => e().unsichereZeigen, setzen: (an) => m.einstellen({ unsichereZeigen: an }) }, // O10
     };
 
     function schalterSetzen() {
@@ -2059,7 +2136,9 @@ const GELEGENHEITEN = (function () {
       const name = nameVon(z.item, z.stufe);
       const istCraft = z.art === "craften";
       const artText = (istCraft ? "Craften" : "Veredeln") + " · " + (GRUPPEN_LABEL[z.cc] || z.cc);
-      const qText = istCraft && k.order && z.qualifizierbar && z.sellQualitaet > 1 ? REGELN.QUALITAETEN[z.sellQualitaet - 1] : "";
+      // O10: "(Exzellent)" nur, wenn ein Angebot dieser Qualitaet den Preis setzt; pk = Kennzeichen "gehandelt" bzw. "?".
+      const qText = istCraft && k.order && z.qualifizierbar && z.sellQualitaet > 1 && z.preisQuelle !== "handel" ? REGELN.QUALITAETEN[z.sellQualitaet - 1] : "";
+      const pk = V.preisKennzeichen(z, fmt);
       const erloesTitel =
         k.mehrVk && z.vkAlle && z.vkAlle.length > 1
           ? "Erlös je Stück nach Steuer je Stadt:\n" +
@@ -2086,7 +2165,7 @@ const GELEGENHEITEN = (function () {
         "<div class='gl-aktionen'>" + zaehlerHtml(z, name) + sternHtml(z.schluessel, name) + V.krKnopfHtml(z, esc, name) + weitere + "</div></div></div></td>" +
         "<td><div class='gl-zutaten" + (k.mehrEk ? " mit-stadt" : "") + "'>" + zutatenHtml(z, k.mehrEk, k.kauforder) + "</div></td>" +
         "<td><div class='vd-erloes' title='" + esc(erloesTitel) + "'>" + fmtN(z.erloes) + "</div>" +
-        "<div class='vd-klein' title='" + esc(preisTitel) + "'>Preis " + fmtN(z.produktPreis) + (qText ? " (" + qText + ")" : "") + "</div>" +
+        "<div class='vd-klein" + (pk.html ? " vd-umbruch" : "") + "' title='" + esc(preisTitel + (pk.titel ? ". " + pk.titel : "")) + "'><span class='vd-nw'>Preis " + fmtN(z.produktPreis) + (qText ? " (" + qText + ")" : "") + "</span>" + pk.html + "</div>" +
         (k.mehrVk && z.vkStadt ? "<div><span class='vd-stadt' title='" + esc("Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "'>" + esc(z.vkStadt) + "</span></div>" : "") +
         "</td>" +
         "<td class='num' title='" + esc(volTitel) + "'>" + stueck(z.stueckJeTag) + "</td>" +
@@ -2189,7 +2268,31 @@ const GELEGENHEITEN = (function () {
 
     function planListe() {
       const plan = e().plan;
-      return C.einkaufsliste(Object.keys(plan).map((k) => m.zeile(k)).filter(Boolean), plan, (z) => z.schluessel);
+      return C.einkaufsliste(Object.keys(plan).map((k) => m.zeile(k)).filter(Boolean), plan, (z) => z.schluessel, { pufferProzent: C.pufferLesen() }); // O10: gemeinsamer Puffer
+    }
+
+    // O10: Knopf "Preise aktualisieren" der Einkaufsliste.
+    let listeZustand = { laeuft: false, text: "", fehler: false };
+    async function listePreiseAktualisieren() {
+      if (listeZustand.laeuft) return;
+      listeZustand = { laeuft: true, text: "Preise werden abgerufen ...", fehler: false };
+      listeRendern();
+      try {
+        const r = await m.planAktualisieren((text) => {
+          listeZustand.text = text;
+          const el2 = listeEl.querySelector(".cg-el-meldung");
+          if (el2) el2.textContent = text;
+        });
+        listeZustand = r
+          ? { laeuft: false, fehler: false, text: r.abrufe + (r.abrufe === 1 ? " Abruf" : " Abrufe") + ", Preise aktualisiert." }
+          : { laeuft: false, fehler: true, text: "Keines der geplanten Produkte liegt im Scanumfang." };
+      } catch (err) {
+        listeZustand = { laeuft: false, fehler: true, text: "Preise nicht aktualisiert: " + (err && err.message ? err.message : err) };
+        if (typeof console !== "undefined") console.warn(err);
+      }
+      // Vom Nutzer ausgeloest: die Rangliste zeichnet sofort neu, auch wenn gescrollt ist (wie bei jeder Aenderung durch den Nutzer).
+      if (!listeZustand.fehler) V.nachZeiger(zeichnen);
+      else listeRendern();
     }
 
     let listeHtmlAlt = null;
@@ -2233,7 +2336,7 @@ const GELEGENHEITEN = (function () {
           return (
             "<tr><td><div class='cg-el-name'>" + icon(x.n, 30, name) + "<span>" + esc(name) + "</span>" +
             "<button type='button' class='mini cg-kopie' data-gl-kopie='" + esc(such) + "' title='„" + esc(such) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button></div></td>" +
-            "<td class='num'>" + zahl(x.menge) + "</td>" +
+            "<td class='num cg-el-menge' title='" + esc(C.einkaufslisteMengeTitel(x)) + "'>" + zahl(x.menge) + "</td>" +
             (mehrEk ? "<td>" + (x.stadt ? "<span class='vd-stadt' title='" + esc("Günstigste angehakte Einkaufsstadt. " + TRANSPORT) + "'>" + esc(x.stadt) + "</span>" : "") + "</td>" : "") +
             "<td class='num'>" + (x.basisPreis != null ? fmt(Math.round(x.basisPreis * 100) / 100) : "k. A.") + "</td>" +
             "<td class='num'>" + fmt(x.kosten) + "</td></tr>"
@@ -2247,12 +2350,14 @@ const GELEGENHEITEN = (function () {
         : "";
       const html =
         "<div class='cg-el-kopf'><h2 class='vd-kt' tabindex='-1'>Einkaufsliste</h2>" +
-        "<span class='vd-klein' title='Mengen, die für die geplanten Vorgänge im Inventar liegen müssen. Die Rückgewinnung gibt einen Teil davon nach dem Craften zurück; die Kosten in der Rangliste sind deshalb niedriger.'>vor Rückgewinnung</span>" +
+        "<span class='vd-klein cg-el-label' title='" + esc(C.LISTE_LABEL_TITEL) + "'>" + esc(C.einkaufslisteLabel(liste)) + "</span>" +
         "<span class='cg-el-knoepfe'><button type='button' class='mini' data-gl-alle-kopieren='1' title='Alle Zeilen als „Menge Name 4.1“ kopieren'>Alles kopieren</button>" +
+        C.einkaufslisteFrischKnopfHtml("gl", listeZustand, esc) +
         "<button type='button' class='mini' data-gl-leeren='1' title='Setzt alle Zähler auf 0 und leert die Einkaufsliste. Die Merkliste bleibt.'>Liste leeren</button></span></div>" +
+        C.einkaufslisteBedienHtml(liste, "gl", listeZustand, liste.produkte.map((p) => (m.zeile(p.schluessel) || {}).preisAbrufAm), esc) +
         "<div class='cg-plan'>" + produkte + "</div>" + fehlt +
         (liste.posten.length
-          ? "<div class='vd-tabrahmen'><table class='vd-tabelle cg-el-tabelle'><thead><tr><th>Zutat</th><th class='num'>Menge</th>" +
+          ? "<div class='vd-tabrahmen'><table class='vd-tabelle cg-el-tabelle'><thead><tr><th>Zutat</th><th class='num' title='Kaufmenge: Bedarf nach Rückgewinnung, aufgerundet. Einzelheiten je Zeile im Tooltip der Zahl.'>Menge</th>" +
             (mehrEk ? "<th>Stadt</th>" : "") + "<th class='num'>" + (order ? "Orderpreis" : "Preis") + "/Stück</th><th class='num'>Kosten</th></tr></thead><tbody>" +
             zeilenHtml + "</tbody>" + C.einkaufslisteSummenHtml(liste, { spalten: mehrEk ? 4 : 3, order, fmt, esc }) + "</table></div>"
           : "");
@@ -2301,7 +2406,8 @@ const GELEGENHEITEN = (function () {
         else
           text =
             "Von " + zahl(r.vorgaenge) + " Produkten im Scanumfang zeigt gerade keines Gewinn bei mindestens " + minText(s.minAbsatz) + " verkauft/Tag" +
-            (r.ausgeblendet ? " (" + zahl(r.ausgeblendet) + " mit Gewinn unter „Mind. verkauft/Tag“)" : "") + ".";
+            (r.ausgeblendet ? " (" + zahl(r.ausgeblendet) + " mit Gewinn unter „Mind. verkauft/Tag“)" : "") +
+            (r.unsicher && !s.unsichereZeigen ? " (" + zahl(r.unsicher) + " mit unsicherem Preis ausgeblendet)" : "") + ".";
         html = leer(text);
       } else {
         const k = zeilenKontext();
@@ -2422,10 +2528,12 @@ const GELEGENHEITEN = (function () {
       const gemerktN = Object.keys(s.merkliste).length;
       statusEl.textContent = nurGemerkt
         ? zahl(gemerktN) + " gemerkt"
-        : zahl(r.zeilen.length) + (r.zeilen.length === 1 ? " Gelegenheit" : " Gelegenheiten") + (r.ausgeblendet ? ", " + zahl(r.ausgeblendet) + " unter „Mind. verkauft/Tag“" : "");
+        : zahl(r.zeilen.length) + (r.zeilen.length === 1 ? " Gelegenheit" : " Gelegenheiten") + (r.ausgeblendet ? ", " + zahl(r.ausgeblendet) + " unter „Mind. verkauft/Tag“" : "") +
+          (r.unsicher ? ", " + zahl(r.unsicher) + " mit unsicherem Preis" + (s.unsichereZeigen ? "" : " ausgeblendet") : "");
       statusEl.title = nurGemerkt
         ? "Alle gemerkten Zeilen, auch ohne Gewinn oder unter „Mind. verkauft/Tag“."
-        : "Zeilen mit Gewinn und mindestens " + minText(s.minAbsatz) + " verkauft/Tag.";
+        : "Zeilen mit Gewinn und mindestens " + minText(s.minAbsatz) + " verkauft/Tag." +
+          (r.unsicher ? " Unsicherer Preis: es gibt ein Angebot, aber keinen erfassten Handel in Normal, gegen den es sich absichern ließe" + (s.unsichereZeigen ? "." : "; der Schalter „Unsichere Preise“ in den Einstellungen zeigt diese Zeilen.") : "");
       warnungEl.hidden = !fehlend.length;
       warnungEl.textContent = "Stationssatz fehlt für " + fehlend.length + " Gebäude";
       warnungEl.title = fehlend.length
@@ -2467,6 +2575,12 @@ const GELEGENHEITEN = (function () {
       const zaehlerEl = ev.target.closest(".cg-zaehler[data-gl-plan]");
       if (zaehlerEl && ev.target.classList.contains("cg-zn")) {
         planSetzen(zaehlerEl.dataset.glPlan, ev.target.value);
+        return;
+      }
+      // O10: Puffer der Einkaufsliste, gemeinsam mit "Craften: Gewinn".
+      if (ev.target.closest("input[data-gl-puffer]")) {
+        C.pufferSetzen(ev.target.value, "gelegenheiten");
+        listeRendern();
         return;
       }
       const box = ev.target.closest("input[data-gruppe]");
@@ -2561,6 +2675,10 @@ const GELEGENHEITEN = (function () {
         V.kopieren(C.einkaufslisteText(planListe(), (n, st) => C.suchName(nameVon(n, st), n, st)), ev.target.closest("button"));
         return;
       }
+      if (ev.target.closest("button[data-gl-preise-frisch]")) {
+        listePreiseAktualisieren();
+        return;
+      }
       const weg = ev.target.closest("button[data-gl-weg]");
       if (weg) {
         planSetzen(weg.dataset.glWeg, 0);
@@ -2598,6 +2716,12 @@ const GELEGENHEITEN = (function () {
         m.neuRechnen();
         m.fertig().then(zeichnen);
       });
+    });
+
+    // O10: Puffer in der Einkaufsliste von "Craften: Gewinn" geaendert.
+    document.addEventListener(C.LISTE_EVENT, (ev) => {
+      if (ev.detail && ev.detail.quelle === "gelegenheiten") return;
+      listeRendern();
     });
 
     if (reiterKnopf) {
