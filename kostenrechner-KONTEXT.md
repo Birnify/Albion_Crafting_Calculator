@@ -217,7 +217,7 @@ genau ein Commit, wird überschrieben; `main` bleibt unberührt).
   Implementierung). 429: einmal bis zur Reset-Zeit warten, sonst sauber mit
   Teilergebnis enden. Die Vorgabe-Einstellungen sind im Skript gespiegelt
   (`vorgabeEinstellungen()`), bei Änderungen in `ui.js` nachziehen.
-- Workflow: schnell `5,20,35,50 * * * *`, voll `10 * * * *` (UTC), von Hand
+- Workflow: schnell `7,22,37,52 * * * *`, voll `12 * * * *` (UTC), von Hand
   über „Run workflow“; nur `contents: write`, kein Geheimnis.
 - Dateien auf `daten` (Format in `js/gemeinsam.js`): `stand.json` (Kopf),
   `preise.json`, `volumen.json`; hochgerechnet rund 2,7 MB und 0,6 MB roh.

@@ -18,8 +18,8 @@ name: Preisstand
 on:
   schedule:
     # Zeiten in UTC. Versetzt, damit voller und schneller Lauf nicht gleichzeitig starten.
-    - cron: "5,20,35,50 * * * *" # schnell
-    - cron: "10 * * * *" # voll
+    - cron: "7,22,37,52 * * * *" # schnell
+    - cron: "12 * * * *" # voll
   workflow_dispatch:
     inputs:
       art:
@@ -63,7 +63,7 @@ jobs:
         run: |
           if [ "$EREIGNIS" = "workflow_dispatch" ]; then
             ART="$EINGABE"
-          elif [ "$ZEITPLAN" = "10 * * * *" ]; then
+          elif [ "$ZEITPLAN" = "12 * * * *" ]; then
             ART="voll"
           else
             ART="schnell"
