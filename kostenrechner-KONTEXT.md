@@ -432,9 +432,16 @@ solange sich daran nichts ändert.
   5,5 / 6,6 gemessen, nicht für Exzellent (27,5). Einheit und Addierbarkeit
   des Essensbonus sind unbelegt. Der Einfluss von Fokus auf die Qualität
   fehlt bewusst. Der Aufschlag muss von Hand nachgemessen werden.
-- O9: geplante Läufe des Workflows waren am 23.11.2026 bis 09:45 UTC nicht
-  von selbst gestartet (nur der Lauf von Hand). GitHub startet neue
-  Zeitpläne oft verzögert; nachsehen unter Actions.
+- **O9: GitHub löst in diesem Repo keine Zeitpläne aus** (23.11.2026, von
+  08:37 bis 15:02 UTC null Läufe mit Ereignis `schedule`; der Lauf von Hand
+  funktioniert). Ohne Wirkung probiert: Commit auf `main` mit geänderten
+  Cron-Zeiten, Workflow aus- und einschalten, Minimal-Workflow
+  `.github/workflows/zeitplan-test.yml` (alle 5 Min., nur `echo`), der
+  ebenfalls nie startete. An unserer Datei liegt es also nicht. Dasselbe
+  Fehlerbild steht in den GitHub-Community-Diskussionen 185355, 202602 und
+  201738, ohne gesicherte Lösung. **Support-Ticket 5046360 am 23.11.2026 abgeschickt**
+  (Betreff „Scheduled workflows never trigger in public repository“);
+  Antwort abwarten. `zeitplan-test.yml` danach wieder entfernen.
 - O10: der Handelspreis zählt ohne eigenes Höchstalter, solange der Absatz
   im Bestand liegt; die Detailreiter nennen die Zahl unsicherer Zeilen
   nicht; „Preise aktualisieren“ braucht bei gestörter API rund 45 s bis
