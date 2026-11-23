@@ -274,6 +274,104 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     }
   })();
 
+  // v3.25.0 (O11): Qualitaets-Chancenpunkte, Essen und Aufschlag auf die Aufwertungskosten sind gemeinsame Einstellungen.
+  (function () {
+    const KEY = "albion_kostenrechner_einstellungen";
+    let vorher = null;
+    try { vorher = localStorage.getItem(KEY); } catch (e) { /* ignorieren */ }
+    const gemeldet = [];
+    const horcher = (ev) => gemeldet.push(ev.detail);
+    document.addEventListener(UI.QUALITAET_EVENT, horcher);
+    const nahe = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol);
+    try {
+      try { localStorage.removeItem(KEY); } catch (e) { /* ignorieren */ }
+      const vorgabe = UI.einstellungenLesen();
+      const s1 = UI.qualitaetSetzen({ chancenpunkte: 51 }, "craften");
+      const s2 = UI.qualitaetSetzen({ essen: { id: "ruebensalat", stufe: 2 } }, "gelegenheiten");
+      const s3 = UI.qualitaetSetzen({ aufschlag: 250 }, "kostenrechner");
+      const gelesen = UI.einstellungenLesen(); // wie nach einem Neuladen: frisch aus dem Speicher
+      pruefe(
+        "o11 gemeinsame Einstellungen: Vorgabe Chancenpunkte 0, kein Essen, Aufschlag 15,6 %; UI.qualitaetSetzen aendert nur das genannte Feld, speichert an einem Ort und meldet albion:qualitaet mit Quelle und dem ganzen Stand; Aufschlag begrenzt auf -50 bis +100",
+        vorgabe.qualitaetsChancenpunkte === 0 && vorgabe.essen === null && vorgabe.aufwertungAufschlagProzent === 15.6 && UI.defaultEinstellungen().aufwertungAufschlagProzent === REGELN.AUFWERTUNG_AUFSCHLAG_VORGABE &&
+          s1.chancenpunkte === 51 && s1.essen === null && s1.aufschlag === 15.6 && s2.chancenpunkte === 51 && s2.essen.id === "ruebensalat" && s2.essen.stufe === 2 && s3.aufschlag === 100 && s3.chancenpunkte === 51 &&
+          gelesen.qualitaetsChancenpunkte === 51 && gelesen.essen.id === "ruebensalat" && gelesen.aufwertungAufschlagProzent === 100 &&
+          gemeldet.length === 3 && gemeldet[0].quelle === "craften" && gemeldet[1].essen.stufe === 2 && gemeldet[2].aufschlag === 100 && UI.QUALITAET_EVENT === "albion:qualitaet" &&
+          UI.qualitaetSetzen({ chancenpunkte: -5, aufschlag: "" }, "test").chancenpunkte === 0 && UI.einstellungenLesen().aufwertungAufschlagProzent === 15.6,
+        JSON.stringify({ s1, s2, s3 })
+      );
+      pruefe(
+        "o11 Essen-Auswahl: 28 Optionen (kein Essen, sechs Salate je vier Stufen, drei rohe Tintenfische), Wert und Einstellung lassen sich hin und zurueck wandeln",
+        (UI.essenOptionenHtml(null).match(/<option/g) || []).length === 28 && /value='ruebensalat:2' selected/.test(UI.essenOptionenHtml({ id: "ruebensalat", stufe: 2 })) && /Rübensalat \(T4\) \.2: \+99</.test(UI.essenOptionenHtml(null)) &&
+          /Tiefseekalmarsalat \(T6\) \.3: \+222,75</.test(UI.essenOptionenHtml(null)) && UI.essenZuWert(null) === "" && UI.essenZuWert({ id: "kalmar_roh", stufe: 0 }) === "kalmar_roh:0" &&
+          UI.essenAusWert("") === null && UI.essenAusWert("oktopussalat:3").stufe === 3 && UI.essenAusWert("quatsch:1") === null,
+        UI.essenOptionenHtml({ id: "ruebensalat", stufe: 2 }).slice(0, 160)
+      );
+      // Wirkung ohne Neuladen in Craften und Gelegenheiten: jeder Reiter rechnet mit UI.einstellungenLesen().
+      const sp = (p) => ({ sell: { preis: p, kein: false, datum: "" }, buy: { preis: null, kein: true, datum: "" } });
+      const jeQ = { 1: sp(31961), 2: sp(31961), 3: sp(35934), 4: sp(35980) };
+      const kC = CRAFTEN.kandidaten({ warengruppen: ["sword"], tiers: [5], stufen: [0], artefakte: true }).find((k) => k.item === "T5_MAIN_SWORD");
+      const hJeQ = { 1: { stueckJeTag: 97, mengengewichteterPreis: 29883 }, 2: { stueckJeTag: 287, mengengewichteterPreis: 29851 }, 3: { stueckJeTag: 175, mengengewichteterPreis: 32500 }, 4: { stueckJeTag: 299, mengengewichteterPreis: 33456 } };
+      const datC = [{ stadt: "Lymhurst", preiseRoh: { T5_METALBAR: sp(100), T5_LEATHER: sp(200) }, produktJeQ: { T5_MAIN_SWORD: jeQ }, absatz: { T5_MAIN_SWORD: hJeQ } }];
+      const eGl = GELEGENHEITEN.einstellungenBereinigen({ warengruppen: ["sword"], rohstoffe: [], tiers: [5], stufen: [0] });
+      const kG = GELEGENHEITEN.kandidaten(eGl).filter((x) => x.schluessel === "c:T5_MAIN_SWORD");
+      const leser = {
+        preis: (s, id) => (s === "Lymhurst" && datC[0].preiseRoh[id] ? Object.assign({ abgerufenAm: 1 }, datC[0].preiseRoh[id]) : null),
+        alleQ: (s, id) => (s === "Lymhurst" && id === "T5_MAIN_SWORD" ? { abgerufenAm: 1, jeQ } : null),
+        absatz: (s, id) => (s === "Lymhurst" && id === "T5_MAIN_SWORD" ? { abgerufenAm: 1, jeQ: hJeQ } : null),
+      };
+      const beide = () => {
+        const e = UI.einstellungenLesen();
+        return [
+          CRAFTEN.zeilenRechnen([kC], datC, CRAFTEN.einstellungenBereinigen({ warengruppen: ["sword"] }), e)[0].produktPreis,
+          GELEGENHEITEN.zeilenRechnen(kG, eGl, e, leser, 2)[0].produktPreis,
+        ];
+      };
+      UI.qualitaetSetzen({ chancenpunkte: 0, essen: null }, "test");
+      const bei0 = beide();
+      UI.qualitaetSetzen({ chancenpunkte: 51 }, "kostenrechner");
+      const bei51 = beide();
+      UI.qualitaetSetzen({ essen: { id: "ruebensalat", stufe: 2 } }, "craften");
+      const bei150 = beide();
+      pruefe(
+        "o11 gemeinsame Einstellungen wirken ohne Neuladen in Craften und Gelegenheiten: Bonus 0 ergibt 30.053,153, Chancenpunkte 51 mehr, dazu Ruebensalat .2 (zusammen 150) ergibt 30.288,9731 (Klerikerrobe: Angebote und Handelspreise je Qualitaet)",
+        kG.length === 1 && bei0.every((x) => nahe(x, 30053.153)) && bei51.every((x) => x > 30053.153 + 1 && x < 30288) && bei150.every((x) => nahe(x, 30288.9730748565)),
+        JSON.stringify({ bei0, bei51, bei150 })
+      );
+      // Kostenrechner: der Qualitaetswurf nimmt den Gesamtbonus (Chancenpunkte plus Essen), der Aufschlag wirkt nur auf den Reroll-Anteil.
+      const preise = REGELN.preiseZuOptsFormat({ "T4_CLOTH_LEVEL2@2": { sell: { preis: 1500, kein: false, datum: "" }, buy: { preis: 0, kein: true, datum: "" } } });
+      const stations = {};
+      REGELN.alleGebaeude().forEach((g) => (stations[g] = 400));
+      stations.Magierturm = 425;
+      const kr = (o) => RECHENKERN.kosten("T4_ARMOR_CLOTH_SET2", 2, 1, Object.assign({ preise, eigenpreise: {}, kaufweg: "sofort", stadt: "Lymhurst", stationssaetze: stations, fce: 0, fokusAus: true, fokuswert: 0, maxPreisAlterMin: null, nurDirekteEbene: true, silberRabattFaktor: 1 }, o));
+      const normal = kr({ qualitaetsIndex: 0 });
+      const normalMit = kr({ qualitaetsIndex: 0, aufwertungAufschlagProzent: 15.6, essen: { id: "kalmarsalat", stufe: 3 } });
+      const exz0 = kr({ qualitaetsIndex: 3 });
+      const exz156 = kr({ qualitaetsIndex: 3, aufwertungAufschlagProzent: 15.6 });
+      const craft = (e) => e.alleWege.find((w) => w.typ === "craften" && !w.gesperrt);
+      const rerollAnteil0 = exz0.silber - normal.silber;
+      pruefe(
+        "o11 Kostenrechner, Klerikerrobe T4.2 Exzellent (Stoff 1.500, Satz 425): Normal 20.828,583 (Material 20.338,983 plus Gebuehr 489,6, belegt); Exzellent ohne Aufschlag 41.734,535 wie vor O11; mit Aufschlag 15,6 % steigt genau der Reroll-Anteil 20.905,952 um 15,6 % (3.261,328) auf 44.995,863; Normal bleibt unberuehrt",
+        nahe(normal.silber, 20828.583050847454) && normalMit.silber === normal.silber && nahe(exz0.silber, 41734.53486799031) && nahe(rerollAnteil0, 20905.95181714286) &&
+          nahe(exz156.silber - exz0.silber, rerollAnteil0 * 0.156) && nahe(exz156.silber, 44995.86335146459),
+        JSON.stringify([normal.silber, exz0.silber, exz156.silber])
+      );
+      const mitPunkten = kr({ qualitaetsIndex: 1, qualitaetsChancenpunkte: 149 });
+      const mitEssen = kr({ qualitaetsIndex: 1, qualitaetsChancenpunkte: 50, essen: { id: "ruebensalat", stufe: 2 } });
+      const nurPunkte = kr({ qualitaetsIndex: 1, qualitaetsChancenpunkte: 50 });
+      pruefe(
+        "o11 Kostenrechner: Chancenpunkte 50 plus Ruebensalat .2 (99) rechnen wie Chancenpunkte 149; mit Essen wird Zielqualitaet Gut billiger als mit 50 Punkten allein",
+        mitEssen.silber === mitPunkten.silber && craft(mitEssen).silber === craft(mitPunkten).silber && mitEssen.silber < nurPunkte.silber,
+        JSON.stringify([nurPunkte.silber, mitEssen.silber, mitPunkten.silber])
+      );
+    } finally {
+      document.removeEventListener(UI.QUALITAET_EVENT, horcher);
+      try {
+        if (vorher == null) localStorage.removeItem(KEY);
+        else localStorage.setItem(KEY, vorher);
+      } catch (e) { /* ignorieren */ }
+    }
+  })();
+
   // v3.18.0 (O4): der Anteil am Tageshandel ist eine gemeinsame Einstellung der drei Gewinn-Reiter.
   (function () {
     const KEY = "albion_kostenrechner_einstellungen";
@@ -1813,7 +1911,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
         stadt: "Lymhurst",
         fce: 0,
         fokuswert: 0,
-        qualitaetsIndex: 2, // Herausragend
+        qualitaetsIndex: 2, // Hervorragend
       });
       pruefe("Qualitaet VERZAUBERN: nicht gesperrt", !r.gesperrt, r.grund);
       const verzaubernKandidat = r.alleWege.find((w) => w.typ === "verzaubern" && !w.gesperrt);
@@ -2034,7 +2132,7 @@ am besten ueber den lokalen Server (<code>.claude/launch.json</code>), nicht per
     const mitZielqualitaet = RECHENKERN.kosten("T8_MEAL_STEW", 1, 1, Object.assign({}, optsBasis, { qualitaetsIndex: 2 }));
     pruefe("Befund 7: T8_MEAL_STEW (Speise) loesbar, mit und ohne Zielqualitaet", !normal.gesperrt && !mitZielqualitaet.gesperrt);
     pruefe(
-      "Befund 7: Zielqualitaet 'Herausragend' auf einer Speise aendert das Ergebnis NICHT (Speisen nicht qualifizierbar)",
+      "Befund 7: Zielqualitaet 'Hervorragend' auf einer Speise aendert das Ergebnis NICHT (Speisen nicht qualifizierbar)",
       normal.silber === mitZielqualitaet.silber && normal.fokus === mitZielqualitaet.fokus,
       normal.silber + "/" + normal.fokus + " vs " + mitZielqualitaet.silber + "/" + mitZielqualitaet.fokus
     );

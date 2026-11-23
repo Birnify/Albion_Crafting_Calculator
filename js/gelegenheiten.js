@@ -850,7 +850,7 @@ const GELEGENHEITEN = (function () {
       rangCache = null;
     }
 
-    const WERTE = ["silber", "erloes", "gewinn", "stueckJeTag", "vkStadt", "gewinnJeTag", "preisUnsicher", "preisQuelle"]; // v3.21.0: gewinnJeTag, weil das Zutatenvolumen ihn aendert
+    const WERTE = ["silber", "erloes", "gewinn", "stueckJeTag", "vkStadt", "gewinnJeTag", "preisUnsicher", "preisQuelle", "aufwertenVorteil"]; // v3.21.0: gewinnJeTag, weil das Zutatenvolumen ihn aendert
     function scheibeRechnen(indizes) {
       const start = typeof performance !== "undefined" ? performance.now() : Date.now();
       const teil = indizes.map((i) => liste[i]);
@@ -1832,6 +1832,8 @@ const GELEGENHEITEN = (function () {
     const minAbsatzEl = el("glMinAbsatz");
     const artEl = el("glArt");
     const anteilEl = el("glAnteil");
+    const chancenEl = el("glChancen"); // v3.25.0 (O11): gemeinsame Einstellungen, s. UI.qualitaetSetzen()
+    const essenEl = el("glEssen");
     const listeEl = el("glEinkaufsliste");
     const gemerktEl = el("glGemerkt");
     const zurListeEl = el("glZurListe");
@@ -1959,7 +1961,17 @@ const GELEGENHEITEN = (function () {
 
     /** Gemeinsame Annahme "Anteil am Tageshandel" ins Feld schreiben (v3.18.0). */
     function anteilSetzen() {
-      if (anteilEl) anteilEl.value = UI.einstellungenLesen().absatzAnteilProzent;
+      const gemeinsamE = UI.einstellungenLesen();
+      if (anteilEl) anteilEl.value = gemeinsamE.absatzAnteilProzent;
+      // v3.25.0 (O11): Chancenpunkte und Essen, gemeinsam mit Kostenrechner und "Craften: Gewinn".
+      if (chancenEl) {
+        chancenEl.value = gemeinsamE.qualitaetsChancenpunkte;
+        chancenEl.title = chancenEl.labels[0].title = UI.CHANCENPUNKTE_TITEL + " Wirkt hier auf den erwarteten Verkaufspreis qualifizierbarer Crafts (Verkaufsorder). Dieselbe Einstellung wie im Kostenrechner.";
+      }
+      if (essenEl) {
+        essenEl.innerHTML = UI.essenOptionenHtml(gemeinsamE.essen);
+        essenEl.title = essenEl.labels[0].title = UI.ESSEN_TITEL;
+      }
     }
 
     const SCHALTER = {
@@ -2163,6 +2175,7 @@ const GELEGENHEITEN = (function () {
       // O10: "(Exzellent)" nur, wenn ein Angebot dieser Qualitaet den Preis setzt; pk = Kennzeichen "gehandelt" bzw. "?".
       const qText = istCraft && k.order && z.qualifizierbar && z.sellQualitaet > 1 && z.preisQuelle !== "handel" ? REGELN.QUALITAETEN[z.sellQualitaet - 1] : "";
       const pk = V.preisKennzeichen(z, fmt);
+      const mk = C.mittelKennzeichen(z, fmt); // v3.25.0 (O11): "· Mittel" und Tabelle je Qualitaet
       const erloesTitel =
         k.mehrVk && z.vkAlle && z.vkAlle.length > 1
           ? "Erlös je Stück nach Steuer je Stadt:\n" +
@@ -2189,7 +2202,8 @@ const GELEGENHEITEN = (function () {
         "<div class='gl-aktionen'>" + zaehlerHtml(z, name) + sternHtml(z.schluessel, name) + V.krKnopfHtml(z, esc, name) + weitere + "</div></div></div></td>" +
         "<td><div class='gl-zutaten" + (k.mehrEk ? " mit-stadt" : "") + "'>" + zutatenHtml(z, k.mehrEk, k.kauforder) + "</div></td>" +
         "<td><div class='vd-erloes' title='" + esc(erloesTitel) + "'>" + fmtN(z.erloes) + "</div>" +
-        "<div class='vd-klein" + (pk.html ? " vd-umbruch" : "") + "' title='" + esc(preisTitel + (pk.titel ? ". " + pk.titel : "")) + "'><span class='vd-nw'>Preis " + fmtN(z.produktPreis) + (qText ? " (" + qText + ")" : "") + "</span>" + pk.html + "</div>" +
+        "<div class='vd-klein" + (pk.html || mk.html ? " vd-umbruch" : "") + "' title='" + esc(preisTitel + (pk.titel ? ". " + pk.titel : "") + (mk.titel ? "\n" + mk.titel : "")) + "'><span class='vd-nw'>Preis " + fmtN(z.produktPreis) + (qText && !mk.html ? " (" + qText + ")" : "") + "</span>" + mk.html + pk.html + "</div>" +
+        C.aufwertenSchildHtml(z, fmt, esc) +
         (k.mehrVk && z.vkStadt ? "<div><span class='vd-stadt' title='" + esc("Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "'>" + esc(z.vkStadt) + "</span></div>" : "") +
         "</td>" +
         "<td class='num' title='" + esc(volTitel) + "'>" + stueck(z.stueckJeTag) + "</td>" +
@@ -2651,6 +2665,11 @@ const GELEGENHEITEN = (function () {
         UI.absatzAnteilSetzen(anteilEl.value, "gelegenheiten");
         return;
       }
+      if ((chancenEl && ev.target === chancenEl) || (essenEl && ev.target === essenEl)) {
+        // v3.25.0 (O11): ebenso; das Ereignis rechnet und zeichnet neu.
+        UI.qualitaetSetzen(ev.target === chancenEl ? { chancenpunkte: chancenEl.value } : { essen: UI.essenAusWert(essenEl.value) }, "gelegenheiten");
+        return;
+      }
       if (ev.target === fertigungEl) geaendert(m.einstellen({ fertigungsstadt: fertigungEl.value }));
       else if (ev.target === minAbsatzEl) {
         geaendert(m.einstellen({ minAbsatz: minAbsatzEl.value }));
@@ -2763,7 +2782,7 @@ const GELEGENHEITEN = (function () {
     });
 
     // Gemeinsame Einstellungen der App: neu rechnen, kein Abruf.
-    [UI.TAGESBONUS_EVENT, UI.STATIONSSAETZE_EVENT, UI.PREMIUM_EVENT, UI.ABSATZANTEIL_EVENT].forEach((name) => {
+    [UI.TAGESBONUS_EVENT, UI.STATIONSSAETZE_EVENT, UI.PREMIUM_EVENT, UI.ABSATZANTEIL_EVENT, UI.QUALITAET_EVENT].forEach((name) => {
       document.addEventListener(name, () => {
         schalterSetzen();
         anteilSetzen();

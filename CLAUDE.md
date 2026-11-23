@@ -694,7 +694,7 @@ Nutzungsgebühr 0; Marktplatz Lymhurst) und das offizielle Wiki (`Quality`,
   ein, nicht mehr unter 3.000.** Wiki `Global_Discount`:
   `(1 − Goldpreis / 5000) × 100 %`; 3.000 galt laut derselben Seite vor dem
   Update „Beyond the Veil“, davor 1.500. Die Zahl 3.000 weiter oben und in
-  `REGELN.globalDiscount()` ist damit überholt (Codekorrektur steht aus). Am
+  `REGELN.globalDiscount()` war damit überholt; der Code rechnet seit v3.25.0 mit 5.000. Am
   23.11.2026 lag der Goldpreis laut API bei 10.650, es gab also keinen
   Rabatt.
 - **Die Aufwertungskosten tragen zusätzlich einen Auf- oder Abschlag aus der
@@ -708,7 +708,7 @@ Nutzungsgebühr 0; Marktplatz Lymhurst) und das offizielle Wiki (`Quality`,
   5.632 / 6.758. Das Verhältnis ist in allen drei Fällen **1,156**. Die App
   rechnet die Aufwertung an diesem Tag also um rund 13,5 % zu billig. Der
   Faktor ist nicht fest; er gehört als abgelesener, einstellbarer Wert in
-  die App, nicht als Konstante.
+  die App, nicht als Konstante (seit v3.25.0 Feld „Aufschlag Aufwertung“, Vorgabe 15,6 %).
 - **Auf der Stationsgebühr liegt dieser Aufschlag nicht** (Nutzerablesung
   23.11.2026): der Magierturm zeigt Nutzungsgebühr 425, und
   `1.024 × 0,1125 × 425 / 100 = 489,6` ist genau die abgelesene Gebühr (490
@@ -719,8 +719,8 @@ Nutzungsgebühr 0; Marktplatz Lymhurst) und das offizielle Wiki (`Quality`,
   Hervorragend 50 (bleibt) / 49,9 / 0,1 %.
 - **Die dritte Qualitätsstufe heißt im deutschen Client „Hervorragend“**,
   nicht „Herausragend“ (Gegenstandsstärke Normal 1.240, Gut 1.260,
-  Hervorragend 1.280). Die App und dieser Text schreiben noch
-  „Herausragend“.
+  Hervorragend 1.280). Die App schreibt seit v3.25.0 „Hervorragend“; ältere Abschnitte
+  dieses Textes noch „Herausragend“.
 - **Markt je Qualität, Klerikerrobe T4.2, Lymhurst:** billigste
   Verkaufsorder Normal und Gut je 31.961, Hervorragend 35.934, Exzellent
   35.980; höchste Kauforder in allen Qualitäten rund 18.826. Verkauft an je

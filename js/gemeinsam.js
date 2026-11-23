@@ -395,7 +395,19 @@ const GEMEINSAM = (function () {
       z.kopf = { erzeugtAm: kopf.erzeugtAm, voll: kopf.voll, schnell: kopf.schnell };
       if (geladen) z.uebernommen = Object.assign({ um: jetzt() }, summe);
       z.letzterErfolg = jetzt();
-      if (speicherKey) merkerSchreiben(speicherKey, { schema: SCHEMA, eingemischt: z.eingemischt, kopf: z.kopf, uebernommen: z.uebernommen, letzterErfolg: z.letzterErfolg });
+      if (speicherKey) {
+        const merker = { schema: SCHEMA, eingemischt: Object.assign({}, z.eingemischt), kopf: z.kopf, uebernommen: z.uebernommen, letzterErfolg: z.letzterErfolg };
+        // v3.25.0: den Merker erst setzen, wenn der eingemischte Stand DAUERHAFT
+        // im Bestand liegt. Das Schreiben von rund 155.000 Eintraegen laeuft im
+        // Hintergrund und dauert einige Sekunden. Wurde die Seite vorher
+        // geschlossen, stand der Merker schon auf "eingemischt", der Bestand war
+        // aber nur zum Teil geschrieben (live gesehen am 23.11.2026: 125.000
+        // von 131.621 Preisen, 578 von 23.566 Volumenwerten), und die App holte
+        // den Rest bis zum naechsten Lauf bei GitHub nicht nach.
+        const schreiben = () => merkerSchreiben(speicherKey, merker);
+        if (geladen && typeof PREISE.bestandGeschrieben === "function") PREISE.bestandGeschrieben().then(schreiben, () => {});
+        else schreiben();
+      }
       return { geladen, ids: Array.from(ids), summe };
     }
 

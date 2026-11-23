@@ -220,6 +220,9 @@ tr.wg-gruppe-detail td:first-child{padding-left:26px;color:var(--dim)}
 .vd-klein.vd-umbruch{white-space:normal;line-height:1.3}
 .vd-nw{white-space:nowrap}
 .vd-preis-handel{color:var(--warn);font-weight:700;white-space:nowrap;cursor:help}
+.cg-mittel{color:var(--dim);font-weight:700;white-space:nowrap;cursor:help}
+#tab-craften .vd-zwei>.vd-gruppe{justify-content:flex-end}
+.cg-aufwerten{display:inline-block;margin-top:2px;padding:1px 7px;border-radius:var(--r-tag);background:oklch(0.72 0.12 200 / .16);color:var(--teal);font-size:11px;font-weight:700;white-space:normal;line-height:1.35;cursor:help}
 .vd-preis-unsicher{display:inline-block;min-width:14px;padding:0 3px;border:1px solid var(--line-strong);border-radius:var(--r-tag);color:var(--dim);font-weight:700;font-size:11px;line-height:1.3;text-align:center;cursor:help}
 .cg-el-knoepfe{flex-wrap:wrap;justify-content:flex-end}
 .cg-el-bedien{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:8px 0 10px}
@@ -865,7 +868,7 @@ ol.ls-ueberweisungen b{color:var(--gold)}
     <select id="qualitaet">
       <option value="0">Normal</option>
       <option value="1">Gut</option>
-      <option value="2">Herausragend</option>
+      <option value="2">Hervorragend</option>
       <option value="3">Exzellent</option>
       <option value="4">Meisterwerk</option>
     </select>
@@ -1021,9 +1024,16 @@ ol.ls-ueberweisungen b{color:var(--gold)}
 <div class="sek-t">Qualitaet</div>
 <div class="grid">
   <div class="feld">
-    <label for="qualitaetsChancenpunkte" title="Qualitaets-Chancenpunkte vom Schicksalsbrett. Fliessen in Korns Craft-Qualitaetswurf ein (X % Bonus = X % Chance auf einen zusaetzlichen Wurf, bestes Ergebnis zaehlt). Wirkt nur auf den Direkt-Craft-Weg, nicht auf Reroll oder preservequality-Zutaten.">Qualitaets-Chancenpunkte</label>
+    <label for="qualitaetsChancenpunkte" title="Vom Schicksalsbrett abzulesen. X Punkte geben X % Chance auf einen weiteren Qualitätswurf, das beste Ergebnis zählt (ab 100 ein sicherer zweiter Wurf). Wirkt auf den Craft-Wurf, nicht auf die Aufwertung und nicht auf Zutaten, die ihre Qualität vererben. Dieselbe Einstellung wie in „Craften: Gewinn“ und „Gelegenheiten“.">Qualitäts-Chancenpunkte</label>
     <input type="number" id="qualitaetsChancenpunkte" value="0" step="10" min="0">
-    <div class="hint">Vorlaeufig 0, s. CLAUDE.md. Am Schicksalsbrett unter der Qualitaets-Spezialisierung ablesen und hier eintragen. Die Umrechnung 1 Punkt = 1 % Bonus ist eine dokumentierte, unbelegte Annahme.</div>
+  </div>
+  <div class="feld">
+    <label for="essen" title="Salat vor dem Craften: sein Wert wird zu den Qualitäts-Chancenpunkten addiert. Die Werte stammen aus den Spieldaten. Annahme, nicht bewiesen: dass sie in derselben Einheit zählen wie die Chancenpunkte und sich addieren; gestützt nur durch eine Stichprobe (30 Roben mit Salat: 11 Normal, 17 Gut, 2 Hervorragend). Die Kosten des Essens sind nicht eingerechnet.">Essen (Annahme)</label>
+    <select id="essen"></select>
+  </div>
+  <div class="feld">
+    <label for="aufwertungAufschlag" title="Im Spiel abgelesener Wert, er ändert sich laufend (Gold Market Stabilization). Vorgabe 15,6 % ist die Messung vom 23.11.2026. Nachmessen: Kosten eines Versuchs an der Reparaturstation geteilt durch (Gegenstandswert mal 4,4 für Normal, 5,5 für Gut, 6,6 für Hervorragend); 1,156 heißt 15,6 %. Wirkt nur auf die Aufwertung, nicht auf die Stationsgebühr. Erlaubt sind -50 bis +100.">Aufschlag Aufwertung % (abgelesen)</label>
+    <input type="number" id="aufwertungAufschlag" value="15.6" step="0.1" min="-50" max="100">
   </div>
 </div>
 </div>
@@ -1351,6 +1361,10 @@ ol.ls-ueberweisungen b{color:var(--gold)}
         <input type="number" id="glMinAbsatz" min="0" step="1"></div>
       <div class="vd-gruppe"><label class="vd-lbl" for="glAnteil" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten: beim Verkauf des Produkts und beim Einkauf jeder Zutat (Bedarf nach Rückgewinnung, denn bei laufender Fertigung fließt die Rückgewinnung zurück und nachgekauft wird nur der Verbrauch). Bestimmt die Spalte Gewinn/Tag. Erfahrungswert, keine Spielregel: wer mehr als etwa ein Zehntel des Tageshandels anbietet, wird meist unterboten und wird die Ware nicht mehr los. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.">Annahme: Marktanteil %</label>
         <input type="number" id="glAnteil" min="1" max="100" step="1" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten: beim Verkauf des Produkts und beim Einkauf jeder Zutat (Bedarf nach Rückgewinnung, denn bei laufender Fertigung fließt die Rückgewinnung zurück und nachgekauft wird nur der Verbrauch). Bestimmt die Spalte Gewinn/Tag. Erfahrungswert, keine Spielregel: wer mehr als etwa ein Zehntel des Tageshandels anbietet, wird meist unterboten und wird die Ware nicht mehr los. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln."></div>
+      <div class="vd-gruppe"><label class="vd-lbl" for="glChancen">Qualitäts-Chancenpunkte</label>
+        <input type="number" id="glChancen" min="0" step="10"></div>
+      <div class="vd-gruppe"><label class="vd-lbl" for="glEssen">Essen (Annahme)</label>
+        <select id="glEssen" class="cg-essen"></select></div>
       <div class="vd-gruppe"><span class="vd-lbl" id="glLblUnsicher">Unsichere Preise</span>
         <button type="button" class="vd-tgl" role="switch" aria-checked="false" aria-labelledby="glLblUnsicher" data-gl-schalter="unsicher" title="Unsicher ist ein Verkaufspreis, wenn es ein Angebot gibt, aber in den letzten 7 Tagen keinen erfassten Handel in Normal, gegen den es sich absichern ließe (ein einzelnes Angebot kann ein Ausreißer sein). Solche Zeilen sind in der Vorgabe ausgeblendet; die Statuszeile nennt ihre Zahl. In Craften: Gewinn und Veredeln leveln bleiben sie sichtbar und tragen ein Fragezeichen am Preis."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
       <div class="vd-gruppe"><span class="vd-lbl" id="glLblArt" title="Filtert die Rangliste. Der Scan läuft für den ganzen Scanumfang weiter.">Art</span>
@@ -1470,8 +1484,12 @@ ol.ls-ueberweisungen b{color:var(--gold)}
         <input type="number" id="cgMinAbsatz" min="0" step="1"></div>
       <div class="vd-gruppe"><label class="vd-lbl" for="cgAnteil" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten: beim Verkauf des Produkts und beim Einkauf jeder Zutat (Bedarf nach Rückgewinnung, denn bei laufender Fertigung fließt die Rückgewinnung zurück und nachgekauft wird nur der Verbrauch). Bestimmt die Spalte Gewinn/Tag. Erfahrungswert, keine Spielregel: wer mehr als etwa ein Zehntel des Tageshandels anbietet, wird meist unterboten und wird die Ware nicht mehr los. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln.">Annahme: Marktanteil %</label>
         <input type="number" id="cgAnteil" min="1" max="100" step="1" title="Annahme, kein Spielwert: so viel vom erfassten Tageshandel (verkauft/Tag) kaufe bzw. verkaufe ich selbst, 1 bis 100 %. Gilt für beide Marktseiten: beim Verkauf des Produkts und beim Einkauf jeder Zutat (Bedarf nach Rückgewinnung, denn bei laufender Fertigung fließt die Rückgewinnung zurück und nachgekauft wird nur der Verbrauch). Bestimmt die Spalte Gewinn/Tag. Erfahrungswert, keine Spielregel: wer mehr als etwa ein Zehntel des Tageshandels anbietet, wird meist unterboten und wird die Ware nicht mehr los. Dieselbe Einstellung in Gelegenheiten, Craften: Gewinn und Veredeln leveln."></div>
+      <div class="vd-gruppe"><label class="vd-lbl" for="cgChancen">Qualitäts-Chancenpunkte</label>
+        <input type="number" id="cgChancen" min="0" step="10"></div>
+      <div class="vd-gruppe"><label class="vd-lbl" for="cgEssen">Essen (Annahme)</label>
+        <select id="cgEssen" class="cg-essen"></select></div>
       <div class="vd-gruppe"><span class="vd-lbl" id="cgLblVol">Volumen</span>
-        <button type="button" class="vd-tgl" role="switch" aria-checked="true" aria-labelledby="cgLblVol" data-cg-schalter="volumen" title="Alle Qualitäten: der erfasste Handel aller Qualitätsstufen zusammen. Nur Normal: nur der Handel in Normal. Gerechnet wird in beiden Fällen mit dem Preis der niedrigsten Stufe."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
+        <button type="button" class="vd-tgl" role="switch" aria-checked="true" aria-labelledby="cgLblVol" data-cg-schalter="volumen" title="Alle Qualitäten: der erfasste Handel aller Qualitätsstufen zusammen. Nur Normal: nur der Handel in Normal. Der Verkaufspreis hängt davon nicht ab."><span class="vd-tgl-text"></span><span class="vd-spur"><span class="vd-knopf"></span></span></button></div>
     </div>
     <div class="vd-gruppe">
       <span class="vd-lbl" title="Täglich wechselnder Bonus auf die Rückgewinnung, +10 % oder +20 %, gilt in allen Städten gleich. Über keine Schnittstelle abrufbar, deshalb im Spiel ablesen. Dieselbe Einstellung wie im Kostenrechner.">Tagesbonus (gilt in allen Städten)</span>
@@ -1712,26 +1730,26 @@ ol.ls-ueberweisungen b{color:var(--gold)}
 
 </div>
 
-<script src="rezepte.js?v=3.24.0"></script>
-<script src="item-namen.js?v=3.24.0"></script>
-<script src="js/preise.js?v=3.24.0"></script>
-<script src="js/gemeinsam.js?v=3.24.0"></script>
-<script src="js/regeln.js?v=3.24.0"></script>
-<script src="js/rechenkern.js?v=3.24.0"></script>
-<script src="js/ui.js?v=3.24.0"></script>
-<script src="js/eintopf-daten.js?v=3.24.0"></script>
-<script src="js/eintopf-preise.js?v=3.24.0"></script>
-<script src="js/eintopf-rechenkern.js?v=3.24.0"></script>
-<script src="js/eintopf-ui.js?v=3.24.0"></script>
-<script src="js/tabs.js?v=3.24.0"></script>
-<script src="js/preisvergleich.js?v=3.24.0"></script>
-<script src="js/veredeln.js?v=3.24.0"></script>
-<script src="js/craften.js?v=3.24.0"></script>
-<script src="js/gelegenheiten.js?v=3.24.0"></script>
+<script src="rezepte.js?v=3.25.0"></script>
+<script src="item-namen.js?v=3.25.0"></script>
+<script src="js/preise.js?v=3.25.0"></script>
+<script src="js/gemeinsam.js?v=3.25.0"></script>
+<script src="js/regeln.js?v=3.25.0"></script>
+<script src="js/rechenkern.js?v=3.25.0"></script>
+<script src="js/ui.js?v=3.25.0"></script>
+<script src="js/eintopf-daten.js?v=3.25.0"></script>
+<script src="js/eintopf-preise.js?v=3.25.0"></script>
+<script src="js/eintopf-rechenkern.js?v=3.25.0"></script>
+<script src="js/eintopf-ui.js?v=3.25.0"></script>
+<script src="js/tabs.js?v=3.25.0"></script>
+<script src="js/preisvergleich.js?v=3.25.0"></script>
+<script src="js/veredeln.js?v=3.25.0"></script>
+<script src="js/craften.js?v=3.25.0"></script>
+<script src="js/gelegenheiten.js?v=3.25.0"></script>
 <script src="vendor/leaflet/leaflet.js?v=1.9.4"></script>
-<script src="js/karte-daten.js?v=3.24.0"></script>
-<script src="js/karte.js?v=3.24.0"></script>
-<script src="js/lootsplit.js?v=3.24.0"></script>
+<script src="js/karte-daten.js?v=3.25.0"></script>
+<script src="js/karte.js?v=3.25.0"></script>
+<script src="js/lootsplit.js?v=3.25.0"></script>
 <script>
 // Ladeprüfung (08.10.2026, nach "CHANCEN is not defined"): fehlt ein Modul,
 // weil eine Datei nicht geladen wurde (Werbeblocker, alter Zwischenspeicher,

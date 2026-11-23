@@ -32,8 +32,10 @@
 //   * Volumen: Summe des erfassten Handels ueber alle Qualitaeten
 //     (Standard, Sörens Wunsch) oder nur Normal (Schalter). history/ liefert
 //     ohnehin je Qualitaet eine Zeile (CLAUDE.md, API-Abschnitt).
-//   Eine besser gewuerfelte Qualitaet beim Craften ist nicht eingerechnet;
-//   sie kann nur mehr bringen.
+//   v3.25.0 (O11): bei eigener Verkaufsorder rechnet der Erloes eines
+//   qualifizierbaren Produkts mit dem erwarteten Preis ueber die gewuerfelte
+//   Qualitaet (qualitaetsErloes()); der obige Preis ist darin der Preis der
+//   Stufe Normal. Beim Sofortverkauf bleibt es bei der Kauforder in Normal.
 //
 // Bewusst nicht modelliert: Transportkosten, Gewicht, Reiserisiko,
 // Wartezeit eigener Orders, Craft-Fame.
@@ -306,6 +308,200 @@ const CRAFTEN = (function () {
     };
   }
 
+  // -----------------------------------------------------------------------
+  // v3.25.0 (O11): Qualitaet im Verkauf
+  // -----------------------------------------------------------------------
+  // Belegt (23.11.2026): mit Salat wurden aus 30 Roben 11 Normal, 17 Gut,
+  // 2 Hervorragend, und der Markt zahlt je Qualitaet verschieden
+  // (Klerikerrobe T4.2: 31.961 / 31.961 / 35.934 / 35.980). Nur fuer
+  // qualifizierbare Produkte und nur bei eigener Verkaufsorder:
+  //   p(q)     = REGELN.qualitaetsVerteilung(Chancenpunkte + Essensbonus)
+  //   Preis(Normal) = der abgesicherte Preis aus O10 (V.verkaufAbsichern)
+  //   Preis(q), q > Normal:
+  //     OHNE erfassten Handel in der Qualitaet q (7 Tage, Verkaufsstadt)
+  //     ODER ohne aktuelles Angebot ab Qualitaet q:
+  //       Preis(q - 1). Ein Angebot allein hebt den Preis NICHT (ein
+  //       Scherzangebot schluege sonst anteilig durch, Absicht von O10),
+  //       ein Handelspreis allein auch nicht (kann ein einzelner Verkauf sein).
+  //     MIT beidem: der NIEDRIGERE aus billigstem Angebot ueber alle
+  //       Qualitaeten >= q und dem Handelspreis der Qualitaet q; danach nie
+  //       unter Preis(q - 1) (ein besseres Stueck laesst sich immer als das
+  //       schlechtere verkaufen)
+  //   erwarteter Preis = Summe p(q) x Preis(q)
+  // Der Einfluss von Fokus auf die Qualitaet ist unbelegt und fehlt bewusst.
+
+  /**
+   * Preis je Qualitaet in der Verkaufsstadt.
+   * @param jeQ Qualitaet (1..5) -> Preiseintrag {sell, buy}
+   * @param absatzJeQ Qualitaet -> Absatzeintrag mit mengengewichteterPreis
+   * @param preisNormal der abgesicherte Normalpreis der Zeile
+   * @param quelleNormal "angebot" | "handel" (Herkunft des Normalpreises)
+   * @returns {{q:number, preis:number, quelle:string, angebot:?number, handel:?number}[]} fuenf Eintraege, q = 0..4;
+   *   quelle: "angebot", "handel", "darunter" (Handel oder Angebot in dieser Qualitaet fehlt, Wert der Stufe darunter), "geglaettet" (lag unter der Stufe darunter)
+   */
+  function preiseJeQualitaet(jeQ, absatzJeQ, preisNormal, quelleNormal, maxPreisAlterMin, jetzt) {
+    const angebotAb = (ab) => {
+      let best = null;
+      Object.keys(jeQ || {}).forEach((q) => {
+        if (Number(q) < ab) return;
+        const p = V.einkaufsBasisPreis(jeQ[q] && jeQ[q].sell, maxPreisAlterMin, jetzt);
+        if (p != null && (best == null || p < best)) best = p;
+      });
+      return best;
+    };
+    const handelVon = (q) => {
+      const e = absatzJeQ ? absatzJeQ[q] || absatzJeQ[String(q)] : null;
+      const p = e && e.mengengewichteterPreis != null ? Number(e.mengengewichteterPreis) : NaN;
+      return isFinite(p) && p > 0 ? p : null;
+    };
+    const out = [{ q: 0, preis: preisNormal, quelle: quelleNormal === "handel" ? "handel" : "angebot", angebot: angebotAb(1), handel: handelVon(1) }];
+    for (let q = 1; q <= 4; q++) {
+      const angebot = angebotAb(q + 1);
+      const handel = handelVon(q + 1);
+      const darunter = out[q - 1].preis;
+      let preis;
+      let quelle;
+      if (handel == null || angebot == null) {
+        // Eine bessere Qualitaet zaehlt nur mit BEIDEM: erfasstem Handel in
+        // dieser Qualitaet UND einem aktuellen Angebot ab dieser Qualitaet.
+        // Ein Angebot allein hebt den Preis nicht (Scherzangebot), und ein
+        // Handelspreis allein auch nicht: er kann aus einem einzigen erfassten
+        // Verkauf stammen (Befund des Rechenkern-Pruefers, 23.11.2026: ein
+        // Meisterwerk-Verkauf zu 90 Mio. hob den Gewinn von 23.269 auf 190.574).
+        preis = darunter;
+        quelle = "darunter";
+      } else if (angebot <= handel) {
+        preis = angebot;
+        quelle = "angebot";
+      } else {
+        preis = handel;
+        quelle = "handel";
+      }
+      if (preis < darunter) {
+        preis = darunter;
+        quelle = "geglaettet";
+      }
+      out.push({ q, preis, quelle, angebot, handel });
+    }
+    return out;
+  }
+
+  /**
+   * Erwarteter Preis ueber die Qualitaetsverteilung. Gerechnet als
+   * Normalpreis plus gewichtete Aufschlaege, damit bei durchweg gleichem
+   * Preis EXAKT der Normalpreis herauskommt (keine Rundung ueber die Summe
+   * der Anteile).
+   * @returns {{erwartet:number, liste:object[]}} liste wie preiseJeQualitaet(), dazu anteil je Eintrag
+   */
+  function qualitaetsErloes(liste, bonus) {
+    const p = REGELN.qualitaetsVerteilung(bonus);
+    const preisNormal = liste[0].preis;
+    let erwartet = preisNormal;
+    const mit = liste.map((x) => {
+      if (x.q > 0) erwartet += p[x.q] * (x.preis - preisNormal);
+      return Object.assign({}, x, { anteil: p[x.q] });
+    });
+    return { erwartet, liste: mit };
+  }
+
+  /**
+   * Teil C: lohnt es, alle Stuecke unter einer Zielqualitaet Z (Gut,
+   * Hervorragend, Exzellent) an der Reparaturstation bis mindestens Z
+   * aufzuwerten?
+   *   Mehrerloes(Z)  = Summe ueber q < Z von p(q) x (Preis(Z) - Preis(q)) x Nettoanteil
+   *   Mehrkosten(Z)  = Summe ueber q < Z von p(q) x erwartete Aufwertungskosten q -> mindestens Z
+   *                    (REGELN.rerollKostenZuQualitaet: Gegenstandswert x Faktor x Rabattfaktor x (1 + Aufschlag/100))
+   *   Vorteil(Z)     = Mehrerloes(Z) - Mehrkosten(Z)
+   * Ein Stueck kann beim Aufwerten ueber Z landen; der Erloes zaehlt dann
+   * vorsichtig trotzdem nur mit Preis(Z) (Untergrenze), die Kosten sind die
+   * erwarteten bis mindestens Z. Liefert die beste Zielqualitaet mit Vorteil
+   * > 0 oder null. Aendert weder Gewinn noch Sortierung der Zeile.
+   * @param liste preisJeQualitaet der Zeile (mit anteil)
+   * @param nettoAnteil Erloes netto je Silber Preis (1 - Steuer - Einstellgebuehr)
+   * @returns {?{ziel:number, vorteilJeStueck:number, mehrerloes:number, mehrkosten:number, schritte:object[]}}
+   */
+  function aufwertenPruefen(liste, itemWert, rabattFaktor, aufschlagProzent, nettoAnteil) {
+    if (!liste || !(itemWert > 0)) return null;
+    let best = null;
+    for (let ziel = 1; ziel <= 3; ziel++) {
+      let mehrerloes = 0;
+      let mehrkosten = 0;
+      let ok = true;
+      const schritte = [];
+      for (let q = 0; q < ziel; q++) {
+        const x = liste[q];
+        if (!(x.anteil > 0)) continue;
+        const r = REGELN.rerollKostenZuQualitaet(itemWert, ziel, q, rabattFaktor, aufschlagProzent);
+        if (r.gesperrt) {
+          ok = false;
+          break;
+        }
+        const erloesPlus = (liste[ziel].preis - x.preis) * nettoAnteil;
+        mehrerloes += x.anteil * erloesPlus;
+        mehrkosten += x.anteil * r.silber;
+        schritte.push({ q, anteil: x.anteil, erloesPlus, kosten: r.silber });
+      }
+      if (!ok) continue;
+      const vorteil = mehrerloes - mehrkosten;
+      if (vorteil > 0 && (!best || vorteil > best.vorteilJeStueck)) best = { ziel, vorteilJeStueck: vorteil, mehrerloes, mehrkosten, schritte };
+    }
+    return best;
+  }
+
+  /**
+   * Gegenstandswert des fertigen Stuecks fuer die Aufwertungskosten, oder
+   * null, wenn er nicht sicher ist: Artefakt-Items haben zwei Rezepte mit
+   * verschiedenem Gegenstandswert (Artefakt oder Kristallisierter Geist),
+   * und welchen Wert die Reparaturstation fuer das fertige Stueck ansetzt,
+   * ist nicht belegt. Dann gibt es keinen Aufwerten-Hinweis.
+   */
+  function itemWertSicher(item, stufe, graph) {
+    const g = aktuellerGraph(graph);
+    const node = g && g.items ? g.items[item] : null;
+    if (!node) return null;
+    let wert = null;
+    let eindeutig = true;
+    REGELN.rezepteFuerStufe(node, stufe).forEach((rezept) => {
+      const w = REGELN.itemWert(item, stufe, rezept, g);
+      if (wert == null) wert = w;
+      else if (Math.abs(w - wert) > 1e-9) eindeutig = false;
+    });
+    return eindeutig && wert > 0 ? wert : null;
+  }
+
+  const QUELLE_TEXT = { angebot: "Angebot", handel: "gehandelt", darunter: "wie Stufe darunter, Handel oder Angebot fehlt", geglaettet: "auf Stufe darunter angehoben" };
+
+  /** Kennzeichen "· Mittel" hinter dem Preis und Tooltip mit der Tabelle je Qualitaet (leer ohne preisJeQualitaet). */
+  function mittelKennzeichen(z, fmt) {
+    if (!z || !z.preisJeQualitaet) return { html: "", titel: "" };
+    const prozentText = (a) => (a * 100).toFixed(1).replace(".", ",") + " %";
+    const zeilen = z.preisJeQualitaet.map((x) => REGELN.QUALITAETEN[x.q] + ": " + prozentText(x.anteil) + " zu " + fmt(x.preis) + " (" + QUELLE_TEXT[x.quelle] + ")");
+    const bonus = z.qualitaetsBonus > 0 ? "Qualitätsbonus " + String(Math.round(z.qualitaetsBonus * 100) / 100).replace(".", ",") + " (Chancenpunkte plus Essen)" : "ohne Qualitätsbonus";
+    const titel =
+      (z.preisMittel
+        ? "Mittel über die gewürfelte Qualität (" + bonus + "): " + fmt(z.produktPreis) + ". Normalpreis " + fmt(z.preisNormal) + "."
+        : "Alle Qualitäten erzielen hier den Normalpreis " + fmt(z.preisNormal) + " (" + bonus + ").") +
+      "\nAnteil und Preis je Qualität:\n" + zeilen.join("\n") +
+      "\nPreis je Qualität: nur mit erfasstem Handel in dieser Qualität und einem Angebot dieser oder besserer Qualität, dann der niedrigere aus beiden; sonst wie die Stufe darunter (ein Angebot oder ein Verkauf allein hebt den Preis nicht). Stadtwahl nach dem Normalpreis. Beim Sofortverkauf zählt nur die Kauforder in Normal." +
+      (z.aufwertenOffen ? "\nAufwerten nicht geprüft: der Gegenstandswert ist bei zwei Rezepten (Artefakt oder Kristallisierter Geist) nicht belegt." : "");
+    return { html: z.preisMittel ? " <span class='cg-mittel'>· Mittel</span>" : "", titel };
+  }
+
+  /** Schild "Aufwerten bis Hervorragend +1.240" mit der Rechnung im Tooltip (leer ohne Vorteil). */
+  function aufwertenSchildHtml(z, fmt, esc) {
+    const a = z && z.aufwerten;
+    if (!a) return "";
+    const zielName = REGELN.QUALITAETEN[a.ziel];
+    const prozentText = (x) => (x * 100).toFixed(1).replace(".", ",") + " %";
+    const titel =
+      "Alle Stücke unter " + zielName + " an der Reparaturstation bis mindestens " + zielName + " aufwerten: im Mittel +" + fmt(a.vorteilJeStueck) + " je gefertigtem Stück (Mehrerlös " + fmt(a.mehrerloes) +
+      " minus Aufwertungskosten " + fmt(a.mehrkosten) + ").\n" +
+      a.schritte.map((s) => REGELN.QUALITAETEN[s.q] + " (" + prozentText(s.anteil) + "): Mehrerlös " + fmt(s.erloesPlus) + ", Kosten im Mittel " + fmt(s.kosten)).join("\n") +
+      "\nKosten je Versuch: Gegenstandswert " + fmt(z.itemWert) + " mal 4,4 / 5,5 / 6,6, mit Global Discount und Aufschlag " + String(z.aufwertungAufschlagProzent).replace(".", ",") +
+      " %. Ein Stück kann auch über " + zielName + " landen; gerechnet ist vorsichtig mit dem Preis für " + zielName + ". Gewinn und Sortierung der Zeile bleiben beim Verkauf ohne Aufwerten.";
+    return "<div><span class='cg-aufwerten' title='" + esc(titel) + "'>Aufwerten bis " + esc(zielName) + " +" + fmt(a.vorteilJeStueck) + "</span></div>";
+  }
+
   /** Erfasster Handel je Tag: Summe ueber alle Qualitaeten oder nur Normal. null = nichts erfasst. */
   function volumen(absatzJeQ, alleQualitaeten) {
     if (!absatzJeQ) return null;
@@ -408,6 +604,15 @@ const CRAFTEN = (function () {
     };
     const erloesOpts = { verkaufsweg: auswahl.verkaufsweg, premium: einstellungen.premium, maxPreisAlterMin, jetzt: zeit };
     const kennzahlCtx = { mitFokus: !!auswahl.mitFokus, premium: einstellungen.premium !== false, anteil: V.anteilVon(einstellungen) };
+    // v3.25.0 (O11): Qualitaet im Verkauf, s. qualitaetsErloes() und aufwertenPruefen().
+    const qBonus = REGELN.qualitaetsBonusGesamt(einstellungen.qualitaetsChancenpunkte, einstellungen.essen);
+    const aufschlag = REGELN.aufwertungAufschlagBereinigen(einstellungen.aufwertungAufschlagProzent, REGELN.AUFWERTUNG_AUFSCHLAG_VORGABE);
+    // Global Discount: einstellungen.silberRabattFaktor (Tests), sonst der zuletzt im Kostenrechner abgerufene Goldpreis; unbekannt = kein Rabatt.
+    const rabattFaktor =
+      einstellungen.silberRabattFaktor != null && isFinite(einstellungen.silberRabattFaktor)
+        ? Number(einstellungen.silberRabattFaktor)
+        : REGELN.silberRabattFaktor(typeof UI !== "undefined" && UI.goldpreisBekannt ? UI.goldpreisBekannt() : null);
+    const nettoAnteil = REGELN.steuerUndGebuehr(1, { steuersatz: einstellungen.premium === false ? REGELN.STEUER_OHNE_PREMIUM : REGELN.STEUER_PREMIUM, mitEinstellgebuehr: true }).netto;
     const wahl = {};
     const einkaufVon = (id) => {
       if (!(id in wahl)) {
@@ -442,7 +647,40 @@ const CRAFTEN = (function () {
       const vk = V.verkaufAbsichern(vkEintraege, erloesOpts) || { stadt: null, erloes: { netto: null, grund: "keine Verkaufsstadt angehakt" } };
       const vkDaten = verkaufDaten.find((d) => d.stadt === vk.stadt) || {};
       const vkEintrag = (vkEintraege.find((e) => e.stadt === vk.stadt) || {}).eintrag || null;
-      const zeile = V.zeileBauen(kandidat, fertigung, craft, vk.erloes, null, Object.assign({}, auswahl, { herkunft }));
+      // v3.25.0 (O11): erwarteter Preis ueber die Qualitaeten. Nur
+      // qualifizierbar, nur Verkaufsorder, nur mit gueltigem Normalpreis.
+      // Faellt jede Qualitaet auf den Normalpreis, bleibt vk.erloes dasselbe
+      // Objekt und die Zeile zeichengleich zu vorher.
+      let erloes = vk.erloes;
+      let qInfo = null;
+      const preisNormal = vk.erloes && vk.erloes.netto != null ? vk.erloes.brutto : null;
+      if (k.qualifizierbar && auswahl.verkaufsweg !== "sofort" && preisNormal != null && vkEintrag) {
+        const liste = preiseJeQualitaet(vkDaten.produktJeQ[k.marktId], (vkDaten.absatz || {})[k.marktId], preisNormal, vk.preis ? vk.preis.quelle : "angebot", maxPreisAlterMin, zeit);
+        qInfo = qualitaetsErloes(liste, qBonus);
+        if (qInfo.erwartet !== preisNormal) {
+          const mittel = REGELN.erloesJeStueck({ sell: Object.assign({}, vkEintrag.sell, { preis: qInfo.erwartet }) }, erloesOpts);
+          if (mittel.netto != null) erloes = mittel;
+          else qInfo = null;
+        }
+      }
+      const zeile = V.zeileBauen(kandidat, fertigung, craft, erloes, null, Object.assign({}, auswahl, { herkunft }));
+      zeile.preisNormal = preisNormal;
+      zeile.preisJeQualitaet = qInfo ? qInfo.liste : null;
+      zeile.preisMittel = !!qInfo && erloes !== vk.erloes; // der Erloes rechnet mit einem Mittel ueber dem Normalpreis
+      zeile.qualitaetsBonus = qInfo ? qBonus : null;
+      zeile.aufwerten = null;
+      zeile.aufwertenVorteil = null; // Kurzform von aufwerten.vorteilJeStueck, fuer den Vergleich alter und neuer Zeilen
+      zeile.aufwertenOffen = false;
+      if (qInfo && zeile.gewinn != null) {
+        const iw = itemWertSicher(k.item, k.stufe);
+        if (iw == null) zeile.aufwertenOffen = true;
+        else {
+          zeile.itemWert = iw;
+          zeile.aufwertungAufschlagProzent = aufschlag;
+          zeile.aufwerten = aufwertenPruefen(qInfo.liste, iw, rabattFaktor, aufschlag, nettoAnteil);
+          zeile.aufwertenVorteil = zeile.aufwerten ? zeile.aufwerten.vorteilJeStueck : null;
+        }
+      }
       zeile.stadtbonus = REGELN.hatCraftBonus(k.cc, fertigung);
       zeile.artefakt = k.artefakt;
       zeile.qualifizierbar = k.qualifizierbar;
@@ -1249,10 +1487,13 @@ const CRAFTEN = (function () {
       const exz = zeilenRechnen([kBreit], mit({ 4: sp(69958) }, { 1: h(12, 30000), 4: h(1, 70000) }), auswahl, einst)[0];
       const exzOhne = zeilenRechnen([kBreit], mit({ 4: sp(69958) }, { 4: h(1, 70000) }), auswahl, einst)[0];
       pruefe(
-        "o10 zeilenRechnen: qualifizierbares Produkt, billigstes Angebot Exzellent 69.958, Handel Normal 30.000: verwendet 30.000 (Quelle \"handel\", das Angebot bleibt als produktPreisAngebot und sellQualitaet 4 sichtbar); ohne Normal-Handel bleibt 69.958 und die Zeile ist unsicher",
-        exz.qualifizierbar && exz.produktPreis === 30000 && exz.preisQuelle === "handel" && exz.produktPreisAngebot === 69958 && exz.sellQualitaet === 4 && nahe(exz.erloes, 30000 * 0.935) &&
-          exzOhne.produktPreis === 69958 && exzOhne.preisUnsicher === true && exzOhne.preisQuelle === "angebot",
-        JSON.stringify([exz.produktPreis, exz.preisQuelle, exzOhne.produktPreis])
+        // v3.25.0 (O11) angepasst: der Normalpreis bleibt 30.000 (preisNormal). Gut und Hervorragend haben keinen erfassten Handel und
+        // bleiben bei 30.000; in Exzellent ist Handel erfasst (70.000), dort zaehlt das Angebot 69.958, Meisterwerk faellt darauf zurueck:
+        // 30.000 + (0,01 + 0,001) x 39.958 = 30.439,538. Der reine Fall ohne Handel in Exzellent (wieder 30.000) steht bei den o11-Tests.
+        "o10 zeilenRechnen: qualifizierbares Produkt, billigstes Angebot Exzellent 69.958, Handel Normal 30.000: Normalpreis 30.000 (Quelle \"handel\", das Angebot bleibt als produktPreisAngebot und sellQualitaet 4 sichtbar); seit O11 Mittel 30.439,538, weil in Exzellent Handel erfasst ist (1,1 % der Stuecke); ohne Normal-Handel bleibt 69.958 und die Zeile ist unsicher",
+        exz.qualifizierbar && exz.preisNormal === 30000 && exz.preisQuelle === "handel" && exz.produktPreisAngebot === 69958 && exz.sellQualitaet === 4 && nahe(exz.produktPreis, 30439.538) && nahe(exz.erloes, 30439.538 * 0.935) &&
+          exz.preisJeQualitaet.map((x) => x.preis).join() === "30000,30000,30000,69958,69958" && exzOhne.produktPreis === 69958 && exzOhne.preisUnsicher === true && exzOhne.preisQuelle === "angebot",
+        JSON.stringify([exz.preisNormal, exz.produktPreis, exz.preisQuelle, exzOhne.produktPreis])
       );
       // Sofortverkauf: ueberhoehte Kauforder 5.000.000 in Normal, gehandelt 30.000; nur Steuer 4 %.
       const sofort = Object.assign({}, auswahl, { verkaufsweg: "sofort" });
@@ -1290,6 +1531,179 @@ const CRAFTEN = (function () {
         /vd-preis-handel/.test(kz.html) && /gehandelt/.test(kz.html) && /82000/.test(kz.titel) && /31111111/.test(kz.titel) && /niedrigere/.test(kz.titel) &&
           /vd-preis-unsicher/.test(kzU.html) && /unsicher/.test(kzU.titel) && kzA.html === "" && /82000/.test(kzA.titel) && V.preisKennzeichen(null, fmtT).html === "",
         kz.html + " / " + kzU.html
+      );
+    })();
+
+    // ---- v3.25.0 (O11): Qualitaet im Verkauf ----
+    (function () {
+      const nahe = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol);
+      const mit = (jeQ, absatzJeQ) => [Object.assign({}, stadtDaten[0], { produktJeQ: { T5_MAIN_SWORD: jeQ }, absatz: { T5_MAIN_SWORD: absatzJeQ || {} } })];
+      const h = (stueck, p) => ({ stueckJeTag: stueck, mengengewichteterPreis: p });
+      const zr = (jeQ, absatzJeQ, e, a, k) => zeilenRechnen([k || kBreit], mit(jeQ, absatzJeQ), a || auswahl, Object.assign({}, einst, e || {}))[0];
+      const fmtT = (n) => String(Math.round(n));
+      const escT = (t) => String(t).replace(/'/g, "&#39;");
+
+      // Klerikerrobe T4.2 (Marktablesung 23.11.2026): Angebote 31.961 / 31.961 / 35.934 / 35.980, gehandelt (Tageswerte)
+      // 29.883 / 29.851 / 32.500 / 33.456, Meisterwerk ohne Angebot und ohne Handel.
+      // Preis je Qualitaet: Normal min(31.961, 29.883) = 29.883; Gut min(31.961, 29.851) = 29.851, angehoben auf 29.883;
+      // Hervorragend min(35.934, 32.500) = 32.500; Exzellent min(35.980, 33.456) = 33.456; Meisterwerk wie Exzellent.
+      const ROBE = { 1: sp(31961), 2: sp(31961), 3: sp(35934), 4: sp(35980) };
+      const ROBE_H = { 1: h(97, 29883), 2: h(287, 29851), 3: h(175, 32500), 4: h(299, 33456) };
+      const robe0 = zr(ROBE, ROBE_H, { qualitaetsChancenpunkte: 0, essen: null });
+      // Von Hand: 29.883 + 0,05 x 2.617 + (0,01 + 0,001) x 3.573 = 29.883 + 130,85 + 39,303 = 30.053,153; netto x 0,935 = 28.099,698055.
+      pruefe(
+        "o11 Klerikerrobe (Angebot und Handel je Qualitaet), Bonus 0: Preise 29.883 / 29.883 / 32.500 / 33.456 / 33.456, erwarteter Preis 30.053,153, Erloes 28.099,698; Gut wird auf Normal angehoben, Meisterwerk ohne Handel faellt auf Exzellent zurueck",
+        nahe(robe0.produktPreis, 30053.153) && nahe(robe0.erloes, 28099.698055) && robe0.preisNormal === 29883 && robe0.preisQuelle === "handel" && robe0.preisMittel === true && robe0.qualitaetsBonus === 0 &&
+          robe0.preisJeQualitaet.map((x) => x.preis).join() === "29883,29883,32500,33456,33456" && robe0.preisJeQualitaet.map((x) => x.quelle).join() === "handel,geglaettet,handel,handel,darunter" &&
+          robe0.preisJeQualitaet.map((x) => x.anteil).join() === REGELN.qualitaetsVerteilung(0).join() && nahe(robe0.gewinn, robe0.erloes - robe0.silber, 1e-9),
+        JSON.stringify([robe0.produktPreis, robe0.erloes, robe0.preisJeQualitaet.map((x) => [x.preis, x.quelle])])
+      );
+      // Bonus 150: je zur Haelfte 2 und 3 Wuerfe. Anteile 0,4009018845 / 0,453926625 / 0,117912825 / 0,024760665 / 0,0024980005.
+      // 29.883 + 0,117912825 x 2.617 + 0,0272586655 x 3.573 = 29.883 + 308,577863025 + 97,3952118315 = 30.288,9730748565; netto 28.320,189825.
+      const robe150 = zr(ROBE, ROBE_H, { qualitaetsChancenpunkte: 150, essen: null });
+      pruefe(
+        "o11 Klerikerrobe, Bonus 150: erwarteter Preis 30.288,9731 (von Hand: Anteil Hervorragend 11,79 %, Exzellent plus Meisterwerk 2,73 %), Erloes 28.320,190",
+        nahe(robe150.produktPreis, 30288.9730748565) && nahe(robe150.erloes, 28320.189825, 1e-5) && robe150.qualitaetsBonus === 150 && nahe(robe150.preisJeQualitaet[2].anteil, 0.117912825, 1e-12) && robe150.preisNormal === 29883,
+        JSON.stringify([robe150.produktPreis, robe150.erloes])
+      );
+      // Salat plus Chancenpunkte addieren sich: 51 + Ruebensalat .2 (99) = 150.
+      const robeSalat = zr(ROBE, ROBE_H, { qualitaetsChancenpunkte: 51, essen: { id: "ruebensalat", stufe: 2 } });
+      const robe51 = zr(ROBE, ROBE_H, { qualitaetsChancenpunkte: 51, essen: null });
+      pruefe(
+        "o11 Chancenpunkte 51 plus Ruebensalat .2 (99) rechnen wie Bonus 150; ohne Salat (51) liegt der erwartete Preis darunter, aber ueber Bonus 0",
+        robeSalat.qualitaetsBonus === 150 && robeSalat.produktPreis === robe150.produktPreis && robeSalat.erloes === robe150.erloes && robe51.produktPreis < robe150.produktPreis && robe51.produktPreis > robe0.produktPreis,
+        JSON.stringify([robeSalat.produktPreis, robe51.produktPreis])
+      );
+      // Bonus 0 und nur ein Normalpreis: exakt das bisherige Ergebnis (alle Qualitaeten fallen auf Normal zurueck).
+      const nurNormal = zr({ 1: sp(31961) }, { 1: h(9, 40000) }, { qualitaetsChancenpunkte: 0 });
+      const nurNormal150 = zr({ 1: sp(31961) }, { 1: h(9, 40000) }, { qualitaetsChancenpunkte: 150, essen: { id: "kalmarsalat", stufe: 3 } });
+      pruefe(
+        "o11 nur ein Normalpreis: Preis exakt 31.961, Erloes exakt wie REGELN.erloesJeStueck (bisherige Rechnung), kein Mittel; auch mit Bonus aendert sich nichts",
+        nurNormal.produktPreis === 31961 && nurNormal.erloes === REGELN.erloesJeStueck(sp(31961), { verkaufsweg: "order", premium: true }).netto && nurNormal.preisMittel === false &&
+          nurNormal.preisJeQualitaet.every((x) => x.preis === 31961) && nurNormal150.produktPreis === 31961 && nurNormal150.erloes === nurNormal.erloes && nurNormal150.gewinnJeTag === nurNormal.gewinnJeTag &&
+          mittelKennzeichen(nurNormal, fmtT).html === "",
+        JSON.stringify([nurNormal.produktPreis, nurNormal.erloes])
+      );
+      // Ein Angebot in besserer Qualitaet OHNE erfassten Handel hebt den Preis nicht.
+      // O10-Fall: einziges Angebot Exzellent 69.958, Handel nur in Normal 30.000: wieder 30.000.
+      const o10Fall = zr({ 4: sp(69958) }, { 1: h(12, 30000) }, { qualitaetsChancenpunkte: 150 });
+      const nurAngebote = zr(ROBE, { 1: h(97, 29883) }, { qualitaetsChancenpunkte: 150 });
+      pruefe(
+        "o11 Angebot in besserer Qualitaet ohne erfassten Handel hebt den Preis nicht: O10-Fall (einziges Angebot Exzellent 69.958, Handel nur Normal 30.000) rechnet wieder mit 30.000; Klerikerrobe-Angebote ohne Handel ueber Normal bleiben bei 29.883, auch mit Bonus 150",
+        o10Fall.produktPreis === 30000 && o10Fall.preisNormal === 30000 && o10Fall.preisQuelle === "handel" && o10Fall.preisMittel === false && nahe(o10Fall.erloes, 30000 * 0.935) &&
+          o10Fall.preisJeQualitaet.every((x) => x.preis === 30000) && o10Fall.preisJeQualitaet.slice(1).every((x) => x.quelle === "darunter") &&
+          nurAngebote.produktPreis === 29883 && nurAngebote.preisJeQualitaet.every((x) => x.preis === 29883),
+        JSON.stringify([o10Fall.produktPreis, nurAngebote.produktPreis])
+      );
+      // Scherzangebot 31.111.111 in Exzellent ohne Handel dort: wirkungslos.
+      const scherzQ = zr({ 1: sp(31961), 4: sp(31111111) }, { 1: h(97, 29883), 2: h(287, 29851) }, { qualitaetsChancenpunkte: 150 });
+      pruefe(
+        "o11 Scherzangebot 31.111.111 in Exzellent ohne erfassten Handel bleibt wirkungslos: alle Qualitaeten 29.883, Preis und Erloes wie ohne das Angebot",
+        scherzQ.produktPreis === 29883 && scherzQ.preisJeQualitaet.every((x) => x.preis === 29883) && scherzQ.preisJeQualitaet[3].angebot === 31111111 && scherzQ.preisJeQualitaet[3].quelle === "darunter" &&
+          scherzQ.erloes === zr({ 1: sp(31961) }, { 1: h(97, 29883), 2: h(287, 29851) }, { qualitaetsChancenpunkte: 150 }).erloes,
+        JSON.stringify(scherzQ.preisJeQualitaet.map((x) => [x.preis, x.quelle]))
+      );
+      // Handel in Exzellent, aber keiner in Gut und Hervorragend: die beiden fallen auf Normal, Exzellent zaehlt.
+      const nurExz = zr(ROBE, { 1: h(97, 29883), 4: h(299, 33456) }, {});
+      pruefe(
+        "o11 Handel in Exzellent, keiner in Gut und Hervorragend: Gut und Hervorragend fallen auf Normal (29.883), Exzellent zaehlt mit 33.456, Meisterwerk faellt auf Exzellent; erwarteter Preis 29.883 + 1,1 % x 3.573 = 29.922,303",
+        nurExz.preisJeQualitaet.map((x) => x.preis).join() === "29883,29883,29883,33456,33456" && nurExz.preisJeQualitaet.map((x) => x.quelle).join() === "handel,darunter,darunter,handel,darunter" && nahe(nurExz.produktPreis, 29922.303),
+        JSON.stringify(nurExz.preisJeQualitaet.map((x) => [x.preis, x.quelle]))
+      );
+      // Fehlende Zwischenqualitaet: Angebot nur in Normal, Handel nur in Normal und Hervorragend. Handel allein reicht nicht (ein einzelner Verkauf koennte den Preis heben): Hervorragend faellt auf die Stufe darunter.
+      const luecke = zr({ 1: sp(30000) }, { 1: h(5, 30000), 3: h(5, 40000) }, {});
+      pruefe(
+        "o11 Handel ohne Angebot zaehlt nicht: Gut (kein Handel) und Hervorragend (Handel 40.000, kein Angebot) fallen auf Normal zurueck, alle Stufen 30.000",
+        luecke.preisJeQualitaet.map((x) => x.preis).join() === "30000,30000,30000,30000,30000" && luecke.preisJeQualitaet.map((x) => x.quelle).join() === "angebot,darunter,darunter,darunter,darunter" &&
+          nahe(luecke.produktPreis, 30000),
+        JSON.stringify(luecke.preisJeQualitaet.map((x) => [x.preis, x.quelle]))
+      );
+      // Glaettung nach oben: Hervorragend gehandelt 20.000 liegt unter Gut 45.000.
+      const glatt = zr({ 1: sp(30000), 4: sp(50000) }, { 1: h(5, 31000), 2: h(5, 45000), 3: h(5, 20000) }, {});
+      pruefe(
+        "o11 Glaettung: ein Preis unter der Stufe darunter (Hervorragend gehandelt 20.000 unter Gut 45.000) wird auf die Stufe darunter angehoben; kein Preis liegt unter dem der niedrigeren Qualitaet",
+        glatt.preisJeQualitaet.map((x) => x.preis).join() === "30000,45000,45000,45000,45000" && glatt.preisJeQualitaet.map((x) => x.quelle).join() === "angebot,handel,geglaettet,darunter,darunter" &&
+          glatt.preisJeQualitaet.every((x, i, l) => i === 0 || x.preis >= l[i - 1].preis),
+        JSON.stringify(glatt.preisJeQualitaet.map((x) => [x.preis, x.quelle]))
+      );
+      // Mit Handel zaehlt der niedrigere aus Angebot und Handelspreis.
+      const hq = zr({ 1: sp(30000), 2: sp(40000) }, { 1: h(5, 30000), 2: h(5, 35000) }, {});
+      pruefe(
+        "o11 Handelspreis einer Qualitaet unter ihrem Angebot zaehlt (Gut: Angebot 40.000, gehandelt 35.000 ergibt 35.000, Quelle Handel); liegt er darueber, zaehlt das Angebot",
+        hq.preisJeQualitaet[1].preis === 35000 && hq.preisJeQualitaet[1].quelle === "handel" && nahe(hq.produktPreis, 30000 + 0.311 * 5000) &&
+          zr({ 1: sp(30000), 2: sp(40000) }, { 1: h(5, 30000), 2: h(5, 45000) }, {}).preisJeQualitaet[1].preis === 40000,
+        JSON.stringify(hq.preisJeQualitaet.map((x) => [x.preis, x.quelle]))
+      );
+      // Nicht qualifizierbar und Sofortverkauf: unveraendert.
+      const kOhneQ = Object.assign({}, kBreit, { qualifizierbar: false });
+      const ohneQ = zr(ROBE, {}, { qualitaetsChancenpunkte: 150 }, null, kOhneQ);
+      const sofortA = Object.assign({}, auswahl, { verkaufsweg: "sofort" });
+      const kauf = (sell, buy) => ({ sell: { preis: sell, kein: false, datum: "" }, buy: { preis: buy, kein: false, datum: "" } });
+      const sofortZ = zr({ 1: kauf(31961, 18826), 3: kauf(35934, 25000) }, {}, { qualitaetsChancenpunkte: 150 }, sofortA);
+      pruefe(
+        "o11 nicht qualifizierbares Produkt und Sofortverkauf: unveraendert (Normalpreis bzw. Kauforder in Normal, keine Tabelle je Qualitaet, kein Aufwerten-Hinweis)",
+        ohneQ.produktPreis === 31961 && ohneQ.erloes === nurNormal.erloes && ohneQ.preisJeQualitaet === null && ohneQ.preisMittel === false && ohneQ.aufwerten === null &&
+          sofortZ.produktPreis === 18826 && nahe(sofortZ.erloes, 18826 * 0.96) && sofortZ.preisJeQualitaet === null && sofortZ.aufwerten === null && mittelKennzeichen(sofortZ, fmtT).html === "",
+        JSON.stringify([ohneQ.produktPreis, sofortZ.produktPreis, sofortZ.erloes])
+      );
+      // Kennzeichen und Tooltip.
+      const mk = mittelKennzeichen(robe0, fmtT);
+      pruefe(
+        "o11 mittelKennzeichen: \"· Mittel\" hinter dem Preis, Tooltip mit Anteil, Preis und Quelle je Qualitaet und dem Normalpreis",
+        /cg-mittel/.test(mk.html) && /· Mittel/.test(mk.html) && /Normalpreis 29883/.test(mk.titel) && /Normal: 68,9 % zu 29883 \(gehandelt\)/.test(mk.titel) && /Hervorragend: 5,0 % zu 32500/.test(mk.titel) &&
+          /Meisterwerk: 0,1 % zu 33456 \(wie Stufe darunter, Handel oder Angebot fehlt\)/.test(mk.titel) && /allein hebt den Preis nicht/.test(mk.titel) && /Sofortverkauf/.test(mk.titel) && mittelKennzeichen(null, fmtT).html === "",
+        mk.titel
+      );
+
+      // ---- Teil C: Aufwerten lohnt? ----
+      // Klerikerrobe: Gegenstandswert 1.024, Aufschlag 15,6 %. Gut nach Hervorragend kostet im Mittel 6.510,592 / 0,7 = 9.300,85
+      // fuer 2.617 x 0,935 = 2.446,90 Mehrerloes: lohnt nicht. Normal und Gut erzielen gleich viel: Aufwerten auf Gut bringt nichts.
+      // Vorteil je Ziel (Bonus 0): Gut -3.588,64; Hervorragend 2.297,63 - 11.040,48 = -8.742,84; Exzellent 3.181,66 - 24.167,28 = -20.985,62.
+      const robeListe = robe0.preisJeQualitaet;
+      const robeAuf = aufwertenPruefen(robeListe, 1024, 1, 15.6, 0.935);
+      pruefe(
+        "o11 Aufwerten, Klerikerrobe (Gegenstandswert 1.024, Aufschlag 15,6 %): lohnt nicht (Gut nach Hervorragend im Mittel 9.300,85 fuer 2.446,90 Mehrerloes); kein Hinweis, auch bei Bonus 150",
+        robeAuf === null && aufwertenPruefen(robe150.preisJeQualitaet, 1024, 1, 15.6, 0.935) === null && nahe(REGELN.rerollKostenZuQualitaet(1024, 2, 1, 1, 15.6).silber, 9300.845714285715) && itemWertSicher("T4_ARMOR_CLOTH_SET2", 2) === 1024,
+        JSON.stringify(robeAuf)
+      );
+      // Selbst gebauter Fall, in dem es lohnt: Schwert T5.0 (Gegenstandswert 24 x 32 = 768), Normal 30.000, Gut 60.000
+      // (angeboten UND gehandelt; ohne Handel in Gut gaebe es nichts zu gewinnen), darueber kein Handel, Bonus 0.
+      // Ziel Gut: 68,9 % Normal. Kosten Normal nach mindestens Gut: 768 x 4,4 = 3.379,2 (jeder Versuch gelingt).
+      //   Mehrerloes 0,689 x 30.000 x 0,935 = 19.326,45; Mehrkosten 0,689 x 3.379,2 = 2.328,2688; Vorteil 16.998,1812.
+      //   Mit Aufschlag 15,6 %: Mehrkosten 2.691,4787328, Vorteil 16.634,9712672.
+      // Ziel Hervorragend waere schlechter: 0,689 x (28.050 - 8.206,6286) - 0,25 x 6.034,2857 = 12.163,51.
+      const LOHNT = { 1: sp(30000), 2: sp(60000) };
+      const LOHNT_H = { 1: h(50, 30000), 2: h(50, 60000) };
+      const lohnt0 = zr(LOHNT, LOHNT_H, { aufwertungAufschlagProzent: 0, silberRabattFaktor: 1 });
+      const lohnt = zr(LOHNT, LOHNT_H, { aufwertungAufschlagProzent: 15.6, silberRabattFaktor: 1 });
+      const lohntRabatt = zr(LOHNT, LOHNT_H, { aufwertungAufschlagProzent: 15.6, silberRabattFaktor: 0.5 });
+      const lohntOhneHandel = zr(LOHNT, { 1: h(50, 30000) }, { aufwertungAufschlagProzent: 15.6, silberRabattFaktor: 1 });
+      const ohneAuf = zr({ 1: sp(30000) }, {}, {});
+      pruefe(
+        "o11 Aufwerten lohnt (Schwert T5.0, Gegenstandswert 768, Normal 30.000, ab Gut 60.000): Ziel Gut, Mehrerloes 19.326,45, Mehrkosten 2.328,2688, Vorteil 16.998,1812; mit Aufschlag 15,6 % Mehrkosten 2.691,4787, Vorteil 16.634,9713; mit Global Discount 50 % halbe Mehrkosten",
+        lohnt0.aufwerten && lohnt0.aufwerten.ziel === 1 && nahe(lohnt0.aufwerten.mehrerloes, 19326.45) && nahe(lohnt0.aufwerten.mehrkosten, 2328.2688) && nahe(lohnt0.aufwerten.vorteilJeStueck, 16998.1812) && lohnt0.itemWert === 768 &&
+          lohnt.aufwerten.ziel === 1 && nahe(lohnt.aufwerten.mehrkosten, 2691.4787328) && nahe(lohnt.aufwerten.vorteilJeStueck, 16634.9712672) && lohnt.aufwertenVorteil === lohnt.aufwerten.vorteilJeStueck &&
+          nahe(lohntRabatt.aufwerten.mehrkosten, 2691.4787328 / 2) && lohnt.aufwerten.schritte.length === 1 && lohnt.aufwerten.schritte[0].q === 0,
+        JSON.stringify(lohnt0.aufwerten)
+      );
+      pruefe(
+        "o11 Aufwerten: Gewinn, Erloes und Gewinn/Tag der Zeile bleiben beim Verkauf ohne Aufwerten (gleich fuer Aufschlag 0 und 15,6 %; Erloes = erwarteter Preis x 0,935), ohne Vorteil kein Schild; ohne erfassten Handel in Gut gibt es nichts zu gewinnen",
+        lohnt.gewinn === lohnt0.gewinn && lohnt.erloes === lohnt0.erloes && lohnt.gewinnJeTag === lohnt0.gewinnJeTag && nahe(lohnt.erloes, (30000 + 0.311 * 30000) * 0.935) && nahe(lohnt.gewinn, lohnt.erloes - lohnt.silber, 1e-9) &&
+          lohntOhneHandel.aufwerten === null && lohntOhneHandel.produktPreis === 30000 && ohneAuf.aufwerten === null && aufwertenSchildHtml(ohneAuf, fmtT, escT) === "" && aufwertenSchildHtml(robe0, fmtT, escT) === "" && robe0.aufwerten === null,
+        JSON.stringify([lohnt.gewinn, lohnt0.gewinn, lohnt.erloes])
+      );
+      const schild = aufwertenSchildHtml(lohnt, fmtT, escT);
+      pruefe(
+        "o11 aufwertenSchildHtml: Schild \"Aufwerten bis Gut +16635\" mit der Rechnung im Tooltip (Mehrerloes, Kosten, Gegenstandswert, Aufschlag, Hinweis auf die Untergrenze und den unveraenderten Gewinn)",
+        /class='cg-aufwerten'/.test(schild) && />Aufwerten bis Gut \+16635</.test(schild) && /Mehrerlös 19326/.test(schild) && /Aufwertungskosten 2691/.test(schild) && /Gegenstandswert 768/.test(schild) && /Aufschlag 15,6 %/.test(schild) &&
+          /über Gut landen/.test(schild) && /ohne Aufwerten/.test(schild),
+        schild
+      );
+      // Artefakt-Item: zwei Rezepte mit verschiedenem Gegenstandswert, der Wert des fertigen Stuecks ist nicht belegt.
+      pruefe(
+        "o11 itemWertSicher: eindeutig bei einem Rezept (Schwert 768, Klerikerrobe T4.2 1.024), null bei zwei Rezepten mit verschiedenem Gegenstandswert (Artefakt-Item); dann kein Aufwerten-Hinweis",
+        itemWertSicher("T5_MAIN_SWORD", 0) === 768 && itemWertSicher("T4_2H_ARCANESTAFF_HELL", 0) === null && itemWertSicher("GIBTS_NICHT", 0) === null,
+        String(itemWertSicher("T4_2H_ARCANESTAFF_HELL", 0))
       );
     })();
 
@@ -1600,6 +2014,8 @@ const CRAFTEN = (function () {
     const preiseResetEl = el("cgPreiseReset");
     const umfangEl = el("cgUmfang");
     const anteilEl = el("cgAnteil");
+    const chancenEl = el("cgChancen"); // v3.25.0 (O11): gemeinsame Einstellungen, s. UI.qualitaetSetzen()
+    const essenEl = el("cgEssen");
 
     let auswahl = standardEinstellungen();
     let letzteZeilen = null;
@@ -1794,8 +2210,22 @@ const CRAFTEN = (function () {
       anteilEl.value = UI.einstellungenLesen().absatzAnteilProzent;
     }
 
+    /** v3.25.0 (O11): Chancenpunkte und Essen aus den gemeinsamen Einstellungen ins Feld schreiben. */
+    function qualitaetSetzen() {
+      const e = UI.einstellungenLesen();
+      if (chancenEl) {
+        chancenEl.value = e.qualitaetsChancenpunkte;
+        chancenEl.title = chancenEl.labels[0].title = UI.CHANCENPUNKTE_TITEL + " Wirkt hier auf den erwarteten Verkaufspreis qualifizierbarer Produkte (Verkaufsorder). Dieselbe Einstellung wie im Kostenrechner.";
+      }
+      if (essenEl) {
+        essenEl.innerHTML = UI.essenOptionenHtml(e.essen);
+        essenEl.title = essenEl.labels[0].title = UI.ESSEN_TITEL;
+      }
+    }
+
     function felderSetzen() {
       anteilSetzen();
+      qualitaetSetzen();
       toleranzEl.value = auswahl.toleranzProzent;
       mengeEl.value = auswahl.menge;
       minAbsatzEl.value = auswahl.minAbsatz;
@@ -1859,6 +2289,13 @@ const CRAFTEN = (function () {
       if (anteilEl && ev.target === anteilEl) {
         UI.absatzAnteilSetzen(anteilEl.value, "craften");
         anteilSetzen();
+        rechnen();
+        return;
+      }
+      // v3.25.0 (O11): Chancenpunkte und Essen, gemeinsam mit Kostenrechner und "Gelegenheiten".
+      if ((chancenEl && ev.target === chancenEl) || (essenEl && ev.target === essenEl)) {
+        UI.qualitaetSetzen(ev.target === chancenEl ? { chancenpunkte: chancenEl.value } : { essen: UI.essenAusWert(essenEl.value) }, "craften");
+        qualitaetSetzen();
         rechnen();
         return;
       }
@@ -2018,6 +2455,13 @@ const CRAFTEN = (function () {
     document.addEventListener(UI.ABSATZANTEIL_EVENT, (ev) => {
       if (ev.detail && ev.detail.quelle === "craften") return;
       anteilSetzen();
+      rechnen();
+    });
+
+    // v3.25.0 (O11): Chancenpunkte, Essen oder Aufschlag in einem anderen Reiter geaendert.
+    document.addEventListener(UI.QUALITAET_EVENT, (ev) => {
+      if (ev.detail && ev.detail.quelle === "craften") return;
+      qualitaetSetzen();
       rechnen();
     });
 
@@ -2304,6 +2748,7 @@ const CRAFTEN = (function () {
               ? ", günstigstes Angebot in " + REGELN.QUALITAETEN[z.sellQualitaet - 1] + " (unter Normal)"
               : "";
           const pk = V.preisKennzeichen(z, fmt);
+          const mk = mittelKennzeichen(z, fmt); // v3.25.0 (O11)
           const pb = produktBestand(z);
           const preisAbruf = V.abrufAlterText(V.aeltesteAbrufzeit(pb.preise));
           const volAbruf = V.abrufAlterText(V.aeltesteAbrufzeit(pb.absatz));
@@ -2327,7 +2772,8 @@ const CRAFTEN = (function () {
                 : "Erlös je Stück nach Steuer" + (kontext.verkaufsweg === "order" ? " und 2,5 % Einstellgebühr" : "")
             ) +
             "'>" + fmt(z.erloes) + "</div>" +
-            "<div class='vd-klein" + (pk.html ? " vd-umbruch" : "") + "' title='" + esc(preisTitel + (pk.titel ? ". " + pk.titel : "")) + "'><span class='vd-nw'>Preis " + fmt(z.produktPreis) + (qText ? " (" + REGELN.QUALITAETEN[z.sellQualitaet - 1] + ")" : "") + "</span>" + pk.html + "</div>" +
+            "<div class='vd-klein" + (pk.html || mk.html ? " vd-umbruch" : "") + "' title='" + esc(preisTitel + (pk.titel ? ". " + pk.titel : "") + (mk.titel ? "\n" + mk.titel : "")) + "'><span class='vd-nw'>Preis " + fmt(z.produktPreis) + (qText && !mk.html ? " (" + REGELN.QUALITAETEN[z.sellQualitaet - 1] + ")" : "") + "</span>" + mk.html + pk.html + "</div>" +
+            aufwertenSchildHtml(z, fmt, esc) +
             (kontext.mehrVk ? "<div>" + stadtSchild(z.vkStadt, "Angehakte Verkaufsstadt mit dem höchsten Erlös. " + TRANSPORT) + "</div>" : "") +
             "</td>" +
             "<td class='num' title='" + esc(volTitel) + "'>" + stueck(z.stueckJeTag) + "</td>" +
@@ -2468,6 +2914,12 @@ const CRAFTEN = (function () {
     abrufSchaetzung,
     rezeptMarktfaehig,
     produktEintrag,
+    preiseJeQualitaet,
+    qualitaetsErloes,
+    aufwertenPruefen,
+    itemWertSicher,
+    mittelKennzeichen,
+    aufwertenSchildHtml,
     volumen,
     besterCraft,
     rueckgewinnungJeWarengruppe,

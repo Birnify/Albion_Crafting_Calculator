@@ -30,6 +30,14 @@ const UI = (function () {
       // bleibt wie die Stationssaetze ein echtes Eingabefeld, keine Konstante.
       qualitaetsIndex: 0,
       qualitaetsChancenpunkte: 0,
+      // v3.25.0 (O11), beide gemeinsam mit den Gewinn-Reitern, s.
+      // qualitaetSetzen(). essen: null (kein Essen) oder {id, stufe} aus
+      // REGELN.ESSEN_QUALITAET; der Bonus addiert sich zu den Chancenpunkten
+      // (Annahme, s. dort). aufwertungAufschlagProzent: im Spiel abgelesener
+      // Auf- oder Abschlag auf die Aufwertungskosten, veraenderlich, deshalb
+      // ein Eingabefeld; die Vorgabe ist die Messung vom 23.11.2026.
+      essen: null,
+      aufwertungAufschlagProzent: REGELN.AUFWERTUNG_AUFSCHLAG_VORGABE,
       fce: 0, // 0 = volle Rohfokuskosten, die konservative Richtung (zu teuer statt zu billig)
       fceAusnahmen: {}, // craftingcategory -> FCE (Freitext-Fallback, s. spezialisierung unten)
       // Spezialisierungsknoten-Panel (05.09.2026, Zyklus "FCE-Ableitung ueber
@@ -114,7 +122,9 @@ const UI = (function () {
       const basis = defaultEinstellungen();
       basis.stadt = daten.stadt || basis.stadt;
       basis.qualitaetsIndex = daten.qualitaetsIndex != null ? daten.qualitaetsIndex : basis.qualitaetsIndex;
-      basis.qualitaetsChancenpunkte = daten.qualitaetsChancenpunkte != null ? daten.qualitaetsChancenpunkte : basis.qualitaetsChancenpunkte;
+      basis.qualitaetsChancenpunkte = chancenpunkteBereinigen(daten.qualitaetsChancenpunkte);
+      basis.essen = REGELN.essenBereinigen(daten.essen);
+      basis.aufwertungAufschlagProzent = REGELN.aufwertungAufschlagBereinigen(daten.aufwertungAufschlagProzent, REGELN.AUFWERTUNG_AUFSCHLAG_VORGABE);
       basis.fce = daten.fce != null ? daten.fce : basis.fce;
       basis.fceAusnahmen = daten.fceAusnahmen || {};
       basis.spezialisierung = daten.spezialisierung || {};
@@ -281,6 +291,72 @@ const UI = (function () {
       document.dispatchEvent(new CustomEvent(ABSATZANTEIL_EVENT, { detail: { wert: w, quelle: quelle || null } }));
     }
     return w;
+  }
+
+  // v3.25.0 (23.11.2026, Paket O11): Qualitaets-Chancenpunkte, Essen und der
+  // Aufschlag auf die Aufwertungskosten sind gemeinsame Einstellungen von
+  // Kostenrechner, "Craften: Gewinn" und "Gelegenheiten". Ein Ereignis fuer
+  // alle drei, Abgleich wie bei Premium.
+  const QUALITAET_EVENT = "albion:qualitaet";
+
+  /** Gueltige Chancenpunkte: Zahl >= 0, sonst 0. */
+  function chancenpunkteBereinigen(wert) {
+    const zahl = Number(wert);
+    return wert === "" || wert == null || !isFinite(zahl) || zahl < 0 ? 0 : zahl;
+  }
+
+  /**
+   * Setzt eine oder mehrere der drei Einstellungen, speichert und meldet.
+   * @param {{chancenpunkte?:*, essen?:*, aufschlag?:*}} werte nur genannte Felder aendern sich
+   * @returns {{chancenpunkte:number, essen:?object, aufschlag:number}} der gespeicherte Stand
+   */
+  function qualitaetSetzen(werte, quelle) {
+    const w = werte || {};
+    const e = einstellungenLesen();
+    if ("chancenpunkte" in w) e.qualitaetsChancenpunkte = chancenpunkteBereinigen(w.chancenpunkte);
+    if ("essen" in w) e.essen = REGELN.essenBereinigen(w.essen);
+    if ("aufschlag" in w) e.aufwertungAufschlagProzent = REGELN.aufwertungAufschlagBereinigen(w.aufschlag, REGELN.AUFWERTUNG_AUFSCHLAG_VORGABE);
+    einstellungenSchreiben(e);
+    const stand = { chancenpunkte: e.qualitaetsChancenpunkte, essen: e.essen, aufschlag: e.aufwertungAufschlagProzent };
+    if (typeof document !== "undefined" && typeof CustomEvent !== "undefined") {
+      document.dispatchEvent(new CustomEvent(QUALITAET_EVENT, { detail: Object.assign({ quelle: quelle || null }, stand) }));
+    }
+    return stand;
+  }
+
+  /** Wert der Essen-Auswahl ("" = kein Essen, sonst "id:stufe") und zurueck. */
+  function essenZuWert(essen) {
+    const b = REGELN.essenBereinigen(essen);
+    return b ? b.id + ":" + b.stufe : "";
+  }
+  function essenAusWert(wert) {
+    const t = String(wert || "").split(":");
+    return REGELN.essenBereinigen(t[0] ? { id: t[0], stufe: Number(t[1]) || 0 } : null);
+  }
+
+  /** Optionen der Essen-Auswahl: "kein Essen", dann jede Speise je Stufe mit ihrem Bonus. */
+  function essenOptionenHtml(essen) {
+    const aktuell = essenZuWert(essen);
+    const zahl = (n) => String(n).replace(".", ",");
+    const opt = (wert, text) => "<option value='" + wert + "'" + (wert === aktuell ? " selected" : "") + ">" + text + "</option>";
+    return (
+      opt("", "kein Essen") +
+      REGELN.ESSEN_QUALITAET.map((e) => e.werte.map((w, stufe) => opt(e.id + ":" + stufe, e.name + (e.werte.length > 1 ? " ." + stufe : "") + ": +" + zahl(w))).join("")).join("")
+    );
+  }
+
+  const ESSEN_TITEL =
+    "Salat vor dem Craften: sein Wert wird zu den Qualitäts-Chancenpunkten addiert. Die Werte stammen aus den Spieldaten. Annahme, nicht bewiesen: dass sie in derselben Einheit zählen wie die Chancenpunkte und sich addieren; gestützt nur durch eine Stichprobe (30 Roben mit Salat: 11 Normal, 17 Gut, 2 Hervorragend). Die Kosten des Essens sind nicht eingerechnet.";
+  const CHANCENPUNKTE_TITEL =
+    "Vom Schicksalsbrett abzulesen. X Punkte geben X % Chance auf einen weiteren Qualitätswurf, das beste Ergebnis zählt (ab 100 ein sicherer zweiter Wurf).";
+  const AUFSCHLAG_TITEL =
+    "Im Spiel abgelesener Wert, er ändert sich laufend (Gold Market Stabilization). Vorgabe 15,6 % ist die Messung vom 23.11.2026. Nachmessen: Kosten eines Versuchs an der Reparaturstation geteilt durch (Gegenstandswert mal 4,4 für Normal, 5,5 für Gut, 6,6 für Hervorragend); 1,156 heißt 15,6 %. Wirkt nur auf die Aufwertung, nicht auf die Stationsgebühr. Erlaubt sind -50 bis +100.";
+
+  // Zuletzt im Kostenrechner abgerufener Goldpreis (Sitzung), fuer den Global
+  // Discount in den Gewinn-Reitern; null = unbekannt, dann kein Rabatt.
+  let goldpreisZuletzt = null;
+  function goldpreisBekannt() {
+    return goldpreisZuletzt;
   }
 
   // -----------------------------------------------------------------------
@@ -787,6 +863,8 @@ const UI = (function () {
     const stadtEl = document.getElementById("stadt");
     const qualitaetEl = document.getElementById("qualitaet");
     const qualitaetsChancenpunkteEl = document.getElementById("qualitaetsChancenpunkte");
+    const essenEl = document.getElementById("essen");
+    const aufschlagEl = document.getElementById("aufwertungAufschlag");
     const ausgewaehltEl = document.getElementById("ausgewaehlt");
     const ausgewaehltTextEl = document.getElementById("ausgewaehltText");
     const ausgewaehltIdEl = document.getElementById("ausgewaehltId");
@@ -907,7 +985,7 @@ const UI = (function () {
     function ladeEinstellungenInFormular() {
       stadtEl.value = einstellungen.stadt;
       qualitaetEl.value = einstellungen.qualitaetsIndex;
-      qualitaetsChancenpunkteEl.value = einstellungen.qualitaetsChancenpunkte;
+      qualitaetFelderSetzen();
       fceEingabeEl.value = einstellungen.fce;
       fokuswertEl.value = einstellungen.fokuswert;
       maxPreisAlterEl.value = einstellungen.maxPreisAlterMin == null ? "" : einstellungen.maxPreisAlterMin;
@@ -952,6 +1030,23 @@ const UI = (function () {
 
     function aktualisiereFceAnzeige() {
       fceProzentAnzeigeEl.textContent = "= " + formatProzent(prozentAusFce(einstellungen.fce)) + " der Rohfokuskosten";
+    }
+
+    /** v3.25.0: die drei gemeinsamen Qualitaets-Einstellungen ins Formular schreiben. */
+    function qualitaetFelderSetzen() {
+      qualitaetsChancenpunkteEl.value = einstellungen.qualitaetsChancenpunkte;
+      if (essenEl) essenEl.innerHTML = essenOptionenHtml(einstellungen.essen);
+      if (aufschlagEl) aufschlagEl.value = einstellungen.aufwertungAufschlagProzent;
+    }
+
+    /** v3.25.0: eigene Aenderung an den anderen Reitern melden (gespeichert ist schon). */
+    function qualitaetMelden() {
+      if (typeof CustomEvent === "undefined") return;
+      document.dispatchEvent(
+        new CustomEvent(QUALITAET_EVENT, {
+          detail: { quelle: "kostenrechner", chancenpunkte: einstellungen.qualitaetsChancenpunkte, essen: einstellungen.essen, aufschlag: einstellungen.aufwertungAufschlagProzent },
+        })
+      );
     }
 
     function persistiereUndRechne() {
@@ -1186,10 +1281,25 @@ const UI = (function () {
     qualitaetsChancenpunkteEl.addEventListener("change", () => {
       // Nur der Qualitaetswurf haengt an diesem Wert, keine neuen Markt-IDs
       // noetig - persistiereUndRechne() (wie bei Fokuswert/FCE) reicht.
-      einstellungen.qualitaetsChancenpunkte = Math.max(0, Number(qualitaetsChancenpunkteEl.value) || 0);
+      einstellungen.qualitaetsChancenpunkte = chancenpunkteBereinigen(qualitaetsChancenpunkteEl.value);
       qualitaetsChancenpunkteEl.value = einstellungen.qualitaetsChancenpunkte;
       persistiereUndRechne();
+      qualitaetMelden();
     });
+    // v3.25.0 (O11): Essen und Aufschlag auf die Aufwertungskosten.
+    if (essenEl)
+      essenEl.addEventListener("change", () => {
+        einstellungen.essen = essenAusWert(essenEl.value);
+        persistiereUndRechne();
+        qualitaetMelden();
+      });
+    if (aufschlagEl)
+      aufschlagEl.addEventListener("change", () => {
+        einstellungen.aufwertungAufschlagProzent = REGELN.aufwertungAufschlagBereinigen(aufschlagEl.value, REGELN.AUFWERTUNG_AUFSCHLAG_VORGABE);
+        aufschlagEl.value = einstellungen.aufwertungAufschlagProzent;
+        persistiereUndRechne();
+        qualitaetMelden();
+      });
 
     // ---- Preise laden + berechnen ----
     berechnenBtn.addEventListener("click", () => berechnen(false));
@@ -1260,6 +1370,7 @@ const UI = (function () {
         // Preisabruf nicht scheitern lassen.
         setStatus("Goldpreis fuer den Global Discount abrufen ...");
         zustand.gold = await PREISE.goldpreisAbrufen();
+        goldpreisZuletzt = zustand.gold && zustand.gold.preis != null ? zustand.gold.preis : null;
         if (meinToken !== anfrageZaehler) return;
 
         zustand.preiseRoh = preiseRoh;
@@ -1324,7 +1435,7 @@ const UI = (function () {
         formatSilber(zustand.gold.preis) +
         ", Global Discount " +
         (rabatt * 100).toFixed(2).replace(".", ",") +
-        " % auf die Reroll-Kosten."
+        " % auf die Aufwertungskosten."
       );
     }
 
@@ -1341,6 +1452,8 @@ const UI = (function () {
         stadt: einstellungen.stadt,
         qualitaetsIndex: effektiveQualitaet(),
         qualitaetsChancenpunkte: einstellungen.qualitaetsChancenpunkte || 0,
+        essen: einstellungen.essen || null, // v3.25.0: der Rechenkern addiert den Essensbonus zu den Chancenpunkten
+        aufwertungAufschlagProzent: einstellungen.aufwertungAufschlagProzent,
         stationssaetze: einstellungen.stationssaetze,
         fce: einstellungen.fce,
         fceUeberschreibungen: fceUeberschreibungenFuerOpts(),
@@ -2969,6 +3082,17 @@ const UI = (function () {
       einstellungen.absatzAnteilProzent = absatzAnteilBereinigen((ev.detail || {}).wert);
     });
 
+    // v3.25.0: Chancenpunkte, Essen oder Aufschlag in einem Gewinn-Reiter geaendert.
+    document.addEventListener(QUALITAET_EVENT, (ev) => {
+      const d = ev.detail || {};
+      if (d.quelle === "kostenrechner") return;
+      einstellungen.qualitaetsChancenpunkte = chancenpunkteBereinigen(d.chancenpunkte);
+      einstellungen.essen = REGELN.essenBereinigen(d.essen);
+      einstellungen.aufwertungAufschlagProzent = REGELN.aufwertungAufschlagBereinigen(d.aufschlag, REGELN.AUFWERTUNG_AUFSCHLAG_VORGABE);
+      qualitaetFelderSetzen();
+      persistiereUndRechne();
+    });
+
     // ---- Start ----
     ladeEinstellungenInFormular();
     renderSpezialisierungsknoten(null);
@@ -2999,6 +3123,16 @@ const UI = (function () {
     absatzAnteilBereinigen,
     absatzAnteilAusGespeichert,
     absatzAnteilSetzen,
+    QUALITAET_EVENT,
+    chancenpunkteBereinigen,
+    qualitaetSetzen,
+    essenZuWert,
+    essenAusWert,
+    essenOptionenHtml,
+    ESSEN_TITEL,
+    CHANCENPUNKTE_TITEL,
+    AUFSCHLAG_TITEL,
+    goldpreisBekannt,
     itemOeffnen,
     fceUeberschreibungenAus,
     sammleVerwendeteKategorien,

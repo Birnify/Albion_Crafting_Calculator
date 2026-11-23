@@ -39,11 +39,14 @@ const REGELN = (function () {
 
   // -----------------------------------------------------------------------
   // Qualitaetsstufen (Feature 05.09.2026, s. kostenrechner-KONTEXT.md).
-  // Index 0..4 = Normal/Gut/Herausragend/Exzellent/Meisterwerk, deckungsgleich
+  // Index 0..4 = Normal/Gut/Hervorragend/Exzellent/Meisterwerk, deckungsgleich
   // mit den API-Qualitaeten 1..5 der Albion-Online-Data-API (Index + 1).
   // -----------------------------------------------------------------------
 
-  const QUALITAETEN = ["Normal", "Gut", "Herausragend", "Exzellent", "Meisterwerk"];
+  // Die dritte Stufe heisst im deutschen Client "Hervorragend" (im Spiel
+  // abgelesen 23.11.2026; bis v3.24.0 stand hier "Herausragend"). Gespeichert
+  // werden nur Indizes, der Name ist reine Anzeige.
+  const QUALITAETEN = ["Normal", "Gut", "Hervorragend", "Exzellent", "Meisterwerk"];
 
   // Bugfix Audit-Befund 7 (19.09.2026, s. AUDIT-2026-09-13.md): Speisen und
   // Traenke sind grundsaetzlich nicht qualifizierbar (Wiki "Item_Quality",
@@ -145,7 +148,7 @@ const REGELN = (function () {
   const REROLL_UEBERGANG = {
     0: { 1: 0.80, 2: 0.15, 3: 0.05, 4: 0.001 }, // von Normal
     1: { 1: 0.30, 2: 0.60, 3: 0.099, 4: 0.001 }, // von Gut (Stay 30 % explizit belegt)
-    2: { 2: 0.50, 3: 0.499, 4: 0.001 }, // von Herausragend (Stay 50 % explizit belegt)
+    2: { 2: 0.50, 3: 0.499, 4: 0.001 }, // von Hervorragend (Stay 50 % explizit belegt)
     3: { 3: 0.995, 4: 0.005 }, // von Exzellent (Stay 99,5 % explizit belegt)
   };
 
@@ -156,8 +159,43 @@ const REGELN = (function () {
 
   // Global Discount: Goldpreis, ab dem es keinen Rabatt mehr gibt, und
   // zugleich der Nenner der Formel. Wiki "Global_Discount", s.
-  // globalDiscount() weiter unten.
-  const GLOBAL_DISCOUNT_SCHWELLE = 3000;
+  // globalDiscount() weiter unten. Seit dem Update "Beyond the Veil" 5.000
+  // (Wiki gelesen 23.11.2026; davor 3.000, noch frueher 1.500).
+  const GLOBAL_DISCOUNT_SCHWELLE = 5000;
+
+  // Aufschlag auf die Aufwertungskosten (Gold Market Stabilization), in
+  // Prozent. KEIN fester Spielwert: gemessen am 23.11.2026 an der
+  // Reparaturstation (Klerikerrobe T4.2, Gegenstandswert 1.024: 5.208 /
+  // 6.510 / 7.813 je Versuch aus Normal / Gut / Hervorragend, also Faktor
+  // 1,156 auf Gegenstandswert x 4,4 / 5,5 / 6,6). Nur die VORGABE des
+  // Eingabefelds (einstellungen.aufwertungAufschlagProzent), die Rechnung
+  // nimmt immer den uebergebenen Wert. Wirkt nicht auf die Stationsgebuehr
+  // (belegt: Satz 425 ergibt exakt die abgelesenen 490 Silber).
+  const AUFWERTUNG_AUFSCHLAG_VORGABE = 15.6;
+  const AUFWERTUNG_AUFSCHLAG_MIN = -50;
+  const AUFWERTUNG_AUFSCHLAG_MAX = 100;
+
+  // Qualitaetsbonus durch Essen (Client-Dump, 22.11.2026: spells.json, Effekt
+  // "craftingquality" der Salat-Zauber; items.json ordnet sie ueber
+  // @consumespell je Verzauberungsstufe zu). Werte je Stufe .0 bis .3; die
+  // drei rohen Tintenfische haben nur einen Wert. Keine andere Speise und
+  // kein Trank traegt diesen Effekt.
+  // ANNAHME, nicht bewiesen: dass der Wert in derselben Einheit zaehlt wie
+  // die Chancenpunkte des Schicksalsbretts und sich mit ihnen addiert. Nur
+  // durch eine Stichprobe gestuetzt (23.11.2026: 30 Roben mit Salat ergaben
+  // 11 Normal / 17 Gut / 2 Hervorragend). Die Kosten des Essens rechnet die
+  // App nicht ein.
+  const ESSEN_QUALITAET = [
+    { id: "bohnensalat", name: "Bohnensalat (T2)", werte: [33, 49.5, 66, 82.5] },
+    { id: "ruebensalat", name: "Rübensalat (T4)", werte: [66, 82.5, 99, 115.5] },
+    { id: "kartoffelsalat", name: "Kartoffelsalat (T6)", werte: [99, 115.5, 132, 148.5] },
+    { id: "flachwassersalat", name: "Flachwassertintenfischsalat (T2)", werte: [49.5, 74.25, 99, 123.75] },
+    { id: "oktopussalat", name: "Meeresoktopussalat (T4)", werte: [99, 123.75, 148.5, 173.25] },
+    { id: "kalmarsalat", name: "Tiefseekalmarsalat (T6)", werte: [148.5, 173.25, 198, 222.75] },
+    { id: "flachwasser_roh", name: "Flachwasser-Tintenfisch, roh", werte: [16.5] },
+    { id: "oktopus_roh", name: "Meeresoktopus, roh", werte: [33] },
+    { id: "kalmar_roh", name: "Tiefseekalmar, roh", werte: [49.5] },
+  ];
 
   // -----------------------------------------------------------------------
   // Kategorie -> Gebaeude / Gebuehrengruppe
@@ -818,14 +856,16 @@ const REGELN = (function () {
 
   /**
    * Global Discount: Rabatt auf Silberkosten, sobald der Goldpreis am Markt
-   * unter 3.000 liegt (Audit-Befund 9, umgesetzt 19.09.2026).
+   * unter 5.000 liegt (Audit-Befund 9, umgesetzt 19.09.2026; Schwelle am
+   * 23.11.2026 von 3.000 auf 5.000 korrigiert, v3.25.0).
    *
-   * Beleg, Wiki-Seite `Global_Discount`, woertlich: "When the gold price on
-   * the market is below 3000, a Global Discount on silver costs is active,
-   * the percentage of discount is proportionate to the price of gold, and the
-   * cheaper the price of gold, the higher the discount." Formel ebendort:
-   * `Global Discount = (1 - gold price / 3000) * 100 %`, mit der Skala
-   * 3.000 -> 0 %, 1.500 -> 50 %, 0 -> 100 %. Gegenprobe der Seite selbst: bei
+   * Beleg, Wiki-Seite `Global_Discount` (gelesen 23.11.2026): der Rabatt ist
+   * aktiv, sobald der Goldpreis unter der Schwelle liegt, und waechst
+   * proportional, je billiger das Gold ist. Formel ebendort:
+   * `Global Discount = (1 - gold price / 5000) * 100 %`, mit der Skala
+   * 5.000 -> 0 %, 2.500 -> 50 %, 0 -> 100 %. Die Schwelle 3.000 galt laut
+   * derselben Seite vor dem Update "Beyond the Veil", davor 1.500.
+   * Gegenprobe der Seite selbst: bei
    * 4,74 % Rabatt sank ein Inselausbau von 1.875.000 auf 1.786.125 Silber,
    * also exakt 1.875.000 x (1 - 0,0474).
    *
@@ -861,6 +901,69 @@ const REGELN = (function () {
     return 1 - globalDiscount(goldpreis);
   }
 
+  /** Gueltiger Aufschlag in Prozent (-50 bis +100, eine Nachkommastelle); leer oder unsinnig ergibt `ersatz` (Default 0). */
+  function aufwertungAufschlagBereinigen(wert, ersatz) {
+    const zahl = Number(wert);
+    if (wert === "" || wert == null || !isFinite(zahl)) return ersatz == null ? 0 : ersatz;
+    return Math.round(Math.min(AUFWERTUNG_AUFSCHLAG_MAX, Math.max(AUFWERTUNG_AUFSCHLAG_MIN, zahl)) * 10) / 10;
+  }
+
+  /**
+   * Aufschlag auf die Aufwertungskosten als Multiplikator (15,6 -> 1,156).
+   * Ohne Angabe 1, also die reine Formel Gegenstandswert x Faktor.
+   */
+  function aufwertungAufschlagFaktor(aufschlagProzent) {
+    return 1 + aufwertungAufschlagBereinigen(aufschlagProzent, 0) / 100;
+  }
+
+  /**
+   * Kosten EINES Aufwertungsversuchs aus `aktuelleQualitaet` (0..3):
+   * Gegenstandswert x Faktor x Rabattfaktor x (1 + Aufschlag/100).
+   * Ungerundet; das Spiel zeigt ganze Silber.
+   */
+  function rerollKostenJeVersuch(itemWertJeStueck, aktuelleQualitaet, rabattFaktor, aufschlagProzent) {
+    const rabatt = rabattFaktor != null && isFinite(rabattFaktor) ? Math.max(0, rabattFaktor) : 1;
+    return itemWertJeStueck * (REROLL_FAKTOR[aktuelleQualitaet || 0] || 0) * rabatt * aufwertungAufschlagFaktor(aufschlagProzent);
+  }
+
+  /**
+   * Bereinigt die Einstellung "essen": null (kein Essen) oder
+   * {id, stufe} mit einer Speise aus ESSEN_QUALITAET und einer Stufe, die es
+   * fuer sie gibt (rohe Tintenfische nur Stufe 0).
+   */
+  function essenBereinigen(essen) {
+    if (!essen || typeof essen !== "object") return null;
+    const e = ESSEN_QUALITAET.find((x) => x.id === essen.id);
+    if (!e) return null;
+    const stufe = Math.round(Number(essen.stufe) || 0);
+    return { id: e.id, stufe: Math.min(e.werte.length - 1, Math.max(0, stufe)) };
+  }
+
+  /** Qualitaetsbonus der Einstellung "essen" (0 ohne Essen), s. ESSEN_QUALITAET. */
+  function essenBonus(essen) {
+    const b = essenBereinigen(essen);
+    if (!b) return 0;
+    return ESSEN_QUALITAET.find((x) => x.id === b.id).werte[b.stufe];
+  }
+
+  /** Anzeigename der Einstellung "essen", z. B. "Rübensalat (T4) .1". */
+  function essenName(essen) {
+    const b = essenBereinigen(essen);
+    if (!b) return "kein Essen";
+    const e = ESSEN_QUALITAET.find((x) => x.id === b.id);
+    return e.name + (e.werte.length > 1 ? " ." + b.stufe : "");
+  }
+
+  /**
+   * Gesamtbonus fuer den Qualitaetswurf: Chancenpunkte des Schicksalsbretts
+   * plus Essensbonus. Dass sich beide addieren, ist eine ANNAHME (s.
+   * ESSEN_QUALITAET). Der Einfluss von Fokus ist unbelegt und fehlt bewusst.
+   */
+  function qualitaetsBonusGesamt(chancenpunkte, essen) {
+    const p = Number(chancenpunkte);
+    return (isFinite(p) && p > 0 ? p : 0) + essenBonus(essen);
+  }
+
   /**
    * Erwartete Silberkosten, ein Item per Reroll an der Reparaturstation von
    * `aktuelleQualitaet` (Default 0 = Normal) auf MINDESTENS `zielQualitaet` zu
@@ -875,11 +978,16 @@ const REGELN = (function () {
    * Er skaliert die Kosten JE REROLL; da die Markov-Kette linear in diesen
    * Kosten ist, skaliert damit auch das Ergebnis exakt mit demselben Faktor -
    * die Erfolgswahrscheinlichkeiten bleiben unberuehrt.
+   *
+   * `aufschlagProzent` (Default 0, v3.25.0) ist der im Spiel abgelesene
+   * Auf- oder Abschlag der Gold Market Stabilization, s.
+   * aufwertungAufschlagFaktor(). Kosten je Versuch:
+   *   Gegenstandswert x Faktor x Rabattfaktor x (1 + Aufschlag/100)
    * @returns {{silber: number, gesperrt: boolean, grund: ?string}}
    */
-  function rerollKostenZuQualitaet(itemWertJeStueck, zielQualitaet, aktuelleQualitaet, rabattFaktor) {
+  function rerollKostenZuQualitaet(itemWertJeStueck, zielQualitaet, aktuelleQualitaet, rabattFaktor, aufschlagProzent) {
     const start = aktuelleQualitaet || 0;
-    const rabatt = rabattFaktor != null && isFinite(rabattFaktor) ? Math.max(0, rabattFaktor) : 1;
+    const rabatt = (rabattFaktor != null && isFinite(rabattFaktor) ? Math.max(0, rabattFaktor) : 1) * aufwertungAufschlagFaktor(aufschlagProzent);
     if (zielQualitaet <= start) return { silber: 0, gesperrt: false, grund: null };
     if (zielQualitaet > 4 || zielQualitaet < 0) {
       return { silber: NaN, gesperrt: true, grund: "Qualitaetsindex " + zielQualitaet + " existiert nicht (0..4)" };
@@ -1882,12 +1990,13 @@ const REGELN = (function () {
 
     // -- Audit-Befund 9 (19.09.2026): Global Discount ------------------------
     pruefe(
-      "globalDiscount: Goldpreis auf oder ueber 3.000 ergibt keinen Rabatt",
-      globalDiscount(3000) === 0 && globalDiscount(4200) === 0
+      "globalDiscount: Goldpreis auf oder ueber 5.000 ergibt keinen Rabatt (5.000 und 10.650, Stand 23.11.2026)",
+      globalDiscount(5000) === 0 && globalDiscount(10650) === 0 && GLOBAL_DISCOUNT_SCHWELLE === 5000
     );
     pruefe(
-      "globalDiscount: Wiki-Skala 1.500 -> 50 %, 0 -> 100 %",
-      globalDiscount(1500) === 0.5 && globalDiscount(0) === 1
+      "globalDiscount: Wiki-Skala 2.500 -> 50 %, 0 -> 100 %; 3.000 (alte Schwelle) ergibt jetzt 40 %",
+      globalDiscount(2500) === 0.5 && globalDiscount(0) === 1 && nahe(globalDiscount(3000), 0.4, 1e-12),
+      String(globalDiscount(3000))
     );
     pruefe(
       "globalDiscount: fehlender oder unsinniger Goldpreis ergibt 0 (kein erfundener Ersatzwert)",
@@ -1895,18 +2004,77 @@ const REGELN = (function () {
     );
     pruefe(
       "silberRabattFaktor: Gegenstueck zu globalDiscount (1 = kein Rabatt)",
-      silberRabattFaktor(3000) === 1 && nahe(silberRabattFaktor(1500), 0.5, 1e-12) && silberRabattFaktor(null) === 1
+      silberRabattFaktor(5000) === 1 && nahe(silberRabattFaktor(2500), 0.5, 1e-12) && silberRabattFaktor(null) === 1
     );
     (function () {
       // Gegenprobe des Wiki-Rechenbeispiels: 4,74 % Rabatt senken 1.875.000
-      // Silber auf 1.786.125. Der zugehoerige Goldpreis ist 3000 x (1-0,0474).
-      const goldpreis = 3000 * (1 - 0.0474);
+      // Silber auf 1.786.125. Der zugehoerige Goldpreis ist Schwelle x (1-0,0474).
+      const goldpreis = GLOBAL_DISCOUNT_SCHWELLE * (1 - 0.0474);
       pruefe(
         "globalDiscount: Wiki-Rechenbeispiel (4,74 % auf 1.875.000 Silber ergibt 1.786.125)",
         nahe(1875000 * silberRabattFaktor(goldpreis), 1786125, 0.5),
         String(1875000 * silberRabattFaktor(goldpreis))
       );
     })();
+    // -- O11 (23.11.2026): Aufschlag auf die Aufwertungskosten -----------------
+    (function () {
+      // Gegenprobe der Ablesung: Klerikerrobe T4.2, Gegenstandswert 1.024,
+      // Aufschlag 15,6 %, kein Rabatt. Das Spiel zeigt 5.208 / 6.510 / 7.813.
+      // Ungerundet ergibt die Rechnung 5.208,47 / 6.510,59 / 7.812,71; das
+      // Spiel rundet erkennbar auf ganze Silber, der gemessene Faktor 1,156
+      // ist selbst gerundet. Toleranz deshalb 1 Silber.
+      const k = [0, 1, 2].map((q) => rerollKostenJeVersuch(1024, q, 1, 15.6));
+      pruefe(
+        "o11 rerollKostenJeVersuch: Gegenstandswert 1.024, Aufschlag 15,6 %, kein Rabatt ergibt 5.208 / 6.510 / 7.813 (Ablesung 23.11.2026, auf 1 Silber)",
+        nahe(k[0], 5208, 1) && nahe(k[1], 6510, 1) && nahe(k[2], 7813, 1) && Math.round(k[0]) === 5208 && Math.round(k[2]) === 7813,
+        k.map((x) => x.toFixed(2)).join(" / ")
+      );
+      pruefe(
+        "o11 rerollKostenJeVersuch: Aufschlag 0 ergibt die reine Formel 4.505,6 / 5.632 / 6.758,4 / 28.160",
+        nahe(rerollKostenJeVersuch(1024, 0), 4505.6, 1e-9) && nahe(rerollKostenJeVersuch(1024, 1, 1, 0), 5632, 1e-9) && nahe(rerollKostenJeVersuch(1024, 2, null, null), 6758.4, 1e-9) && nahe(rerollKostenJeVersuch(1024, 3), 28160, 1e-9),
+        [0, 1, 2, 3].map((q) => rerollKostenJeVersuch(1024, q)).join(" / ")
+      );
+      const ohne = rerollKostenZuQualitaet(1024, 3, 0).silber;
+      pruefe(
+        "o11 rerollKostenZuQualitaet: Aufschlag 0, leer oder fehlend ergibt die alten Werte",
+        rerollKostenZuQualitaet(1024, 3, 0, 1, 0).silber === ohne && rerollKostenZuQualitaet(1024, 3, 0, null, null).silber === ohne && rerollKostenZuQualitaet(1024, 3, 0, 1, "").silber === ohne,
+        String(ohne)
+      );
+      pruefe(
+        "o11 rerollKostenZuQualitaet: Aufschlag 15,6 % skaliert die erwarteten Gesamtkosten mit 1,156",
+        nahe(rerollKostenZuQualitaet(1024, 3, 0, 1, 15.6).silber, ohne * 1.156, 1e-6),
+        rerollKostenZuQualitaet(1024, 3, 0, 1, 15.6).silber + " vs " + ohne * 1.156
+      );
+      pruefe(
+        "o11 rerollKostenZuQualitaet: Rabatt und Aufschlag wirken zusammen (Goldpreis 2.500: 0,5 x 1,156)",
+        nahe(rerollKostenZuQualitaet(1024, 3, 0, silberRabattFaktor(2500), 15.6).silber, ohne * 0.5 * 1.156, 1e-6) && nahe(rerollKostenJeVersuch(1024, 0, silberRabattFaktor(2500), 15.6), 4505.6 * 0.5 * 1.156, 1e-9)
+      );
+      pruefe(
+        "o11 aufwertungAufschlagBereinigen: -50 bis +100, eine Nachkommastelle, leer ergibt den Ersatzwert",
+        aufwertungAufschlagBereinigen(15.64) === 15.6 && aufwertungAufschlagBereinigen(-80) === -50 && aufwertungAufschlagBereinigen(250) === 100 && aufwertungAufschlagBereinigen("", 15.6) === 15.6 &&
+          aufwertungAufschlagBereinigen("x") === 0 && aufwertungAufschlagBereinigen(0, 15.6) === 0 && nahe(aufwertungAufschlagFaktor(-50), 0.5, 1e-12) && AUFWERTUNG_AUFSCHLAG_VORGABE === 15.6
+      );
+    })();
+    // -- O11: Stufenname und Essen ---------------------------------------------
+    pruefe(
+      "o11 QUALITAETEN: die dritte Stufe heisst Hervorragend (im Spiel abgelesen 23.11.2026)",
+      QUALITAETEN[2] === "Hervorragend" && QUALITAETEN.join() === "Normal,Gut,Hervorragend,Exzellent,Meisterwerk"
+    );
+    pruefe(
+      "o11 ESSEN_QUALITAET: sechs Salate mit vier Stufen und drei rohe Tintenfische, Werte wie im Client-Dump (33 bis 222,75; 16,5 / 33 / 49,5)",
+      ESSEN_QUALITAET.length === 9 && ESSEN_QUALITAET.filter((e) => e.werte.length === 4).length === 6 &&
+        JSON.stringify(ESSEN_QUALITAET.map((e) => e.werte)) ===
+          JSON.stringify([[33, 49.5, 66, 82.5], [66, 82.5, 99, 115.5], [99, 115.5, 132, 148.5], [49.5, 74.25, 99, 123.75], [99, 123.75, 148.5, 173.25], [148.5, 173.25, 198, 222.75], [16.5], [33], [49.5]])
+    );
+    pruefe(
+      "o11 essenBonus: kein Essen 0, Rübensalat .1 = 82,5, Tiefseekalmarsalat .3 = 222,75, roher Tintenfisch nur Stufe 0, Unbekanntes 0",
+      essenBonus(null) === 0 && essenBonus({ id: "ruebensalat", stufe: 1 }) === 82.5 && essenBonus({ id: "kalmarsalat", stufe: 3 }) === 222.75 && essenBonus({ id: "oktopus_roh", stufe: 3 }) === 33 &&
+        essenBonus({ id: "pizza", stufe: 1 }) === 0 && essenBereinigen({ id: "bohnensalat", stufe: 9 }).stufe === 3 && essenName({ id: "ruebensalat", stufe: 2 }) === "Rübensalat (T4) .2" && essenName(null) === "kein Essen"
+    );
+    pruefe(
+      "o11 qualitaetsBonusGesamt: Chancenpunkte und Essen addieren sich (50 + Rübensalat .2 = 149; 0 + kein Essen = 0)",
+      qualitaetsBonusGesamt(50, { id: "ruebensalat", stufe: 2 }) === 149 && qualitaetsBonusGesamt(0, null) === 0 && qualitaetsBonusGesamt("", null) === 0 && qualitaetsBonusGesamt(-5, { id: "kalmar_roh", stufe: 0 }) === 49.5
+    );
     (function () {
       // Die Markov-Kette ist linear in den Kosten je Reroll, das Ergebnis muss
       // also exakt mit dem Rabattfaktor skalieren.
@@ -2002,6 +2170,17 @@ const REGELN = (function () {
     REROLL_UEBERGANG,
     REROLL_FAKTOR,
     GLOBAL_DISCOUNT_SCHWELLE,
+    AUFWERTUNG_AUFSCHLAG_VORGABE,
+    AUFWERTUNG_AUFSCHLAG_MIN,
+    AUFWERTUNG_AUFSCHLAG_MAX,
+    ESSEN_QUALITAET,
+    aufwertungAufschlagBereinigen,
+    aufwertungAufschlagFaktor,
+    rerollKostenJeVersuch,
+    essenBereinigen,
+    essenBonus,
+    essenName,
+    qualitaetsBonusGesamt,
     KATEGORIE_ZU_GEBAEUDE,
     STADTBONUS,
     gebaeudeVonKategorie,

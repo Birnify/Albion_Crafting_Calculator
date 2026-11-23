@@ -303,7 +303,7 @@ async function haupt() {
   const std = GS.standardEinstellungen();
   const stations = {};
   appS.REGELN.alleGebaeude().forEach((g) => (stations[g] = 400));
-  const gemeinsam = { premium: true, absatzAnteilProzent: 10, stationssaetze: stations, tagesbonus: {}, fce: 0, fceAusnahmen: {}, spezialisierung: {}, zusatzbonusProzent: 0, maxPreisAlterMin: 4320 };
+  const gemeinsam = { premium: true, absatzAnteilProzent: 10, stationssaetze: stations, tagesbonus: {}, fce: 0, fceAusnahmen: {}, spezialisierung: {}, zusatzbonusProzent: 0, maxPreisAlterMin: 4320, qualitaetsChancenpunkte: 0, essen: null, aufwertungAufschlagProzent: 15.6 };
   const lesenS = { preis: appS.PREISE.bestandPreis, alleQ: appS.PREISE.bestandAlleQualitaeten, absatz: appS.PREISE.bestandAbsatz };
   const bester = new Map();
   const listeS = GS.kandidaten(std);

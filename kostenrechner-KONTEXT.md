@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-23 · Version: v3.24.0 · O10: Verkaufspreis abgesichert, Einkaufsliste nach Rückgewinnung
+Stand: 2026-11-23 · Version: v3.25.0 · O11: Qualität im Verkauf (Mittel über die gewürfelte Qualität, Aufwerten)
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -137,6 +137,48 @@ T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
 hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
 entscheidet weiter der angenommene Marktanteil.
 
+**O11, v3.25.0 (23.11.2026), Qualität im Verkauf.** Anlass: die App nahm
+für ein qualifizierbares Produkt einen einzigen Preis an, obwohl der Wurf
+meist Normal ergibt und bessere Stücke teurer verkauft werden.
+- **Erwarteter Preis** (`CRAFTEN.preiseJeQualitaet`, nur qualifizierbare
+  Produkte, nur eigene Verkaufsorder): Summe über Anteil(q) × Preis(q).
+  Anteile aus `REGELN.qualitaetsVerteilung(Chancenpunkte + Essen)`.
+  Preis(Normal) ist der abgesicherte Preis aus O10. **Eine bessere Qualität
+  zählt nur mit beidem: erfasstem Handel in dieser Qualität (7 Tage) UND
+  einem aktuellen Angebot dieser oder besserer Qualität**, dann der
+  niedrigere aus beiden, nie unter der Stufe darunter. Fehlt eines, gilt
+  der Preis der Stufe darunter. Grund für beide Bedingungen: ein
+  Scherzangebot allein und ein einzelner Verkauf allein (Prüferbefund:
+  ein Meisterwerk-Verkauf zu 90 Mio. hob den Gewinn von 23.269 auf
+  190.574) dürfen den Preis nicht heben. Anzeige „Preis x · Mittel“,
+  Tabelle je Qualität im Tooltip. Die Stadtwahl folgt weiter dem
+  Normalpreis. Beim Sofortverkauf zählt nur die Kauforder in Normal.
+- **Aufwerten** an der Reparaturstation: Schild „Aufwerten bis … +x“, wenn
+  der erwartete Mehrerlös die Kosten übersteigt. Kosten je Versuch
+  `Gegenstandswert × 4,4 / 5,5 / 6,6 × Global Discount × (1 + Aufschlag)`.
+  **Neues Feld „Aufschlag Aufwertung“ in % (Vorgabe 15,6, Messung vom
+  23.11.2026, −50 bis +100)**, weil der Faktor der Gold Market
+  Stabilization laufend wandert. Bei Artefakt-Items und Kristallisiertem
+  Geist ist der Gegenstandswert nicht belegt: dort kein Schild, Hinweis im
+  Tooltip (`aufwertenOffen`).
+- **Neue Felder** „Qualitäts-Chancenpunkte“ und „Essen (Annahme)“ in
+  „Craften: Gewinn“ und „Gelegenheiten“ (Salat-Tabelle aus dem Client-Dump,
+  `REGELN.ESSEN_QUALITAET`). Dass Essen und Chancenpunkte dieselbe Einheit
+  haben und sich addieren, ist eine Annahme und steht so im Tooltip.
+- **Korrekturen nach Beleg:** Global Discount ab Goldpreis unter 5.000
+  (vorher 3.000), Stufenname „Hervorragend“ (vorher „Herausragend“).
+- **Geänderte Ergebnisse gegenüber v3.24.0, bewusst:** der Preis ist auch
+  ohne Bonus ein Mittel (31,1 % der Würfe landen über Normal), und die
+  Aufwertung im Kostenrechner ist um 15,6 % teurer.
+- **Fehler im gemeinsamen Preisstand behoben** (`js/gemeinsam.js`): der
+  Merker „eingemischt“ wurde gesetzt, bevor der Bestand dauerhaft
+  geschrieben war. Nach einem Neuladen fehlten dann Einträge (gesehen:
+  125.000 von 131.621 Preisen, 578 von 23.566 Volumen), und die App lud sie
+  nicht nach. Der Merker wird jetzt erst nach `PREISE.bestandGeschrieben()`
+  gesetzt.
+- Geprüft: Selbsttest 1014/1014, Node 27/27; live „Zweischwerter des
+  Experten T5.3“ mit „· Mittel“ (650.147 bei Normalpreis 649.998).
+
 **O10, v3.24.0 (23.11.2026).** Parallel zu O9 in einer getrennten
 Arbeitskopie gebaut (Zweig `o10`) und zusammengeführt.
 - **Verkaufspreis abgesichert** (`VEREDELN.verkaufAbsichern`): es zählt der
@@ -186,6 +228,9 @@ genau ein Commit, wird überschrieben; `main` bleibt unberührt).
   verworfen. Schalter „Gemeinsamen Preisstand laden“ in „Gelegenheiten“
   (Vorgabe an), Anzeige „Gemeinsamer Stand von HH:MM“ in der Leiste.
   Fehler (404, offline) stören nicht.
+- **Erster Lauf bei GitHub (23.11.2026, von Hand angestoßen, 09:08 bis
+  09:12 UTC):** erfolgreich, 137 Abrufe, keine Drosselung; die App lud den
+  Stand in 0,5 s. Ob der Zeitplan von selbst läuft, s. Backlog.
 - Gemessen (Umsetzer, nachgebildet): leerer Bestand, erste Zeile 0,5 s nach
   dem Klick. Rundlauf Skript → Datei → App → Rangliste: 2.851 Zeilen ohne
   Abweichung (Hauptsitzung nachgelaufen).
@@ -380,16 +425,16 @@ solange sich daran nichts ändert.
   Nutzer am 23.11.2026 abgelehnt („Geld ist nicht das Problem“); er plant
   über Zähler und Einkaufsliste. Keine Preisstaffel möglich (die API kennt
   kein Orderbuch).
-- **Geplantes Paket „Qualität im Verkauf“** (vom Nutzer noch nicht
-  freigegeben). Belege vom 23.11.2026 in `CLAUDE.md`: Aufwertungskosten
-  liegen derzeit um Faktor 1,156 über der Formel (Gold Market
-  Stabilization, einstellbarer Wert nötig); **`REGELN.globalDiscount()`
-  rechnet noch mit der Schwelle 3.000 statt 5.000**; die App schreibt
-  „Herausragend“, im Spiel heißt die Stufe „Hervorragend“. Inhalt: Wege je
-  Zielqualität mit Aufwertungskosten vergleichen, Volumen der Zielqualität,
-  Qualitätsbonus aus Schicksalsbrett und Salat. Erwartung nach der
-  Marktablesung (Klerikerrobe): Aufwerten lohnt selten, Normal und Gut
-  kosten gleich viel.
+- O11 (v3.25.0), offen: **Gegenstandswert von Artefakt-Items und
+  Kristallisiertem Geist nicht belegt**, dort kein Aufwerten-Hinweis;
+  erbeten ist eine Ablesung der Aufwertungskosten eines Artefakt-Items an
+  der Reparaturstation. Der Aufschlag 15,6 % ist nur für die Faktoren 4,4 /
+  5,5 / 6,6 gemessen, nicht für Exzellent (27,5). Einheit und Addierbarkeit
+  des Essensbonus sind unbelegt. Der Einfluss von Fokus auf die Qualität
+  fehlt bewusst. Der Aufschlag muss von Hand nachgemessen werden.
+- O9: geplante Läufe des Workflows waren am 23.11.2026 bis 09:45 UTC nicht
+  von selbst gestartet (nur der Lauf von Hand). GitHub startet neue
+  Zeitpläne oft verzögert; nachsehen unter Actions.
 - O10: der Handelspreis zählt ohne eigenes Höchstalter, solange der Absatz
   im Bestand liegt; die Detailreiter nennen die Zahl unsicherer Zeilen
   nicht; „Preise aktualisieren“ braucht bei gestörter API rund 45 s bis

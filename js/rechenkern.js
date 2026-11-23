@@ -84,6 +84,12 @@ const RECHENKERN = (function () {
       // die Stationsgebuehr - ausdrueckliche Nutzer-Entscheidung, s.
       // REGELN.globalDiscount().
       silberRabattFaktor: o.silberRabattFaktor != null && isFinite(o.silberRabattFaktor) ? o.silberRabattFaktor : 1,
+      // v3.25.0 (O11): Auf- oder Abschlag auf die Aufwertungskosten in
+      // Prozent (Gold Market Stabilization), ein im Spiel abgelesener,
+      // veraenderlicher Wert (REGELN.aufwertungAufschlagFaktor). 0 = die
+      // reine Formel und damit das bisherige Verhalten. Wirkt wie der Rabatt
+      // nur auf die Reroll-Kosten, nicht auf die Stationsgebuehr.
+      aufwertungAufschlagProzent: REGELN.aufwertungAufschlagBereinigen(o.aufwertungAufschlagProzent, 0),
       tagesbonus: o.tagesbonus || {}, // craftingcategory -> "silber"|"gold"
       // Frei einstellbarer Zusatz-Produktionsbonus als Anteil (0,05 = +5
       // Prozentpunkte), s. REGELN.rrr. 0 = unveraendertes Verhalten.
@@ -118,7 +124,11 @@ const RECHENKERN = (function () {
       // vom Nutzer am Schicksalsbrett abgelesene Bonus fuer Korns
       // Qualitaetswurf-Formel (s. REGELN.qualitaetWurfErfolgswahrscheinlichkeit).
       qualitaetsIndex: o.qualitaetsIndex != null ? o.qualitaetsIndex : 0,
-      qualitaetsChancenpunkte: o.qualitaetsChancenpunkte != null ? o.qualitaetsChancenpunkte : 0,
+      // v3.25.0 (O11): der Wurf rechnet mit dem GESAMTBONUS aus
+      // Chancenpunkten und Essen (opts.essen = {id, stufe} oder null, s.
+      // REGELN.ESSEN_QUALITAET; dass sich beide addieren, ist eine Annahme).
+      // Ohne Essen bleibt es beim uebergebenen Wert.
+      qualitaetsChancenpunkte: (o.qualitaetsChancenpunkte != null ? o.qualitaetsChancenpunkte : 0) + REGELN.essenBonus(o.essen),
       preiseQualitaet: o.preiseQualitaet || {},
       _memoGesamt: o._memoGesamt || new Map(),
       _memoCraft: o._memoCraft || new Map(),
@@ -701,7 +711,7 @@ const RECHENKERN = (function () {
       return gesperrterKandidat("reroll", item, stufe, "Normal-Beschaffung gesperrt: " + normalErgebnis.grund, { qualitaet, basis: normalErgebnis.weg });
     }
     const itemWertJeStueck = REGELN.itemWert(item, stufe, undefined, opts.graph);
-    const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, 0, opts.silberRabattFaktor);
+    const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, 0, opts.silberRabattFaktor, opts.aufwertungAufschlagProzent);
     if (reroll.gesperrt) {
       return gesperrterKandidat("reroll", item, stufe, reroll.grund, { qualitaet, basis: normalErgebnis.weg });
     }
@@ -869,7 +879,7 @@ const RECHENKERN = (function () {
         let rerollUnmoeglich = false;
         for (let q = 0; q <= 4 && !rerollUnmoeglich; q++) {
           if (verteilung[q] <= 0) continue;
-          const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, q, opts.silberRabattFaktor);
+          const reroll = REGELN.rerollKostenZuQualitaet(itemWertJeStueck, qualitaet, q, opts.silberRabattFaktor, opts.aufwertungAufschlagProzent);
           if (reroll.gesperrt) {
             rerollUnmoeglich = true;
             break;

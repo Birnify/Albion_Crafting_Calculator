@@ -37,7 +37,7 @@ const PREISVERGLEICH = (function () {
   const API_BASE = `https://${REALM}.albion-online-data.com/api/v2/stats`;
 
   const STAEDTE = ["Lymhurst", "Fort Sterling", "Bridgewatch", "Martlock", "Thetford", "Caerleon", "Brecilien"];
-  const QUAL_NAMEN = { 1: "Normal", 2: "Gut", 3: "Herausragend", 4: "Exzellent", 5: "Meisterwerk" };
+  const QUAL_NAMEN = { 1: "Normal", 2: "Gut", 3: "Hervorragend", 4: "Exzellent", 5: "Meisterwerk" };
   const ALLE_QUALITAETEN = "1,2,3,4,5";
 
   const SPEICHER_KEY = "albion_kostenrechner_preisvergleich_v1";

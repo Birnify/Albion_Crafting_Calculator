@@ -89,12 +89,13 @@ function appLaden(wurzel, umgebung) {
  * standardEinstellungen(); ui.js braucht ein DOM und laesst sich hier nicht
  * laden): Premium, Marktanteil 10 %, Stationssatz 400 je Gebaeude (der
  * vorbelegte Wert des Eingabefelds), kein Tagesbonus, FCE 0, Hoechstalter
- * der Preise 3 Tage.
+ * der Preise 3 Tage, Qualitaets-Chancenpunkte 0, kein Essen, Aufschlag auf
+ * die Aufwertungskosten 15,6 % (v3.25.0).
  */
 function vorgabeEinstellungen(app) {
   const stationssaetze = {};
   app.REGELN.alleGebaeude().forEach((g) => (stationssaetze[g] = 400));
-  return { premium: true, absatzAnteilProzent: 10, stationssaetze, tagesbonus: {}, fce: 0, fceAusnahmen: {}, spezialisierung: {}, zusatzbonusProzent: 0, maxPreisAlterMin: 4320 };
+  return { premium: true, absatzAnteilProzent: 10, stationssaetze, tagesbonus: {}, fce: 0, fceAusnahmen: {}, spezialisierung: {}, zusatzbonusProzent: 0, maxPreisAlterMin: 4320, qualitaetsChancenpunkte: 0, essen: null, aufwertungAufschlagProzent: 15.6 };
 }
 
 function jsonLesen(datei) {
