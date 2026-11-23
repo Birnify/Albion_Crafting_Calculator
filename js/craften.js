@@ -2661,7 +2661,9 @@ const CRAFTEN = (function () {
         .map((p) => {
           const name = nameVon(p.item, p.stufe);
           return (
-            "<span class='cg-plan-produkt'>" + icon(marktIdVon(p.item, p.stufe), 24, name) + p.stueck + "× " + esc(name) + (p.tier ? " <span class='vd-klein'>T" + p.tier + "." + p.stufe + "</span>" : "") +
+            "<span class='cg-plan-produkt'>" + icon(marktIdVon(p.item, p.stufe), 24, name) + p.stueck + "× " + esc(name) +
+            " <button type='button' class='mini cg-kopie' data-cg-kopie='" + esc(suchName(name, p.item, p.stufe)) + "' title='„" + esc(suchName(name, p.item, p.stufe)) + "“ kopieren, zum Einfügen in die Marktsuche'>Kopieren</button>" +
+            (p.tier ? " <span class='vd-klein'>T" + p.tier + "." + p.stufe + "</span>" : "") +
             (p.ausbeute > 1 ? " <span class='vd-klein'>(" + p.vorgaenge + " Vorgänge)</span>" : "") + V.planMaxHtml(p, esc) +
             "<button type='button' class='vd-reset cg-plan-weg' data-cg-weg='" + esc(p.marktId) + "' title='Aus der Planung nehmen' aria-label='" + esc(name) + " aus der Planung nehmen'>×</button></span>"
           );

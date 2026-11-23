@@ -2360,7 +2360,7 @@ const GELEGENHEITEN = (function () {
             "Erlös und Gewinn für " + zahl(p.hergestellt) + " Stück: die Zahlen der Zeile mal Menge.";
           return (
             "<span class='cg-plan-produkt" + (imRang ? "" : " gl-ausser-rang") + "' title='" + esc(titel) + "'>" + icon(p.marktId, 24, name) +
-            "<span class='gl-plan-text'><span>" + zahl(p.stueck) + "× " + esc(name) + " <span class='vd-klein'>T" + p.tier + "." + (p.vorgangsStufe != null ? p.vorgangsStufe : p.stufe) +
+            "<span class='gl-plan-text'><span>" + zahl(p.stueck) + "× " + esc(name) + kopierKnopfHtml(C.suchName(name, p.item, p.stufe)) + " <span class='vd-klein'>T" + p.tier + "." + (p.vorgangsStufe != null ? p.vorgangsStufe : p.stufe) +
             (p.ausbeute > 1 ? ", " + p.vorgaenge + " Vorgänge = " + zahl(p.hergestellt) + " Stück" : "") + "</span>" + V.planMaxHtml(p, esc) + "</span>" +
             "<span class='vd-klein'>Erlös " + fmtN(p.erloes) + " · Gewinn <b class='" + (p.gewinn == null ? "" : p.gewinn >= 0 ? "gl-plus" : "gl-minus") + "'>" + fmtN(p.gewinn) + "</b></span></span>" +
             "<button type='button' class='vd-reset cg-plan-weg' data-gl-weg='" + esc(p.schluessel) + "' title='Aus der Planung nehmen' aria-label='" + esc(name) + " aus der Planung nehmen'>×</button></span>"

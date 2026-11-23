@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-23 · Version: v3.25.1 · „Cache leeren“ lädt den gemeinsamen Preisstand sofort neu
+Stand: 2026-11-23 · Version: v3.25.2 · Kopieren-Knopf am Produktschild der Einkaufsliste
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -136,6 +136,13 @@ T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
 (25 % von 109.647 Himmelsblume, Bedarf 1,9 je Stück). **Die Grenze halbiert
 hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
 entscheidet weiter der angenommene Marktanteil.
+
+**v3.25.2 (23.11.2026), Kopieren am Produktschild.** Wunsch des Nutzers: vor
+dem Einkauf geht er die Liste über die Kopieren-Knöpfe durch, der Name des
+geplanten Produkts ließ sich aber nicht kopieren. Jetzt trägt jedes
+Produktschild der Einkaufsliste („Gelegenheiten“ und „Craften: Gewinn“)
+einen Knopf „Kopieren“ mit dem Suchnamen (Name plus Tier.Verzauberung, wie
+bei den Zutaten). Live geprüft in beiden Reitern.
 
 **v3.25.1 (23.11.2026), Fix „Cache leeren“.** Der Knopf im Kostenrechner
 leerte den ganzen Bestand, also auch die Daten von GitHub. Der Lader mischte
