@@ -755,7 +755,7 @@ Dumps dorthin abgebildet werden müssen.
 | **Jägerhütte** | `bow`, `dagger`, `quarterstaff`, `naturestaff`, `spear`, `leather_armor`, `leather_helmet`, `leather_shoes` |
 | **Werkzeugmacher** | `tools`, `gatherergear`, `bag`, `cape` |
 | **Alchemistenlabor** | `potion` |
-| **Küche** | `food` |
+| **Küche** | `food` (außer Mehl und Butter: **Mühle**; Alkohol: **Alchemistenlabor**; Wiki `Mill`, `Cook`, `Alchemist's Lab`, 23.11.2026) |
 
 **Vier Kategorien sind damit nicht eindeutig zugeordnet:**
 

@@ -1,6 +1,6 @@
 # Kontext: Albion Kostenrechner
 
-Stand: 2026-11-23 · Version: v3.25.2 · Kopieren-Knopf am Produktschild der Einkaufsliste
+Stand: 2026-11-23 · Version: v3.26.0 · Gebührengruppe Mühle (Mehl, Butter), Alkohol zum Alchemistenlabor
 
 > Diese Datei ist die **einzige Quelle für eine frische Session**: aktueller Stand,
 > Fachlogik der App, Dateistruktur, Arbeitsweise, offenes Backlog. Zu Beginn jeder
@@ -136,6 +136,21 @@ T5.0 in Lymhurst, Absatzgrenze 31.499 Stück, Einkaufsgrenze 14.437 Stück
 (25 % von 109.647 Himmelsblume, Bedarf 1,9 je Stück). **Die Grenze halbiert
 hier nur, sie macht die Zahl nicht realistisch:** bei so liquiden Rohstoffen
 entscheidet weiter der angenommene Marktanteil.
+
+**v3.26.0 (23.11.2026), Mühle als Gebührengruppe.** Frage des Nutzers, wo
+Butter gemacht wird. Offizielles Wiki, im In-App-Browser gelesen: die Seite
+`Mill` listet Mehl und die drei Butterarten, `Cook` listet Brot, aber weder
+Mehl, Butter noch Alkohol; `Alchemist's Lab` führt Alkohol (Schnaps,
+Moonshine) in der Spalte „Potions/Alcohol“. Der Dump trägt alle vier als
+`food`, die App rechnete deshalb überall die Küchengebühr. Neu:
+`REGELN.ITEM_ZU_GEBAEUDE` (Muster je Item-ID) vor der Kategorie in
+`gebaeudeVonItem(node, itemId)`; `T*_FLOUR`/`T*_BUTTER` gehen zur
+Gebührengruppe „Muehle“, `T*_ALCOHOL` zum „Alchemistenlabor“. Stadtbonus und
+Spezialisierung hängen weiter an der Kategorie. „Craften: Gewinn“ zeigt bei
+der Warengruppe Speisen zusätzlich die Satzfelder Mühle und Alchemistenlabor.
+Der Satz der eigenen Mühle ist noch nicht abgelesen (Vorgabe 400 wie überall).
+Die Wirkung ist klein (Gegenstandswert 40, also 18 Silber je Stück bei Satz
+400). Test in `regeln.js`, 1015/1015 grün.
 
 **v3.25.2 (23.11.2026), Kopieren am Produktschild.** Wunsch des Nutzers: vor
 dem Einkauf geht er die Liste über die Kopieren-Knöpfe durch, der Name des

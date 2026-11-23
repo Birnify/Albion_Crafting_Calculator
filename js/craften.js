@@ -558,6 +558,8 @@ const CRAFTEN = (function () {
     (warengruppen || []).forEach((cc) => {
       const g = REGELN.gebaeudeVonKategorie(cc);
       if (g && out.indexOf(g) === -1) out.push(g);
+      // v3.26.0: Mehl und Butter (Muehle) und Alkohol (Alchemistenlabor) tragen "food", s. REGELN.gebaeudeVonItem.
+      if (cc === "food") ["Muehle", "Alchemistenlabor"].forEach((z) => out.indexOf(z) === -1 && out.push(z));
     });
     return out;
   }
@@ -2137,7 +2139,7 @@ const CRAFTEN = (function () {
         : "<span class='vd-erkl'>Erst eine Warengruppe wählen.</span>";
     }
 
-    const STATION_LABEL = { Jaegerhuette: "Jägerhütte", Kueche: "Küche" };
+    const STATION_LABEL = { Jaegerhuette: "Jägerhütte", Kueche: "Küche", Muehle: "Mühle" };
     function stationName(g) {
       if (STATION_LABEL[g]) return STATION_LABEL[g];
       return g.replace(/ \(.*\)$/, "");

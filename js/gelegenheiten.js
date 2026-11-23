@@ -2575,7 +2575,7 @@ const GELEGENHEITEN = (function () {
       warnungEl.hidden = !fehlend.length;
       warnungEl.textContent = "Stationssatz fehlt für " + fehlend.length + " Gebäude";
       warnungEl.title = fehlend.length
-        ? "Ohne Stationssatz wird mit 0 Gebühr gerechnet, der Gewinn fällt dann zu hoch aus: " + fehlend.map((g) => ({ Jaegerhuette: "Jägerhütte", Kueche: "Küche" }[g] || g.replace(/ \(.*\)$/, ""))).join(", ") + ". Eintragen in „Craften: Gewinn“, „Veredeln leveln“ oder im Kostenrechner."
+        ? "Ohne Stationssatz wird mit 0 Gebühr gerechnet, der Gewinn fällt dann zu hoch aus: " + fehlend.map((g) => ({ Jaegerhuette: "Jägerhütte", Kueche: "Küche", Muehle: "Mühle" }[g] || g.replace(/ \(.*\)$/, ""))).join(", ") + ". Eintragen in „Craften: Gewinn“, „Veredeln leveln“ oder im Kostenrechner."
         : "";
     }
 

@@ -338,12 +338,36 @@ const REGELN = (function () {
     siegebanner: "Belagerungsbanner (Gebaeude nicht belegt)",
   };
 
+  // -----------------------------------------------------------------------
+  // Einzelne Items, deren Gebaeude von ihrer craftingcategory abweicht
+  // (v3.26.0, 23.11.2026, offizielles Wiki im In-App-Browser gelesen):
+  // - Seite "Mill", Craftable Items: Flour, Goat's/Sheep's/Cow's Butter.
+  //   Der Dump fuehrt sie als "food", die Kueche ("Cook") listet sie nicht.
+  // - Seite "Alchemist's Lab", Spalte "Potions/Alcohol": Schnaps, Moonshine
+  //   usw. (ALCOHOL, Dump ebenfalls "food"), die Kueche listet sie nicht.
+  // - Brot steht auf der Seite "Cook" und bleibt bei der Kueche.
+  // Nur das Gebaeude (Nutzungsgebuehr) weicht ab; Stadtbonus und
+  // Spezialisierung haengen weiter an der Kategorie.
+  // -----------------------------------------------------------------------
+
+  const ITEM_ZU_GEBAEUDE = [
+    { muster: /^T\d+_(FLOUR|BUTTER)$/, gebaeude: "Muehle" },
+    { muster: /^T\d+_ALCOHOL$/, gebaeude: "Alchemistenlabor" },
+  ];
+
   /**
-   * Gebaeude/Gebuehrengruppe eines Graph-Knotens: mit craftingcategory ueber
-   * die Kategorie (unveraendert), ohne ueber die Item-Art `ia`.
+   * Gebaeude/Gebuehrengruppe eines Graph-Knotens: zuerst die Item-Ausnahmen
+   * oben (braucht die Item-ID), dann mit craftingcategory ueber die
+   * Kategorie, ohne ueber die Item-Art `ia`.
    */
-  function gebaeudeVonItem(node) {
+  function gebaeudeVonItem(node, itemId) {
     if (!node) return null;
+    if (itemId) {
+      const basis = String(itemId).replace(/@\d+$/, "");
+      for (let i = 0; i < ITEM_ZU_GEBAEUDE.length; i++) {
+        if (ITEM_ZU_GEBAEUDE[i].muster.test(basis)) return ITEM_ZU_GEBAEUDE[i].gebaeude;
+      }
+    }
     if (node.cc) return gebaeudeVonKategorie(node.cc);
     return (node.ia && ITEMART_ZU_GEBAEUDE[node.ia]) || null;
   }
@@ -355,6 +379,9 @@ const REGELN = (function () {
       Object.keys(tabelle).forEach((k) => {
         if (liste.indexOf(tabelle[k]) === -1) liste.push(tabelle[k]);
       });
+    });
+    ITEM_ZU_GEBAEUDE.forEach((e) => {
+      if (liste.indexOf(e.gebaeude) === -1) liste.push(e.gebaeude);
     });
     return liste;
   }
@@ -1404,6 +1431,16 @@ const REGELN = (function () {
 
     pruefe("Kategorie fiber -> Weber", gebaeudeVonKategorie("fiber") === "Weber");
     pruefe("Kategorie food -> Kueche", gebaeudeVonKategorie("food") === "Kueche");
+    pruefe(
+      "Mehl und Butter -> Muehle, Alkohol -> Alchemistenlabor, Brot und Eintopf bleiben Kueche (Wiki Mill/Cook/Alchemist's Lab, 23.11.2026)",
+      gebaeudeVonItem({ cc: "food" }, "T3_FLOUR") === "Muehle" &&
+        gebaeudeVonItem({ cc: "food" }, "T8_BUTTER") === "Muehle" &&
+        gebaeudeVonItem({ cc: "food" }, "T6_ALCOHOL") === "Alchemistenlabor" &&
+        gebaeudeVonItem({ cc: "food" }, "T4_BREAD") === "Kueche" &&
+        gebaeudeVonItem({ cc: "food" }, "T8_MEAL_STEW") === "Kueche" &&
+        gebaeudeVonItem({ cc: "food" }) === "Kueche" &&
+        alleGebaeude().indexOf("Muehle") !== -1
+    );
     pruefe("Kategorie offhand -> eigene Gebuehrengruppe (nicht erfunden zugeordnet)", gebaeudeVonKategorie("offhand") !== "Kriegerschmiede" && gebaeudeVonKategorie("offhand") !== "Jaegerhuette" && gebaeudeVonKategorie("offhand") !== "Magierturm");
     pruefe("Kategorie knuckles -> eigene Gebuehrengruppe", gebaeudeVonKategorie("knuckles") !== null && gebaeudeVonKategorie("knuckles") !== "Kriegerschmiede");
     pruefe("Kategorie meat_cow -> Tierhaltung", gebaeudeVonKategorie("meat_cow") === "Tierhaltung");

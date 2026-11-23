@@ -403,7 +403,7 @@ const RECHENKERN = (function () {
     const amountcrafted = rezept.a || 1;
     const cc = node.cc || null;
     // v3.8.3: ohne craftingcategory ueber die Item-Art (Moebel -> Werkzeugmacher), s. REGELN.gebaeudeVonItem.
-    const gebaeude = REGELN.gebaeudeVonItem(node);
+    const gebaeude = REGELN.gebaeudeVonItem(node, item);
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
     const fce = fceFuer(item, cc, opts);
@@ -756,7 +756,7 @@ const RECHENKERN = (function () {
     const amountcrafted = rezept.a || 1;
     const cc = node.cc || null;
     // v3.8.3: ohne craftingcategory ueber die Item-Art (Moebel -> Werkzeugmacher), s. REGELN.gebaeudeVonItem.
-    const gebaeude = REGELN.gebaeudeVonItem(node);
+    const gebaeude = REGELN.gebaeudeVonItem(node, item);
     const stationsInfo = stationssatzFuer(gebaeude, opts);
     const stationssatz = stationsInfo.satz;
     const fce = fceFuer(item, cc, opts);
